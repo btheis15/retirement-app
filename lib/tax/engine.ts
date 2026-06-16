@@ -115,10 +115,13 @@ export function taxableSocialSecurity(ssBenefits: number, otherIncome: number): 
 
 function seniorBonusDeduction(num65Plus: number, magi: number): number {
   if (num65Plus <= 0) return 0;
-  const full = SENIOR_BONUS_DEDUCTION * num65Plus;
+  // The OBBBA senior bonus phases out PER FILER: each eligible spouse's $6,000 is
+  // reduced by 6% of MAGI over $150k (MFJ), so a couple's combined $12,000 is
+  // fully gone at $250k MAGI (not $350k). Phasing the combined amount at a single
+  // 6% understates the phaseout and leaves a phantom deduction near $250k.
   const over = Math.max(0, magi - SENIOR_BONUS_PHASEOUT_START_MFJ);
-  const reduced = full - over * SENIOR_BONUS_PHASEOUT_RATE;
-  return Math.max(0, Math.min(full, reduced));
+  const perFiler = Math.max(0, SENIOR_BONUS_DEDUCTION - over * SENIOR_BONUS_PHASEOUT_RATE);
+  return perFiler * num65Plus;
 }
 
 function irmaaFor(magi: number) {
