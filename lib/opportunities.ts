@@ -1,0 +1,168 @@
+/**
+ * Opportunity detector — the "you should probably move money here for an
+ * instant/long-run tax benefit" callouts. Each one is explained in plain English
+ * and carries a source so the reasoning is verifiable.
+ *
+ * These are general, rule-based observations from your numbers — NOT personal
+ * advice. Confirm with a tax professional before acting.
+ */
+
+import { Household, sumBuckets, bucketOf } from "./accounts";
+import { YearPlan, BracketTarget } from "./optimizer";
+import { ordinaryBracketCeiling, LTCG_ZERO_CEILING } from "./tax/engine";
+import { IRMAA_TIERS_MFJ, rmdStartAge } from "./tax/constants";
+import { SOURCES, Source } from "./sources";
+
+export interface Opportunity {
+  id: string;
+  icon: string;
+  title: string;
+  detail: string;
+  impact?: string; // a rough dollar/qualitative impact
+  tone: "good" | "warn" | "info";
+  sources: Source[];
+}
+
+export function detectOpportunities(
+  household: Household,
+  plan: YearPlan,
+  bracketTarget: BracketTarget,
+): Opportunity[] {
+  const out: Opportunity[] = [];
+  const buckets = sumBuckets(household.accounts);
+  const tax = plan.tax;
+  const selfAge = plan.selfAge;
+
+  // 1) Roth conversion / bracket-fill headroom in a low-tax year.
+  const ceiling = ordinaryBracketCeiling(bracketTarget);
+  const headroom = ceiling - tax.ordinaryTaxableIncome;
+  if (headroom > 5_000 && buckets.pretax > 10_000) {
+    const fillable = Math.min(headroom, buckets.pretax);
+    out.push({
+      id: "roth-conversion",
+      icon: "🔄",
+      title: "Room to convert pre-tax → Roth cheaply",
+      detail: `Your income only fills part of the ${Math.round(
+        bracketTarget * 100,
+      )}% bracket. You could convert roughly ${money(
+        fillable,
+      )} from a Traditional IRA/401(k) to Roth this year, paying tax now at ${Math.round(
+        bracketTarget * 100,
+      )}% instead of letting it grow and come out later as RMDs — likely taxed at a higher rate once both Social Security and RMDs are flowing. Roth then grows tax-free with no future RMDs.`,
+      impact: `Converts up to ${money(fillable)} at today's ${Math.round(bracketTarget * 100)}% rate`,
+      tone: "good",
+      sources: [SOURCES.rothConversion, SOURCES.rmd, SOURCES.brackets2026],
+    });
+  }
+
+  // 2) 0% long-term capital gains harvesting.
+  const zeroRoom = LTCG_ZERO_CEILING - tax.taxableIncome;
+  if (zeroRoom > 2_000 && buckets.taxableGain > 1_000) {
+    const harvest = Math.min(zeroRoom, buckets.taxableGain);
+    out.push({
+      id: "cap-gains-harvest",
+      icon: "🎁",
+      title: "Harvest capital gains at 0%",
+      detail: `Married-filing-jointly, long-term gains are taxed at 0% until taxable income reaches ${money(
+        LTCG_ZERO_CEILING,
+      )}. You have about ${money(
+        zeroRoom,
+      )} of room left this year. Selling appreciated brokerage holdings to realize up to ${money(
+        harvest,
+      )} of gains — then optionally rebuying — resets your cost basis higher at no federal tax, shrinking future taxable gains.`,
+      impact: `Up to ${money(harvest)} of gains realized tax-free`,
+      tone: "good",
+      sources: [SOURCES.capGains, SOURCES.brackets2026],
+    });
+  }
+
+  // 3) IRMAA cliff proximity.
+  const magi = tax.magi;
+  for (let i = 0; i < IRMAA_TIERS_MFJ.length - 1; i++) {
+    const boundary = IRMAA_TIERS_MFJ[i].upTo;
+    const nextSurcharge = IRMAA_TIERS_MFJ[i + 1].monthlyPerPerson;
+    const here = IRMAA_TIERS_MFJ[i].monthlyPerPerson;
+    if (magi > boundary - 15_000 && magi <= boundary && nextSurcharge > here && selfAge >= 62) {
+      const annualHit = (nextSurcharge - here) * 12 * 2;
+      out.push({
+        id: `irmaa-${i}`,
+        icon: "🚧",
+        title: "Watch the Medicare IRMAA cliff",
+        detail: `Your income (${money(
+          magi,
+        )}) is within ${money(boundary - magi)} of the next IRMAA bracket at ${money(
+          boundary,
+        )}. Crossing it would raise both spouses' Medicare premiums about ${money(
+          annualHit,
+        )}/yr (two years later). Covering the last bit of spending from Roth or cash instead of pre-tax keeps you under the line.`,
+        impact: `Avoids ~${money(annualHit)}/yr in extra premiums`,
+        tone: "warn",
+        sources: [SOURCES.irmaa],
+      });
+      break;
+    }
+  }
+
+  // 4) QCD once RMD-eligible (age 70½+) — turns taxable RMDs into tax-free gifts.
+  if (selfAge >= 70 && plan.rmd > 0) {
+    out.push({
+      id: "qcd",
+      icon: "❤️",
+      title: "Give to charity straight from the IRA (QCD)",
+      detail: `If you donate to charity, a Qualified Charitable Distribution sends money directly from your IRA to the charity and counts toward your RMD — but never hits your taxable income. That lowers AGI, can reduce how much Social Security is taxed, and can keep you under an IRMAA tier. Available from age 70½.`,
+      impact: "RMD dollars given this way are 100% tax-free",
+      tone: "info",
+      sources: [SOURCES.qcd, SOURCES.rmd],
+    });
+  }
+
+  // 5) Pre-tax "tax bomb" — heavy pre-tax balance means big future RMDs.
+  if (buckets.total > 0 && buckets.pretax / buckets.total > 0.6 && selfAge < rmdStartAge(household.self.birthYear)) {
+    out.push({
+      id: "pretax-heavy",
+      icon: "💣",
+      title: "Pre-tax balance is RMD-heavy",
+      detail: `About ${Math.round(
+        (buckets.pretax / buckets.total) * 100,
+      )}% of your assets are pre-tax. Left alone, these grow until RMDs force large taxable withdrawals in your 70s–80s, often pushing you into higher brackets and IRMAA. The years before RMDs/Social Security are the ideal time to draw these down voluntarily or convert to Roth.`,
+      impact: "Smooths future RMD-driven tax spikes",
+      tone: "warn",
+      sources: [SOURCES.rmd, SOURCES.rothConversion],
+    });
+  }
+
+  // 6) Asset location — interest-bearing cash/bonds in taxable is inefficient.
+  const cash = household.accounts.filter((a) => a.kind === "cash").reduce((s, a) => s + a.balance, 0);
+  if (cash > 100_000) {
+    out.push({
+      id: "asset-location",
+      icon: "🧭",
+      title: "Consider where you hold bonds & cash",
+      detail: `You hold ${money(
+        cash,
+      )} in cash/savings. Interest is taxed as ordinary income every year and counts toward the 3.8% Net Investment Income Tax. Holding bonds/cash inside pre-tax or Roth accounts — and keeping stocks (which get preferential long-term rates and a step-up at death) in the taxable brokerage — is usually more tax-efficient.`,
+      impact: "Reduces annual ordinary-income drag",
+      tone: "info",
+      sources: [SOURCES.niit, SOURCES.stepUp, SOURCES.capGains],
+    });
+  }
+
+  // 7) Don't drain the Roth — reaffirm it's last.
+  if (buckets.roth > 0 && plan.withdrawals.roth > 1) {
+    out.push({
+      id: "roth-last",
+      icon: "🌱",
+      title: "Roth is your tax-free reserve",
+      detail: `The plan only taps Roth after cheaper sources, and never for forced reasons — Roth IRAs have no lifetime RMDs. Keeping Roth invested as long as possible maximizes tax-free growth and gives heirs a tax-free inheritance.`,
+      impact: "Preserves tax-free growth",
+      tone: "good",
+      sources: [SOURCES.rothNoRmd, SOURCES.rothConversion],
+    });
+  }
+
+  return out;
+}
+
+function money(n: number): string {
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+}
