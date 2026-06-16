@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useStore } from "@/components/HouseholdProvider";
-import { Card, PageTitle, SectionTitle, Stat, Pill, Disclaimer, Callout, Explainer } from "@/components/ui";
+import { Card, PageTitle, SectionTitle, Stat, Pill, Disclaimer, Callout, Explainer, Info } from "@/components/ui";
 import { StackedArea, Bars, CompareBars, AnimatedNumber } from "@/components/charts";
 import { projectLifetime } from "@/lib/projection";
 import { detectMilestones } from "@/lib/milestones";
@@ -12,6 +12,7 @@ import { ReturnMethodInfo } from "@/components/ReturnMethodInfo";
 import { SpendingPowerCard } from "@/components/SpendingPowerCard";
 import { money, moneyCompact, percent } from "@/lib/format";
 import { HEX } from "@/lib/palette";
+import { SOURCES } from "@/lib/sources";
 
 export default function ProjectionPage() {
   const { ready, household, settings, updateSettings } = useStore();
@@ -182,6 +183,26 @@ export default function ProjectionPage() {
           </p>
         )}
       </Card>
+
+      <Info q="Why do RMDs keep growing? What's the &quot;IRS divisor&quot;?" sources={[SOURCES.rmd, SOURCES.rmdAge]}>
+        <p className="mb-1.5">
+          Each year&apos;s RMD = your <strong>prior year-end pre-tax balance ÷ an IRS divisor</strong>. The divisor
+          comes from the IRS Uniform Lifetime Table and is roughly how many more years the IRS expects the money
+          to last, so it doubles as a built-in spend-down schedule.
+        </p>
+        <p className="mb-1.5">
+          As you age, that divisor <strong>shrinks</strong> — you divide by a smaller number, so you must pull a
+          bigger slice each year. At age 75 the divisor is 24.6 (about <strong>4%</strong> of the balance); by 85
+          it&apos;s 16.0 (<strong>~6.25%</strong>); by 90 it&apos;s 12.2 (<strong>~8.2%</strong>). And because the
+          balance itself keeps growing with investment returns, the dollar amount climbs on two fronts at once —
+          that&apos;s why the bars ramp up.
+        </p>
+        <p>
+          This is the &quot;RMD tax bomb&quot;: a big pre-tax balance left untouched forces ever-larger withdrawals,
+          all taxed as ordinary income, which can push you into higher brackets and IRMAA tiers. Drawing pre-tax
+          down earlier (or converting to Roth) in your low-tax years shrinks it. Roth IRAs have no RMDs at all.
+        </p>
+      </Info>
 
       {/* Strategy comparison */}
       <SectionTitle>Smart vs. conventional</SectionTitle>
