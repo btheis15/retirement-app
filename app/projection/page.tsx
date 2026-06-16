@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useStore } from "@/components/HouseholdProvider";
-import { Card, PageTitle, SectionTitle, Stat, Pill, Disclaimer, Callout } from "@/components/ui";
+import { Card, PageTitle, SectionTitle, Stat, Pill, Disclaimer, Callout, Explainer } from "@/components/ui";
 import { StackedArea, Bars, CompareBars, AnimatedNumber } from "@/components/charts";
 import { projectLifetime } from "@/lib/projection";
 import { detectMilestones } from "@/lib/milestones";
@@ -245,12 +245,18 @@ export default function ProjectionPage() {
 
       {/* Year table */}
       <SectionTitle>Year by year</SectionTitle>
+      <Explainer>
+        The <strong className="text-deferred">RMD</strong> column is the minimum the IRS forces out of pre-tax
+        that year — it&apos;s already included in the Pre-tax withdrawal, shown separately so you can see the
+        mandatory floor.
+      </Explainer>
       <Card className="overflow-x-auto p-0">
         <table className="w-full text-right text-[12px]">
           <thead className="text-foreground/50">
             <tr className="border-b border-border">
               <th className="px-2 py-2 text-left">Yr / age</th>
               <th className="px-2 py-2">Pre-tax</th>
+              <th className="px-2 py-2">RMD min</th>
               <th className="px-2 py-2">Broker</th>
               <th className="px-2 py-2">Roth</th>
               <th className="px-2 py-2">Tax</th>
@@ -264,6 +270,9 @@ export default function ProjectionPage() {
                   {r.year} · {r.selfAge}
                 </td>
                 <td className="px-2 py-1.5 text-deferred">{r.fromPretax > 0 ? moneyCompact(r.fromPretax) : "—"}</td>
+                <td className={`px-2 py-1.5 ${r.rmd > 0 ? "font-semibold text-deferred" : "text-foreground/30"}`}>
+                  {r.rmd > 0 ? moneyCompact(r.rmd) : "—"}
+                </td>
                 <td className="px-2 py-1.5 text-taxable">{r.fromTaxable > 0 ? moneyCompact(r.fromTaxable) : "—"}</td>
                 <td className="px-2 py-1.5 text-roth">{r.fromRoth > 0 ? moneyCompact(r.fromRoth) : "—"}</td>
                 <td className="px-2 py-1.5 text-tax">{moneyCompact(r.tax)}</td>

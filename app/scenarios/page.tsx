@@ -230,12 +230,12 @@ export default function ScenariosPage() {
             <div className="mt-3 grid grid-cols-2 gap-2">
               <div className="rounded-xl border border-border bg-background/60 p-2">
                 <div className="text-[11px] text-foreground/55">Lifetime tax</div>
-                <div className="tabular text-sm font-semibold text-tax">{moneyCompact(p.lifetimeTax)}</div>
+                <div className="tabular text-[13px] font-semibold text-tax">{money(p.lifetimeTax)}</div>
                 <div className="text-[10px] text-foreground/45">{percent(p.taxPct)} of income</div>
               </div>
               <div className="rounded-xl border border-border bg-background/60 p-2">
                 <div className="text-[11px] text-foreground/55">After-tax money left</div>
-                <div className="tabular text-sm font-semibold text-gain">{moneyCompact(p.netWealth)}</div>
+                <div className="tabular text-[13px] font-semibold text-gain">{money(p.netWealth)}</div>
                 <div className="text-[10px] text-foreground/45">at age {settings.endAge}</div>
               </div>
             </div>
