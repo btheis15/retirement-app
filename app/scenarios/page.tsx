@@ -118,17 +118,17 @@ export default function ScenariosPage() {
       <Callout tone="info" icon="⚖️" title="What actually matters">
         It&apos;s tempting to chase the smallest tax bill. But the real goal is the <strong>most money left in
         your pocket after taxes</strong>, over your whole life. Sometimes paying a bit more tax now leaves you
-        <em> richer</em> later — and the lowest-tax plan can quietly leave you poorer. Below, every plan is
+        <em> richer</em>{" "}later — and the lowest-tax plan can quietly leave you poorer. Below, every plan is
         scored both ways.
       </Callout>
 
       <Info q="How can paying more tax leave me with more money?" sources={[SOURCES.rothConversion, SOURCES.rmd]}>
         <p className="mb-1.5">
-          Pre-tax accounts (IRA/401k) have a catch: the IRS eventually <em>forces</em> big withdrawals (RMDs)
+          Pre-tax accounts (IRA/401k) have a catch: the IRS eventually <em>forces</em>{" "}big withdrawals (RMDs)
           and taxes them as ordinary income — often at a higher rate than you&apos;d pay today.
         </p>
         <p>
-          By voluntarily pulling (or converting to Roth) some pre-tax money now at a <em>low</em> rate, you pay
+          By voluntarily pulling (or converting to Roth) some pre-tax money now at a <em>low</em>{" "}rate, you pay
           a little more tax today but shrink those future forced withdrawals and let tax-free Roth compound.
           The total tax can be higher in one column yet leave more after-tax wealth in the other. That&apos;s
           the trade-off this page makes visible.
@@ -163,8 +163,8 @@ export default function ScenariosPage() {
       {/* Headline winner */}
       <SectionTitle>The bottom line</SectionTitle>
       <Callout tone="good" icon="🏆" title="Most money left after tax">
-        <strong>{mostWealth.label}</strong> leaves you the most — about{" "}
-        <strong>{money(mostWealth.netWealth)}</strong> after tax at age {settings.endAge}.
+        <strong>{mostWealth.label}</strong>{" "}leaves you the most — about{" "}
+        <strong>{money(mostWealth.netWealth)}</strong>{" "}after tax at age {settings.endAge}.
         {differ ? (
           <>
             {" "}It isn&apos;t the lowest-tax plan, but it comes out ahead.
@@ -257,17 +257,17 @@ export default function ScenariosPage() {
       <Card>
         {differ ? (
           <p className="text-[13px] leading-relaxed text-foreground/75">
-            For your situation, <strong>{mostWealth.label}</strong> pays about{" "}
-            <strong className="text-tax">{money(extraTax)}</strong> more in lifetime tax than the lowest-tax
+            For your situation, <strong>{mostWealth.label}</strong>{" "}pays about{" "}
+            <strong className="text-tax">{money(extraTax)}</strong>{" "}more in lifetime tax than the lowest-tax
             plan ({lowestTax.label}), yet leaves you roughly{" "}
-            <strong className="text-gain">{money(wealthGap)}</strong> <strong>more</strong> after tax. That&apos;s
+            <strong className="text-gain">{money(wealthGap)} more</strong>{" "}after tax. That&apos;s
             the headline: chasing the smallest tax bill alone would have cost you money here. Optimize for the
             green column, not the red one.
           </p>
         ) : (
           <p className="text-[13px] leading-relaxed text-foreground/75">
-            At your current assumptions, <strong>{mostWealth.label}</strong> wins on both counts — it has the
-            lowest lifetime tax <em>and</em> leaves the most after-tax money. The plans diverge more as
+            At your current assumptions, <strong>{mostWealth.label}</strong>{" "}wins on both counts — it has the
+            lowest lifetime tax <em>and</em>{" "}leaves the most after-tax money. The plans diverge more as
             spending, returns, or your pre-tax balance grow, so it&apos;s worth re-checking if those change.
           </p>
         )}
@@ -277,8 +277,8 @@ export default function ScenariosPage() {
       {irmaaWorthPaying && (
         <Callout tone="good" icon="🟢" title="Don't sweat the IRMAA cliff here">
           The plan that leaves you the most money (<strong>{mostWealth.label}</strong>) does cross into Medicare
-          IRMAA territory — about <strong>{money(mostWealth.lifetimeIrmaa)}</strong> in lifetime surcharges, more
-          than the lowest-IRMAA plan ({money(lowestIrmaa.lifetimeIrmaa)}). Yet it <em>still</em> ends with the most
+          IRMAA territory — about <strong>{money(mostWealth.lifetimeIrmaa)}</strong>{" "}in lifetime surcharges, more
+          than the lowest-IRMAA plan ({money(lowestIrmaa.lifetimeIrmaa)}). Yet it <em>still</em>{" "}ends with the most
           after-tax wealth. So in your case, contorting the plan to dodge IRMAA would cost you more than the
           surcharge itself. If the goal is the biggest nest egg, let it cross.
           <div className="mt-2">

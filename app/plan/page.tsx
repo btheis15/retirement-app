@@ -139,14 +139,14 @@ export default function PlanPage() {
         {coveredByIncome ? (
           <>
             Good news — your Social Security, pension and dividends already cover your{" "}
-            <strong>{money(plan.spendingTarget)}</strong> of spending this year. You don&apos;t need to
+            <strong>{money(plan.spendingTarget)}</strong>{" "}of spending this year. You don&apos;t need to
             pull from any account{plan.rmd > 0.5 ? " beyond the required RMD below" : ""}.
           </>
         ) : (
           <>
-            To spend <strong>{money(plan.spendingTarget)}</strong> after tax this year, withdraw about{" "}
-            <strong>{money(totalDraw)}</strong> total from your accounts (the steps below), and set aside
-            roughly <strong>{money(plan.tax.totalTax)}</strong> for federal tax.
+            To spend <strong>{money(plan.spendingTarget)}</strong>{" "}after tax this year, withdraw about{" "}
+            <strong>{money(totalDraw)}</strong>{" "}total from your accounts (the steps below), and set aside
+            roughly <strong>{money(plan.tax.totalTax)}</strong>{" "}for federal tax.
           </>
         )}
       </Callout>
@@ -258,8 +258,8 @@ export default function PlanPage() {
         )}
 
         <div className="mt-4 border-t border-border pt-3 text-[13px] text-foreground/80">
-          <strong>Bottom line:</strong> you keep <strong>{money(plan.spendingTarget)}</strong> to spend
-          after paying about <strong className="text-tax">{money(plan.tax.totalTax)}</strong> in federal
+          <strong>Bottom line:</strong>{" "}you keep <strong>{money(plan.spendingTarget)}</strong>{" "}to spend
+          after paying about <strong className="text-tax">{money(plan.tax.totalTax)}</strong>{" "}in federal
           tax — that&apos;s {percent(plan.tax.effectiveRate)} of your total income for the year.
         </div>
       </Card>
@@ -267,9 +267,9 @@ export default function PlanPage() {
       <Info q="Why this order? (pre-tax → brokerage → Roth)" sources={[SOURCES.rmd, SOURCES.rothNoRmd, SOURCES.capGains]}>
         <p className="mb-1.5">Your accounts fall into three tax &quot;buckets,&quot; and the bucket — not the brand — sets the order:</p>
         <ul className="space-y-1">
-          <li><strong className="text-deferred">Pre-tax</strong> (Traditional IRA / 401k): never taxed yet, so every dollar out is ordinary income. The IRS forces minimum withdrawals (RMDs) starting at 73–75.</li>
-          <li><strong className="text-taxable">Brokerage</strong> (taxable): only the <em>gain</em> is taxed, usually at the lower capital-gains rate. No forced withdrawals.</li>
-          <li><strong className="text-roth">Roth</strong>: already taxed, so it comes out tax-free and is <em>never</em> forced out — which is why it&apos;s spent last.</li>
+          <li><strong className="text-deferred">Pre-tax</strong>{" "}(Traditional IRA / 401k): never taxed yet, so every dollar out is ordinary income. The IRS forces minimum withdrawals (RMDs) starting at 73–75.</li>
+          <li><strong className="text-taxable">Brokerage</strong>{" "}(taxable): only the <em>gain</em>{" "}is taxed, usually at the lower capital-gains rate. No forced withdrawals.</li>
+          <li><strong className="text-roth">Roth</strong>: already taxed, so it comes out tax-free and is <em>never</em>{" "}forced out — which is why it&apos;s spent last.</li>
         </ul>
       </Info>
 
@@ -298,7 +298,7 @@ export default function PlanPage() {
       {/* ---------- Tax bill ---------- */}
       <SectionTitle>What you&apos;ll owe in tax</SectionTitle>
       <Explainer>
-        Your <em>effective</em> rate is your average across all income. Your <em>marginal</em> rate is what
+        Your <em>effective</em>{" "}rate is your average across all income. Your <em>marginal</em>{" "}rate is what
         the very next dollar would be taxed at.
       </Explainer>
       <Card>
@@ -318,10 +318,10 @@ export default function PlanPage() {
           <Pill tone={plan.tax.irmaa.perPerson > 0 ? "tax" : "gain"}>{plan.tax.irmaa.label}</Pill>
         </div>
         <Info q="Effective vs. marginal rate — what's the difference?" sources={[SOURCES.brackets2026]}>
-          Tax brackets are tiers, so not every dollar is taxed the same. Your <strong>effective rate</strong> is
-          the average across <em>all</em> your income ({percent(plan.tax.effectiveRate)} here) — the most honest
-          measure of your tax burden. Your <strong>marginal rate</strong> ({percent(plan.tax.marginalOrdinaryRate, 0)})
-          is what only the <em>next</em> dollar of ordinary income would be taxed at. Aiming for a low effective
+          Tax brackets are tiers, so not every dollar is taxed the same. Your <strong>effective rate</strong>{" "}is
+          the average across <em>all</em>{" "}your income ({percent(plan.tax.effectiveRate)} here) — the most honest
+          measure of your tax burden. Your <strong>marginal rate</strong>{" "}({percent(plan.tax.marginalOrdinaryRate, 0)})
+          is what only the <em>next</em>{" "}dollar of ordinary income would be taxed at. Aiming for a low effective
           rate over your lifetime is the real goal.
         </Info>
         <Info q="What do these colored tags mean?" sources={[SOURCES.ssTax, SOURCES.capGains, SOURCES.niit, SOURCES.irmaa]}>
@@ -334,11 +334,11 @@ export default function PlanPage() {
         </Info>
         {plan.tax.irmaa.perPerson > 0 && (
           <Info q="Should I be afraid of this IRMAA surcharge?" sources={[SOURCES.irmaa]}>
-            You&apos;re in an IRMAA tier — about <strong>{money(plan.tax.irmaa.householdAnnual)}/yr</strong> in extra
+            You&apos;re in an IRMAA tier — about <strong>{money(plan.tax.irmaa.householdAnnual)}/yr</strong>{" "}in extra
             Medicare premiums for the couple, two years out. It feels scary because it&apos;s a cliff, but it&apos;s a
             relatively small, fixed cost. Avoiding it is only worth it if dodging income now doesn&apos;t cost you more
             in growth or bigger forced taxes later. If your goal is the biggest nest egg, check the{" "}
-            <strong>Compare</strong> tab — if the higher-income plan still ends with more after-tax money, the surcharge
+            <strong>Compare</strong>{" "}tab — if the higher-income plan still ends with more after-tax money, the surcharge
             is worth paying and you shouldn&apos;t contort your plan to avoid it.
           </Info>
         )}
@@ -427,7 +427,7 @@ export default function PlanPage() {
       {/* ---------- Strategy controls (explained) ---------- */}
       <SectionTitle>Change the strategy</SectionTitle>
       <Explainer>
-        A &quot;strategy&quot; is just the <em>order</em> we pull money from your accounts — it&apos;s a method, not a
+        A &quot;strategy&quot; is just the <em>order</em>{" "}we pull money from your accounts — it&apos;s a method, not a
         dollar amount or a tax rate. Smart is recommended.
       </Explainer>
       <Card>
@@ -449,18 +449,18 @@ export default function PlanPage() {
 
         <Info q="What does &quot;Smart (bracket-fill)&quot; actually mean?" sources={[SOURCES.brackets2026, SOURCES.rmd, SOURCES.rothConversion]}>
           <p className="mb-1.5">
-            It&apos;s a <strong>method for choosing which accounts to draw from</strong> — not a number, a total,
+            It&apos;s a <strong>method for choosing which accounts to draw from</strong>{" "}— not a number, a total,
             or a tax rate. Each year it:
           </p>
           <ol className="ml-4 list-decimal space-y-1">
-            <li>Takes any <strong>required</strong> withdrawal (RMD) first.</li>
-            <li>Then <strong>tops up</strong> with pre-tax dollars only until you reach the top of a low tax bracket you choose (e.g. 22%).</li>
+            <li>Takes any <strong>required</strong>{" "}withdrawal (RMD) first.</li>
+            <li>Then <strong>tops up</strong>{" "}with pre-tax dollars only until you reach the top of a low tax bracket you choose (e.g. 22%).</li>
             <li>Covers the rest from your brokerage.</li>
             <li>Leaves tax-free Roth for last.</li>
           </ol>
           <p className="mt-1.5">
-            The point: deliberately pay a little tax now at a <em>low</em> rate so you don&apos;t get hit with
-            large, highly-taxed forced withdrawals later. It usually produces the lowest <em>lifetime</em> tax —
+            The point: deliberately pay a little tax now at a <em>low</em>{" "}rate so you don&apos;t get hit with
+            large, highly-taxed forced withdrawals later. It usually produces the lowest <em>lifetime</em>{" "}tax —
             which the Scenarios page lets you verify against the alternatives.
           </p>
         </Info>
@@ -470,7 +470,7 @@ export default function PlanPage() {
             <div className="text-[13px] font-semibold">Fill pre-tax up to this tax bracket</div>
             <p className="mt-1 text-[12px] leading-relaxed text-foreground/60">
               Your income is taxed in tiers called brackets. This control sets the <strong>highest rate
-              you&apos;re willing to pay</strong> to voluntarily pull extra pre-tax money now. We add pre-tax
+              you&apos;re willing to pay</strong>{" "}to voluntarily pull extra pre-tax money now. We add pre-tax
               withdrawals until your taxable income reaches the top of the bracket you pick, then stop and use
               other accounts. Pick a higher bracket to move more out now (more tax today, smaller forced
               withdrawals later). <strong>This is not your overall tax rate.</strong>
@@ -494,21 +494,21 @@ export default function PlanPage() {
               ))}
             </div>
             <p className="mt-2 text-[11px] text-foreground/55">
-              Filling to <strong>{percent(settings.bracketTarget, 0)}</strong> means we keep pulling pre-tax
+              Filling to <strong>{percent(settings.bracketTarget, 0)}</strong>{" "}means we keep pulling pre-tax
               dollars until your taxable income reaches about{" "}
               <strong>{money(ordinaryBracketCeiling(settings.bracketTarget))}</strong>, then switch to other
               accounts.
             </p>
             <Info q="Show me an example of what this does" sources={[SOURCES.brackets2026, SOURCES.rothConversion]}>
               <p className="mb-1.5">
-                Say your other income leaves room in the 12% bracket. Picking <strong>12%</strong> tells the
+                Say your other income leaves room in the 12% bracket. Picking <strong>12%</strong>{" "}tells the
                 planner: &quot;pull pre-tax money until I&apos;ve used up the 12% bracket, then stop.&quot; Those
                 dollars are taxed at just 12%.
               </p>
               <p>
-                Pick <strong>24%</strong> instead and it pulls more pre-tax now — taxed up to 24% today, but it
+                Pick <strong>24%</strong>{" "}instead and it pulls more pre-tax now — taxed up to 24% today, but it
                 shrinks the pre-tax balance that would later be force-withdrawn (RMDs) and possibly taxed even
-                higher. So the cards aren&apos;t your tax rate — they&apos;re the <em>ceiling</em> you let
+                higher. So the cards aren&apos;t your tax rate — they&apos;re the <em>ceiling</em>{" "}you let
                 voluntary pre-tax withdrawals reach. Higher = more out now, less forced out later.
               </p>
             </Info>
@@ -684,9 +684,9 @@ function SsTiming({
 
       {anyBenefit && (
         <Callout tone="good" icon="❤️" title="The couple angle: survivor benefit">
-          When one of you passes, the survivor keeps only the <strong>larger</strong> of your two Social Security checks —
+          When one of you passes, the survivor keeps only the <strong>larger</strong>{" "}of your two Social Security checks —
           the smaller one stops. So delaying the higher earner&apos;s claim ({higher.label}) permanently raises the
-          benefit that lasts as long as <em>either</em> of you lives. With both of you near the same age, that survivor
+          benefit that lasts as long as <em>either</em>{" "}of you lives. With both of you near the same age, that survivor
           protection is often the strongest reason for the higher earner to wait.
           <div className="mt-2">
             <a
