@@ -26,8 +26,16 @@ const KIND_OPTIONS: AccountKind[] = [
   "rollover_401k",
   "traditional_401k",
   "traditional_ira",
+  "traditional_403b",
+  "govt_457b",
+  "tsp_traditional",
+  "sep_ira",
+  "simple_ira",
+  "solo_401k",
   "roth_ira",
   "roth_401k",
+  "roth_403b",
+  "tsp_roth",
   "brokerage",
   "cash",
 ];
@@ -142,8 +150,21 @@ export default function AccountsPage() {
         <Field label="Pension / annuity (annual, fully taxable)" className="mt-2">
           <MoneyInput value={household.pensionAnnual} onChange={(v) => updateHousehold({ pensionAnnual: v })} />
         </Field>
-        <Field label="Brokerage dividends (annual, qualified)" className="mt-2">
+        <Field label="Dividends — qualified (annual)" className="mt-2">
           <MoneyInput value={household.brokerageDividendsAnnual} onChange={(v) => updateHousehold({ brokerageDividendsAnnual: v })} />
+        </Field>
+        <Field label="Dividends — ordinary / REIT (annual)" className="mt-2">
+          <MoneyInput value={household.ordinaryDividendsAnnual ?? 0} onChange={(v) => updateHousehold({ ordinaryDividendsAnnual: v })} />
+        </Field>
+        <Field label="Taxable interest — CDs / bonds / savings (annual)" className="mt-2">
+          <MoneyInput value={household.taxableInterestAnnual ?? 0} onChange={(v) => updateHousehold({ taxableInterestAnnual: v })} />
+        </Field>
+        <Field label="Tax-exempt (muni) interest (annual)" className="mt-2">
+          <MoneyInput value={household.taxExemptInterestAnnual ?? 0} onChange={(v) => updateHousehold({ taxExemptInterestAnnual: v })} />
+          <p className="mt-1 text-[11px] text-foreground/55">
+            Not federally taxed — but it still counts toward your Medicare (IRMAA) premiums and how much of your
+            Social Security is taxed.
+          </p>
         </Field>
       </Card>
 

@@ -37,9 +37,14 @@ export interface TaxInput {
   qualifiedDividends: number;
   /** Net long-term capital gains realized (preferential rates). */
   longTermGains: number;
-  /** Taxable interest already counted in otherOrdinaryIncome? No — pass the
-   *  interest portion separately here so NIIT can see it. Set 0 if none. */
+  /** Taxable interest (CDs/Treasuries/savings). Ordinary income + NIIT. Pass
+   *  separately (NOT folded into otherOrdinaryIncome) so it's added once here. */
   taxableInterest: number;
+  /** Ordinary / non-qualified dividends (REITs, bond funds). Ordinary income + NIIT. */
+  ordinaryDividends?: number;
+  /** Tax-exempt (municipal) interest — not taxed, but raises MAGI (IRMAA, NIIT
+   *  threshold, senior-deduction phaseout) and the SS provisional-income test. */
+  taxExemptInterest?: number;
   /** Number of spouses age 65+ (0, 1, or 2) — drives the extra deductions. */
   num65Plus: number;
 }
@@ -139,15 +144,20 @@ function irmaaFor(magi: number) {
 }
 
 export function computeTaxes(input: TaxInput): TaxResult {
-  const ordinaryGross = input.otherOrdinaryIncome + input.preTaxWithdrawals;
+  const ordinaryDividends = input.ordinaryDividends ?? 0;
+  const taxExemptInterest = input.taxExemptInterest ?? 0;
+  // Taxable interest and ordinary/REIT dividends are ordinary-rate income.
+  const ordinaryGross = input.otherOrdinaryIncome + input.preTaxWithdrawals + input.taxableInterest + ordinaryDividends;
   const preferential = Math.max(0, input.qualifiedDividends + input.longTermGains);
 
-  // SS taxability depends on all other income (ordinary + preferential).
-  const otherForSS = ordinaryGross + preferential;
+  // SS taxability uses all other income (ordinary + preferential) PLUS tax-exempt
+  // (muni) interest — the IRS provisional-income worksheet adds it back.
+  const otherForSS = ordinaryGross + preferential + taxExemptInterest;
   const taxableSS = taxableSocialSecurity(input.socialSecurity, otherForSS);
 
   const agi = ordinaryGross + preferential + taxableSS;
-  const magi = agi; // tax-exempt interest not modeled → MAGI ≈ AGI
+  // Muni interest isn't taxed but counts in MAGI for IRMAA / NIIT / senior phaseout.
+  const magi = agi + taxExemptInterest;
 
   // Deductions: base standard + extra-for-65 (per spouse) + senior bonus.
   const deductions =
@@ -171,7 +181,9 @@ export function computeTaxes(input: TaxInput): TaxResult {
   const capitalGainsTax = Math.max(0, capStackTop - capStackBottom);
 
   // NIIT: 3.8% on the lesser of net investment income or MAGI over $250k.
-  const netInvestmentIncome = input.qualifiedDividends + input.longTermGains + input.taxableInterest;
+  // (Tax-exempt muni interest is NOT net investment income, but it does count in MAGI above.)
+  const netInvestmentIncome =
+    input.qualifiedDividends + input.longTermGains + input.taxableInterest + ordinaryDividends;
   const niit = NIIT_RATE * Math.max(0, Math.min(netInvestmentIncome, magi - NIIT_THRESHOLD_MFJ));
 
   const totalTax = ordinaryTax + capitalGainsTax + niit;
