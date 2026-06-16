@@ -177,6 +177,31 @@ const TOPICS: Topic[] = [
     ],
     sources: [SOURCES.ssTax, SOURCES.irmaa],
   },
+  {
+    icon: "⚖️",
+    title: "Sales pitches & myths — a neutral take",
+    body: [
+      "Not everything an advisor recommends is wrong — but some products are sold because they pay the advisor a commission, not because they're best for you. A few honest guidelines from a neutral corner:",
+      "How your advisor is paid matters most. A fee-only fiduciary (paid a flat or hourly fee and legally required to act in your interest) has far fewer conflicts than someone earning commissions on what they sell. Fair question to ask anyone: 'Are you a fiduciary, and exactly how are you paid?'",
+      "Fees compound against you. A 1%/yr advisory fee on top of a 0.7% fund can quietly eat a quarter to a third of your nest egg over a retirement. Low-cost index funds beat most actively managed funds, after fees, over time — 'we'll beat the market' is a sales story, not a plan.",
+      "Complexity usually benefits the seller. Non-traded REITs, structured notes, and 'private' or 'exclusive' products tend to be illiquid and high-fee; the simple version — broad index funds plus a sensible, tax-smart withdrawal plan (what this tool does) — usually wins.",
+      "Cash-value life insurance (whole life, indexed universal life) is often pitched as 'tax-free retirement income.' It can fit a specific estate or insurance NEED, but for most retirees the high costs and big commissions make it a poor substitute for maxing Roth/HSA and investing the difference. Be especially wary if you have no actual need for life insurance.",
+      "Buying a second/summer home 'for the tax break' — see the card above; for a home you use yourself, that break mostly isn't real.",
+      "None of this means avoid advisors — a good fee-only fiduciary is genuinely worth it. It means always understand WHY something is being recommended, and what it costs you versus the simple alternative.",
+    ],
+    sources: [SOURCES.fiduciary, SOURCES.fees],
+  },
+  {
+    icon: "🛟",
+    title: "Annuities — useful tool, or sales product?",
+    body: [
+      "Annuities are the most commission-heavy thing advisors sell, so they're worth understanding. The honest split:",
+      "Can genuinely help: a plain immediate annuity (SPIA), or a deferred-income annuity / QLAC, turns a slice of savings into a guaranteed lifetime check — real 'longevity insurance' if you're worried about outliving your money or want a spending floor on top of Social Security. Low-cost and simple for the right person.",
+      "Often oversold: variable and indexed annuities are complex, carry high annual fees and multi-year surrender charges, and pay large commissions. The 'tax-deferred growth' pitch rarely beats simply using your IRA/401(k)/Roth, and the headline 'guarantees' come with caps and costs that are easy to misunderstand.",
+      "Questions to ask before buying any annuity: What's the all-in annual cost? How long is the surrender period? What commission is paid? Could a low-cost SPIA — or just my own portfolio with a smart withdrawal plan — do this more cheaply? This app already treats a pension/annuity as guaranteed income, so you can enter the income one would add and see how it changes the plan.",
+    ],
+    sources: [SOURCES.annuitiesSEC],
+  },
 ];
 
 export default function LearnPage() {
