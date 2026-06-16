@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- full-bleed teal square; platforms (iOS / Android maskable) apply their own corner mask -->
+  <rect width="512" height="512" fill="#0d4f4a"/>
+  <!-- gold growth arc -->
+  <path d="M112 360 L208 264 L288 320 L400 176" fill="none" stroke="#b1791f" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="400" cy="176" r="26" fill="#b1791f"/>
+  <!-- shield base line -->
+  <rect x="104" y="392" width="304" height="22" rx="11" fill="#ffffff" opacity="0.85"/>
+</svg>
