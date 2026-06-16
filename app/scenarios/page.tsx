@@ -1,12 +1,14 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useStore } from "@/components/HouseholdProvider";
 import { Card, PageTitle, SectionTitle, Pill, Disclaimer, Callout, Explainer, Info } from "@/components/ui";
 import { CompareBars } from "@/components/charts";
 import { projectLifetime } from "@/lib/projection";
 import { StrategyId, BracketTarget } from "@/lib/optimizer";
+import { returnModel } from "@/lib/returns";
+import { ReturnMethodInfo } from "@/components/ReturnMethodInfo";
 import { money, moneyCompact, percent } from "@/lib/format";
 import { HEX } from "@/lib/palette";
 import { SOURCES } from "@/lib/sources";
@@ -50,14 +52,25 @@ const PLANS: PlanDef[] = [
   },
 ];
 
-const RETURNS = [
-  { id: "cons", label: "Conservative", rate: 0.035 },
-  { id: "mod", label: "Moderate", rate: 0.05 },
-  { id: "opt", label: "Optimistic", rate: 0.07 },
-] as const;
-
 export default function ScenariosPage() {
   const { ready, household, settings, updateSettings } = useStore();
+
+  const rm = useMemo(() => returnModel(household.accounts), [JSON.stringify(household.accounts)]);
+  const RETURNS = useMemo(
+    () => [
+      { id: "cons", label: "Conservative", rate: rm.conservative },
+      { id: "mod", label: "Moderate", rate: rm.expected },
+      { id: "opt", label: "Optimistic", rate: rm.optimistic },
+    ],
+    [rm],
+  );
+
+  useEffect(() => {
+    if (!ready) return;
+    const matches = RETURNS.some((s) => Math.abs(s.rate - settings.returnRate) < 0.0025);
+    if (!matches) updateSettings({ returnRate: rm.expected });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, rm.expected, rm.conservative, rm.optimistic]);
 
   const scn = useMemo(() => {
     const base = {
@@ -68,11 +81,13 @@ export default function ScenariosPage() {
     return PLANS.map((p) => {
       const r = projectLifetime(household, { ...base, strategy: p.strategy, bracketTarget: p.bracketTarget });
       const gross = r.rows.reduce((s, row) => s + row.netCash + row.tax, 0);
+      const lifetimeIrmaa = r.rows.reduce((s, row) => s + row.irmaa, 0);
       return {
         ...p,
         lifetimeTax: r.lifetimeTax,
         taxPct: gross > 0 ? r.lifetimeTax / gross : 0,
         netWealth: r.endingEstateAfterTax,
+        lifetimeIrmaa,
         depleted: r.depleted,
       };
     });
@@ -82,9 +97,14 @@ export default function ScenariosPage() {
 
   const mostWealth = scn.reduce((a, b) => (b.netWealth > a.netWealth ? b : a));
   const lowestTax = scn.reduce((a, b) => (b.lifetimeTax < a.lifetimeTax ? b : a));
+  const lowestIrmaa = scn.reduce((a, b) => (b.lifetimeIrmaa < a.lifetimeIrmaa ? b : a));
   const differ = mostWealth.id !== lowestTax.id;
   const wealthGap = mostWealth.netWealth - lowestTax.netWealth;
   const extraTax = mostWealth.lifetimeTax - lowestTax.lifetimeTax;
+  // "Don't fear IRMAA" only when the wealth-maximizing plan actually incurs more
+  // IRMAA than the lowest-IRMAA plan, yet still ends with the most money.
+  const irmaaWorthPaying =
+    mostWealth.lifetimeIrmaa > 1000 && mostWealth.lifetimeIrmaa > lowestIrmaa.lifetimeIrmaa + 500;
 
   const ranked = [...scn].sort((a, b) => b.netWealth - a.netWealth);
   const isActive = (p: PlanDef) =>
@@ -119,14 +139,14 @@ export default function ScenariosPage() {
       <SectionTitle hint={`spending ${moneyCompact(household.annualSpending)}/yr · to age ${settings.endAge}`}>
         Assumed yearly return
       </SectionTitle>
-      <Explainer>Returns matter as much as taxes. Bump this up and watch how every plan&apos;s ending wealth grows.</Explainer>
+      <Explainer>Returns matter as much as taxes. These are built from your holdings, not arbitrary numbers.</Explainer>
       <div className="flex gap-2">
         {RETURNS.map((s) => (
           <button
             key={s.id}
             onClick={() => updateSettings({ returnRate: s.rate })}
             className={`press flex-1 rounded-xl border py-2 text-center ${
-              Math.abs(settings.returnRate - s.rate) < 0.001 ? "border-primary bg-primary/10 text-primary" : "border-border"
+              Math.abs(settings.returnRate - s.rate) < 0.0025 ? "border-primary bg-primary/10 text-primary" : "border-border"
             }`}
           >
             <div className="text-[12px] font-semibold">{s.label}</div>
@@ -134,6 +154,11 @@ export default function ScenariosPage() {
           </button>
         ))}
       </div>
+      <p className="mt-1.5 text-[11px] text-foreground/55">
+        From your mix of {percent(rm.equityPct, 0)} stocks · {percent(rm.bondPct, 0)} bonds · {percent(rm.cashPct, 0)} cash
+        (stocks ~10%/yr long-term).
+      </p>
+      <ReturnMethodInfo rm={rm} />
 
       {/* Headline winner */}
       <SectionTitle>The bottom line</SectionTitle>
@@ -247,6 +272,22 @@ export default function ScenariosPage() {
           </p>
         )}
       </Card>
+
+      {/* IRMAA: only reassure when crossing it actually pays off */}
+      {irmaaWorthPaying && (
+        <Callout tone="good" icon="🟢" title="Don't sweat the IRMAA cliff here">
+          The plan that leaves you the most money (<strong>{mostWealth.label}</strong>) does cross into Medicare
+          IRMAA territory — about <strong>{money(mostWealth.lifetimeIrmaa)}</strong> in lifetime surcharges, more
+          than the lowest-IRMAA plan ({money(lowestIrmaa.lifetimeIrmaa)}). Yet it <em>still</em> ends with the most
+          after-tax wealth. So in your case, contorting the plan to dodge IRMAA would cost you more than the
+          surcharge itself. If the goal is the biggest nest egg, let it cross.
+          <div className="mt-2">
+            <a href={SOURCES.irmaa.url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-primary underline decoration-primary/30 underline-offset-2">
+              {SOURCES.irmaa.label} ↗
+            </a>
+          </div>
+        </Callout>
+      )}
 
       <Link
         href="/projection"

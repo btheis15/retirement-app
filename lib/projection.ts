@@ -35,6 +35,8 @@ export interface ProjectionRow {
   tax: number;
   taxableSS: number;
   marginalRate: number;
+  /** Annual household Medicare IRMAA surcharge triggered by this year's income. */
+  irmaa: number;
   netCash: number;
   spendingTarget: number;
   startBalances: { pretax: number; roth: number; taxable: number; total: number };
@@ -152,6 +154,7 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
       tax: plan.tax.totalTax,
       taxableSS: plan.tax.taxableSocialSecurity,
       marginalRate: plan.tax.marginalOrdinaryRate,
+      irmaa: plan.tax.irmaa.householdAnnual,
       netCash: plan.netCash,
       spendingTarget: plan.spendingTarget,
       startBalances,

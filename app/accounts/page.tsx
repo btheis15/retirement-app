@@ -14,6 +14,7 @@ import {
   holdingValue,
 } from "@/lib/accounts";
 import { rmdStartAge } from "@/lib/tax/constants";
+import { adjustedAnnualBenefit, fullRetirementAge } from "@/lib/socialSecurity";
 
 const KIND_OPTIONS: AccountKind[] = [
   "rollover_401k",
@@ -24,6 +25,13 @@ const KIND_OPTIONS: AccountKind[] = [
   "brokerage",
   "cash",
 ];
+
+/** Friendly age label, e.g. 67 → "67", 66.667 → "66 yr 8 mo". */
+function fmtAge(years: number): string {
+  const whole = Math.floor(years);
+  const months = Math.round((years - whole) * 12);
+  return months === 0 ? `${whole}` : `${whole} yr ${months} mo`;
+}
 
 export default function AccountsPage() {
   const { ready, mode, household, updateHousehold, upsertAccount, removeAccount, setMode, resetOwn } = useStore();
@@ -100,14 +108,16 @@ export default function AccountsPage() {
               RMDs begin at age {rmdStartAge(p.birthYear)} for {p.label || (who === "self" ? "you" : "your spouse")}{" "}
               (SECURE 2.0, based on birth year).
             </p>
-            <Field label="Social Security (monthly check, when claimed)" className="mt-2">
+            <Field label={`Social Security — full benefit (monthly, at age ${fmtAge(fullRetirementAge(p.birthYear))})`} className="mt-2">
               <MoneyInput
                 value={Math.round(p.socialSecurityAnnual / 12)}
                 onChange={(v) => updateHousehold({ [who]: { ...p, socialSecurityAnnual: v * 12 } } as never)}
               />
               <p className="mt-1 text-[11px] text-foreground/55">
-                Enter the monthly amount — that&apos;s how Social Security quotes it. ={" "}
-                <strong>{money(p.socialSecurityAnnual)}</strong>/year, which is what the planner uses.
+                Enter the monthly amount at your <strong>full retirement age</strong> (~{fmtAge(fullRetirementAge(p.birthYear))}) — SSA lists
+                this on your statement. We adjust it for the claim age above:{" "}
+                <strong>{money(adjustedAnnualBenefit(p.socialSecurityAnnual, p.birthYear, p.ssClaimAge))}</strong>/yr at age {p.ssClaimAge}.
+                Compare claim ages on the Plan tab.
               </p>
             </Field>
           </Card>
