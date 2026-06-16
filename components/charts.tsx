@@ -271,3 +271,69 @@ export function CompareBars({
     </div>
   );
 }
+
+/** A single-series value line (brokerage-style): gradient area + line, an
+ *  end dot marking "today", and min/max-aware scaling so movement is visible. */
+export function PriceLine({
+  points,
+  height = 180,
+  color = "var(--color-primary)",
+  format = (n) => moneyCompact(n),
+}: {
+  points: { date: string; value: number }[];
+  height?: number;
+  color?: string;
+  format?: (n: number) => string;
+}) {
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const t = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(t);
+  }, []);
+
+  const width = 340;
+  const padL = 4;
+  const padR = 4;
+  const padT = 8;
+  const padB = 18;
+  const n = points.length;
+  if (n < 2) return <div className="py-8 text-center text-[12px] text-foreground/45">Not enough price history yet.</div>;
+
+  const values = points.map((p) => p.value);
+  const minV = Math.min(...values);
+  const maxV = Math.max(...values);
+  const span = Math.max(1, maxV - minV);
+  const xAt = (i: number) => padL + (i / (n - 1)) * (width - padL - padR);
+  const yAt = (v: number) => padT + (1 - (v - minV) / span) * (height - padT - padB);
+
+  const linePts = points.map((p, i) => `${xAt(i)},${yAt(p.value)}`);
+  const linePath = `M ${linePts.join(" L ")}`;
+  const areaPath = `${linePath} L ${xAt(n - 1)},${height - padB} L ${xAt(0)},${height - padB} Z`;
+  const up = values[n - 1] >= values[0];
+  const stroke = color;
+  const gradId = "pl-grad";
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ opacity: shown ? 1 : 0, transition: "opacity 500ms ease" }}>
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={stroke} stopOpacity="0.22" />
+          <stop offset="100%" stopColor={stroke} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={areaPath} fill={`url(#${gradId})`} />
+      <path d={linePath} fill="none" stroke={stroke} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      {/* "today" marker */}
+      <circle cx={xAt(n - 1)} cy={yAt(values[n - 1])} r="3.5" fill={stroke} />
+      <text x={width - padR} y={12} fontSize="9" fill={stroke} textAnchor="end" opacity={up ? 0.9 : 0.5}>
+        today
+      </text>
+      <text x={padL} y={height - 5} fontSize="9" fill="var(--color-foreground)" opacity="0.45">
+        {points[0].date}
+      </text>
+      <text x={width - padR} y={height - 5} fontSize="9" fill="var(--color-foreground)" opacity="0.45" textAnchor="end">
+        {format(maxV)} high
+      </text>
+    </svg>
+  );
+}

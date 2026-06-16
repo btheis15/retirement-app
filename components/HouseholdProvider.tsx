@@ -7,7 +7,7 @@
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { Account, Household } from "@/lib/accounts";
+import { Account, Household, syncAccountFromHoldings } from "@/lib/accounts";
 import { demoHousehold } from "@/lib/demo";
 import { emptyHousehold, DEFAULT_SETTINGS, PlannerSettings } from "@/lib/defaults";
 
@@ -25,6 +25,10 @@ interface Store {
   removeAccount: (id: string) => void;
   updateSettings: (patch: Partial<PlannerSettings>) => void;
   resetOwn: () => void;
+  /** Apply fresh per-symbol prices to your own holdings (re-values balances).
+   *  No-op in demo mode so the example stays fixed; only ticker symbols were
+   *  ever sent to fetch these — never amounts. */
+  applyLivePrices: (priceBySymbol: Record<string, number>) => void;
 }
 
 const KEY_MODE = "rto-mode";
@@ -138,6 +142,38 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     persistOwn(emptyHousehold());
   }, [persistOwn]);
 
+  const applyLivePrices = useCallback(
+    (prices: Record<string, number>) => {
+      if (mode !== "own") return; // never mutate the static demo
+      setOwnHousehold((prev) => {
+        let changed = false;
+        const accounts = prev.accounts.map((a) => {
+          if (!a.holdings || a.holdings.length === 0) return a;
+          let accChanged = false;
+          const holdings = a.holdings.map((h) => {
+            const p = prices[h.ticker?.toUpperCase()];
+            if (p != null && p > 0 && Math.abs((h.price ?? 0) - p) > 1e-6) {
+              accChanged = true;
+              changed = true;
+              return { ...h, price: p };
+            }
+            return h;
+          });
+          return accChanged ? syncAccountFromHoldings({ ...a, holdings }) : a;
+        });
+        if (!changed) return prev;
+        const next = { ...prev, accounts };
+        try {
+          localStorage.setItem(KEY_OWN, JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+    },
+    [mode],
+  );
+
   const value = useMemo<Store>(
     () => ({
       ready,
@@ -151,8 +187,9 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       removeAccount,
       updateSettings,
       resetOwn,
+      applyLivePrices,
     }),
-    [ready, mode, household, settings, setMode, updateHousehold, setAccounts, upsertAccount, removeAccount, updateSettings, resetOwn],
+    [ready, mode, household, settings, setMode, updateHousehold, setAccounts, upsertAccount, removeAccount, updateSettings, resetOwn, applyLivePrices],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

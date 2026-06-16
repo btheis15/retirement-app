@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { useStore } from "@/components/HouseholdProvider";
 import { Card, PageTitle, Stat, StackedBar, Pill, Disclaimer, SectionTitle } from "@/components/ui";
 import { SpendingPowerCard } from "@/components/SpendingPowerCard";
+import { PortfolioCard } from "@/components/PortfolioCard";
 import { sumBuckets, ageInYear } from "@/lib/accounts";
 import { planYear, computeRmd } from "@/lib/optimizer";
 import { money, moneyCompact, percent } from "@/lib/format";
@@ -60,6 +61,9 @@ export default function HomePage() {
           </div>
         </div>
       </Card>
+
+      {/* Live portfolio value (shows once holdings with tickers exist) */}
+      <PortfolioCard />
 
       {/* Interactive spending power — same widget as the Forecast */}
       <SpendingPowerCard />
