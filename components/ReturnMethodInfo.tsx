@@ -15,7 +15,7 @@ export function ReturnMethodInfo({ rm }: { rm: ReturnModel }) {
       </p>
       <ul className="space-y-1">
         <li>
-          <strong>Stocks, ETFs & stock funds: ~10%/yr</strong> — the long-run U.S. large-cap average with
+          <strong>Stocks, ETFs & stock funds: ~10%/yr</strong>{" "}— the long-run U.S. large-cap average with
           dividends reinvested.
         </li>
         <li>
@@ -27,16 +27,16 @@ export function ReturnMethodInfo({ rm }: { rm: ReturnModel }) {
       </ul>
       <p className="mt-1.5">
         Your mix is {percent(rm.equityPct, 0)} stocks · {percent(rm.bondPct, 0)} bonds · {percent(rm.cashPct, 0)} cash,
-        which blends to about <strong>{percent(rm.expected, 1)}/yr</strong> — that&apos;s the <strong>Moderate</strong>{" "}
-        card. <strong>Conservative</strong> ({percent(rm.conservative, 1)}) is that minus ~3.5 points, to stand in for a
-        weak decade or a rough run of early-retirement returns. <strong>Optimistic</strong> ({percent(rm.optimistic, 1)})
+        which blends to about <strong>{percent(rm.expected, 1)}/yr</strong>{" "}— that&apos;s the <strong>Moderate</strong>{" "}
+        card. <strong>Conservative</strong>{" "}({percent(rm.conservative, 1)}) is that minus ~3.5 points, to stand in for a
+        weak decade or a rough run of early-retirement returns. <strong>Optimistic</strong>{" "}({percent(rm.optimistic, 1)})
         adds ~2.5 points for a strong market.
         {rm.basis !== "holdings" &&
           " Accounts with only a balance (no itemized holdings) are assumed to be a 70/25/5 stock/bond/cash mix — add holdings on the Accounts tab to sharpen this."}
       </p>
       <p className="mt-1.5">
-        These are long-run averages <em>before</em> inflation; real years swing far above and below, and the{" "}
-        <em>order</em> of returns matters in retirement — so leave yourself a cushion.
+        These are long-run averages <em>before</em>{" "}inflation; real years swing far above and below, and the{" "}
+        <em>order</em>{" "}of returns matters in retirement — so leave yourself a cushion.
       </p>
     </Info>
   );

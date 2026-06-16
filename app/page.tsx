@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { useStore } from "@/components/HouseholdProvider";
 import { Card, PageTitle, Stat, StackedBar, Pill, Disclaimer, SectionTitle } from "@/components/ui";
+import { SpendingPowerCard } from "@/components/SpendingPowerCard";
 import { sumBuckets, ageInYear } from "@/lib/accounts";
 import { planYear, computeRmd } from "@/lib/optimizer";
 import { money, moneyCompact, percent } from "@/lib/format";
@@ -60,12 +61,15 @@ export default function HomePage() {
         </div>
       </Card>
 
+      {/* Interactive spending power — same widget as the Forecast */}
+      <SpendingPowerCard />
+
       {/* This year's headline recommendation */}
       <SectionTitle hint={`tax year ${year}`}>This year&apos;s plan</SectionTitle>
       <Card>
         <p className="text-sm text-foreground/70">
-          To spend <strong>{money(household.annualSpending)}</strong> after tax this year, the{" "}
-          <strong>{settings.strategy === "smart" ? "smart bracket-fill" : settings.strategy}</strong> plan pulls:
+          To spend <strong>{money(household.annualSpending)}</strong>{" "}after tax this year, the{" "}
+          <strong>{settings.strategy === "smart" ? "smart bracket-fill" : settings.strategy}</strong>{" "}plan pulls:
         </p>
         <div className="mt-3 grid grid-cols-3 gap-2">
           <DrawTile label="Pre-tax" amount={plan.withdrawals.pretax} tone="deferred" />
@@ -87,19 +91,19 @@ export default function HomePage() {
       <Card>
         {rmd.total > 0 ? (
           <p className="text-sm text-foreground/75">
-            You must take <strong className="text-deferred">{money(rmd.total)}</strong> out of pre-tax
+            You must take <strong className="text-deferred">{money(rmd.total)}</strong>{" "}out of pre-tax
             accounts this year. RMDs are mandatory and taxed as ordinary income — the planner takes
             them first.
           </p>
         ) : (
           <p className="text-sm text-foreground/75">
-            No RMDs required yet. They begin at age <strong>{selfRmdAge}</strong> for{" "}
-            {household.self.label} and <strong>{spouseRmdAge}</strong> for {household.spouse.label}{" "}
+            No RMDs required yet. They begin at age <strong>{selfRmdAge}</strong>{" "}for{" "}
+            {household.self.label} and <strong>{spouseRmdAge}</strong>{" "}for {household.spouse.label}{" "}
             (SECURE 2.0).
           </p>
         )}
         <p className="mt-2 text-[12px] text-foreground/55">
-          🌱 Roth IRAs have <strong>no</strong> lifetime RMDs — you&apos;re never forced to drain
+          🌱 Roth IRAs have <strong>no</strong>{" "}lifetime RMDs — you&apos;re never forced to drain
           them, which is why they&apos;re spent last.
         </p>
       </Card>

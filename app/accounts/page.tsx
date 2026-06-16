@@ -114,7 +114,7 @@ export default function AccountsPage() {
                 onChange={(v) => updateHousehold({ [who]: { ...p, socialSecurityAnnual: v * 12 } } as never)}
               />
               <p className="mt-1 text-[11px] text-foreground/55">
-                Enter the monthly amount at your <strong>full retirement age</strong> (~{fmtAge(fullRetirementAge(p.birthYear))}) — SSA lists
+                Enter the monthly amount at your <strong>full retirement age</strong>{" "}(~{fmtAge(fullRetirementAge(p.birthYear))}) — SSA lists
                 this on your statement. We adjust it for the claim age above:{" "}
                 <strong>{money(adjustedAnnualBenefit(p.socialSecurityAnnual, p.birthYear, p.ssClaimAge))}</strong>/yr at age {p.ssClaimAge}.
                 Compare claim ages on the Plan tab.
