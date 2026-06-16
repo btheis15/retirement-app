@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "@/components/HouseholdProvider";
 import { Card, PageTitle, SectionTitle, Pill, Disclaimer } from "@/components/ui";
 import { money, moneyCompact } from "@/lib/format";
@@ -9,12 +9,17 @@ import {
   AccountKind,
   ACCOUNT_KIND_META,
   HOLDING_TYPE_LABEL,
+  Holding,
+  HoldingType,
   bucketOf,
   sumBuckets,
   holdingValue,
+  syncAccountFromHoldings,
 } from "@/lib/accounts";
 import { rmdStartAge } from "@/lib/tax/constants";
 import { adjustedAnnualBenefit, fullRetirementAge } from "@/lib/socialSecurity";
+import { searchTickers, getSeries, latestPrices, assetTypeLabel, SearchResult } from "@/lib/prices";
+import { PortfolioCard } from "@/components/PortfolioCard";
 
 const KIND_OPTIONS: AccountKind[] = [
   "rollover_401k",
@@ -62,6 +67,9 @@ export default function AccountsPage() {
           </button>
         </Card>
       )}
+
+      {/* Live portfolio value (shows once you have holdings with tickers) */}
+      <PortfolioCard />
 
       {/* People */}
       <SectionTitle>Household (filing jointly)</SectionTitle>
@@ -278,11 +286,26 @@ function AccountEditor({
   const [draft, setDraft] = useState<Account>(account);
   const meta = ACCOUNT_KIND_META[draft.kind];
   const isTaxable = bucketOf(draft.kind) === "taxable";
+  const holdings = draft.holdings ?? [];
+  const hasHoldings = holdings.length > 0;
+  const cash = draft.kind === "cash";
+
+  // When holdings are present, the balance (and cost basis) come from them.
+  const setHoldings = (next: Holding[]) =>
+    setDraft((d) => syncAccountFromHoldings({ ...d, holdings: next }));
+
+  const save = () => {
+    const cleaned = hasHoldings ? syncAccountFromHoldings({ ...draft }) : { ...draft, holdings: undefined };
+    onSave({ ...cleaned, label: draft.label || meta.label });
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center">
       <div className="scrim-in absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="sheet-panel relative w-full max-w-md rounded-t-3xl border-t border-border bg-card p-5" style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}>
+      <div
+        className="sheet-panel relative max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-3xl border-t border-border bg-card p-5"
+        style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom))" }}
+      >
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-foreground/15" />
         <h2 className="text-lg font-semibold">{account.label ? "Edit account" : "Add account"}</h2>
 
@@ -321,30 +344,215 @@ function AccountEditor({
           </div>
         </Field>
 
-        <Field label="Balance" className="mt-3">
-          <MoneyInput value={draft.balance} onChange={(v) => setDraft({ ...draft, balance: v })} />
-        </Field>
-
-        {isTaxable && (
-          <Field label="Cost basis (what you paid)" className="mt-3">
-            <MoneyInput value={draft.costBasis ?? 0} onChange={(v) => setDraft({ ...draft, costBasis: v })} />
-            <p className="mt-1 text-[11px] text-foreground/55">
-              Balance − basis = unrealized gain, which is what gets taxed when you sell.
+        {/* Holdings (skip for plain cash/savings accounts) */}
+        {!cash && (
+          <div className="mt-4">
+            <div className="text-[12px] font-medium text-foreground/60">What do you own in this account?</div>
+            <p className="mt-0.5 text-[11px] text-foreground/55">
+              Add your stocks, ETFs, or funds and how many shares you have — we&apos;ll track the real prices for
+              you. Only the ticker symbol is ever looked up; your share counts and balances stay on your device.
             </p>
-          </Field>
+            <HoldingsEditor holdings={holdings} isTaxable={isTaxable} onChange={setHoldings} />
+          </div>
+        )}
+
+        {/* Manual balance fallback when not itemizing holdings */}
+        {!hasHoldings && (
+          <>
+            <Field label={cash ? "Balance" : "Or just enter a total balance"} className="mt-3">
+              <MoneyInput value={draft.balance} onChange={(v) => setDraft({ ...draft, balance: v })} />
+            </Field>
+            {isTaxable && (
+              <Field label="Cost basis (what you paid)" className="mt-3">
+                <MoneyInput value={draft.costBasis ?? 0} onChange={(v) => setDraft({ ...draft, costBasis: v })} />
+                <p className="mt-1 text-[11px] text-foreground/55">
+                  Balance − basis = unrealized gain, which is what gets taxed when you sell.
+                </p>
+              </Field>
+            )}
+          </>
+        )}
+
+        {hasHoldings && (
+          <div className="mt-3 flex items-center justify-between rounded-xl bg-primary/5 px-3 py-2 text-[13px]">
+            <span className="text-foreground/65">Account value (from holdings)</span>
+            <span className="tabular font-semibold text-primary">{money(draft.balance)}</span>
+          </div>
         )}
 
         <div className="mt-5 flex gap-2">
           <button onClick={onClose} className="press flex-1 rounded-xl border border-border py-3 text-sm font-medium">
             Cancel
           </button>
-          <button
-            onClick={() => onSave({ ...draft, label: draft.label || meta.label })}
-            className="press flex-1 rounded-xl bg-primary py-3 text-sm font-semibold text-white"
-          >
+          <button onClick={save} className="press flex-1 rounded-xl bg-primary py-3 text-sm font-semibold text-white">
             Save
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+const YAHOO_TO_HOLDING: Record<string, HoldingType> = {
+  EQUITY: "stock",
+  ETF: "etf",
+  MUTUALFUND: "mutual_fund",
+};
+
+/** Search-and-add holdings with live share valuation. */
+function HoldingsEditor({
+  holdings,
+  isTaxable,
+  onChange,
+}: {
+  holdings: Holding[];
+  isTaxable: boolean;
+  onChange: (next: Holding[]) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [adding, setAdding] = useState<string | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  // Debounced live search.
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 1) {
+      setResults([]);
+      return;
+    }
+    const ctrl = new AbortController();
+    setSearching(true);
+    const t = setTimeout(() => {
+      searchTickers(q, ctrl.signal)
+        .then((r) => setResults(r))
+        .finally(() => setSearching(false));
+    }, 250);
+    return () => {
+      clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [query]);
+
+  const add = async (r: SearchResult) => {
+    if (holdings.some((h) => h.ticker === r.symbol)) {
+      setQuery("");
+      setResults([]);
+      return;
+    }
+    setAdding(r.symbol);
+    let price = 0;
+    try {
+      const series = await getSeries([r.symbol], "1mo");
+      price = latestPrices(series)[r.symbol] ?? 0;
+    } catch {
+      /* leave price 0; user can still set shares */
+    }
+    const holding: Holding = {
+      ticker: r.symbol,
+      name: r.name,
+      type: YAHOO_TO_HOLDING[r.type.toUpperCase()] ?? "stock",
+      shares: 1,
+      price,
+      ...(isTaxable ? { costPerShare: price } : {}),
+    };
+    onChange([...holdings, holding]);
+    setAdding(null);
+    setQuery("");
+    setResults([]);
+  };
+
+  const update = (i: number, patch: Partial<Holding>) =>
+    onChange(holdings.map((h, j) => (j === i ? { ...h, ...patch } : h)));
+  const remove = (i: number) => onChange(holdings.filter((_, j) => j !== i));
+
+  const numFrom = (s: string) => Math.max(0, Number(s.replace(/[^0-9.]/g, "")) || 0);
+
+  return (
+    <div className="mt-2" ref={boxRef}>
+      {/* Existing holdings */}
+      {holdings.length > 0 && (
+        <div className="mb-2 space-y-2">
+          {holdings.map((h, i) => (
+            <div key={`${h.ticker}-${i}`} className="rounded-xl border border-border bg-background/60 p-2.5">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <span className="font-semibold">{h.ticker}</span>
+                  <span className="ml-1.5 text-[10px] uppercase text-foreground/40">{HOLDING_TYPE_LABEL[h.type]}</span>
+                  <div className="truncate text-[11px] text-foreground/55">{h.name}</div>
+                </div>
+                <button onClick={() => remove(i)} className="press shrink-0 text-[11px] text-tax/80">
+                  Remove
+                </button>
+              </div>
+              <div className="mt-2 flex items-end gap-2">
+                <label className="flex-1">
+                  <span className="mb-1 block text-[10px] text-foreground/55">Shares</span>
+                  <input
+                    className={`${INPUT} py-1.5 text-sm`}
+                    inputMode="decimal"
+                    value={h.shares || ""}
+                    onChange={(e) => update(i, { shares: numFrom(e.target.value) })}
+                  />
+                </label>
+                {isTaxable && (
+                  <label className="flex-1">
+                    <span className="mb-1 block text-[10px] text-foreground/55">Cost / share</span>
+                    <input
+                      className={`${INPUT} py-1.5 text-sm`}
+                      inputMode="decimal"
+                      value={h.costPerShare ?? ""}
+                      placeholder={h.price ? String(h.price) : ""}
+                      onChange={(e) => update(i, { costPerShare: numFrom(e.target.value) })}
+                    />
+                  </label>
+                )}
+                <div className="flex-1 text-right">
+                  <span className="mb-1 block text-[10px] text-foreground/55">Value</span>
+                  <span className="tabular text-sm font-semibold">
+                    {h.price ? money(holdingValue(h)) : "—"}
+                  </span>
+                </div>
+              </div>
+              {h.price > 0 && (
+                <div className="mt-1 text-[10px] text-foreground/45">{money(h.price, { cents: true })}/share · updates daily</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Search box */}
+      <div className="relative">
+        <input
+          className={INPUT}
+          value={query}
+          placeholder="Search a stock or fund — e.g. Apple, VTI, Vanguard…"
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {(results.length > 0 || searching) && query.trim().length > 0 && (
+          <div className="mt-1 max-h-64 overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
+            {searching && results.length === 0 && (
+              <div className="px-3 py-2 text-[12px] text-foreground/50">Searching…</div>
+            )}
+            {results.map((r) => (
+              <button
+                key={r.symbol}
+                onClick={() => add(r)}
+                disabled={adding === r.symbol}
+                className="press flex w-full items-center justify-between gap-2 border-b border-border/50 px-3 py-2 text-left last:border-0"
+              >
+                <span className="min-w-0">
+                  <span className="font-semibold">{r.symbol}</span>
+                  <span className="ml-1.5 text-[10px] uppercase text-foreground/40">{assetTypeLabel(r.type)}</span>
+                  <span className="block truncate text-[11px] text-foreground/55">{r.name}</span>
+                </span>
+                <span className="shrink-0 text-[11px] text-primary">{adding === r.symbol ? "Adding…" : "Add +"}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

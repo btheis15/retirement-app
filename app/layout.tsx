@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { TabBar } from "@/components/TabBar";
 import { HouseholdProvider } from "@/components/HouseholdProvider";
+import { PricesProvider } from "@/components/PricesProvider";
 import { ModeBanner } from "@/components/ModeBanner";
 
 export const metadata: Metadata = {
@@ -32,17 +33,19 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en" className="h-full">
       <body className="min-h-full text-foreground antialiased">
         <HouseholdProvider>
-          <main
-            className="page-enter mx-auto w-full max-w-md px-4"
-            style={{
-              paddingTop: "env(safe-area-inset-top)",
-              paddingBottom: "calc(6rem + env(safe-area-inset-bottom))",
-            }}
-          >
-            <ModeBanner />
-            {children}
-          </main>
-          <TabBar />
+          <PricesProvider>
+            <main
+              className="page-enter mx-auto w-full max-w-md px-4"
+              style={{
+                paddingTop: "env(safe-area-inset-top)",
+                paddingBottom: "calc(6rem + env(safe-area-inset-bottom))",
+              }}
+            >
+              <ModeBanner />
+              {children}
+            </main>
+            <TabBar />
+          </PricesProvider>
         </HouseholdProvider>
       </body>
     </html>
