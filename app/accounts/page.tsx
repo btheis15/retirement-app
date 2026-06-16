@@ -100,8 +100,15 @@ export default function AccountsPage() {
               RMDs begin at age {rmdStartAge(p.birthYear)} for {p.label || (who === "self" ? "you" : "your spouse")}{" "}
               (SECURE 2.0, based on birth year).
             </p>
-            <Field label="Social Security (annual, when claimed)" className="mt-2">
-              <MoneyInput value={p.socialSecurityAnnual} onChange={(v) => updateHousehold({ [who]: { ...p, socialSecurityAnnual: v } } as never)} />
+            <Field label="Social Security (monthly check, when claimed)" className="mt-2">
+              <MoneyInput
+                value={Math.round(p.socialSecurityAnnual / 12)}
+                onChange={(v) => updateHousehold({ [who]: { ...p, socialSecurityAnnual: v * 12 } } as never)}
+              />
+              <p className="mt-1 text-[11px] text-foreground/55">
+                Enter the monthly amount — that&apos;s how Social Security quotes it. ={" "}
+                <strong>{money(p.socialSecurityAnnual)}</strong>/year, which is what the planner uses.
+              </p>
             </Field>
           </Card>
         );
