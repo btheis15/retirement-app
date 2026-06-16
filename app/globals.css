@@ -1,0 +1,134 @@
+@import "tailwindcss";
+
+/* Retirement Tax Optimizer theme — LIGHT MODE ONLY.
+   A calm, trustworthy "private wealth" palette: deep slate-teal as the brand,
+   a muted gold accent for highlights/calls-to-action, on a warm near-white page.
+   Semantic money colors (gain green, tax red, deferred amber) carry meaning in
+   the planner.
+
+   Tokens drive Tailwind v4 utilities (bg-card, text-foreground, ring-border,
+   text-primary, text-accent). Change a color here, it flows through the app.
+
+   LIGHT MODE ONLY — no dark theme, no dark variants.
+   TRANSPARENCY RULE: translucent layers must stack LIGHT over the light bg —
+   use bg-card/95, bg-background/80, bg-primary/10. Never use a dark translucent
+   tint (bg-black/40, bg-zinc-800/50) as a card/panel background — it goes muddy
+   grey on light. A dark bg-black wash is fine only as a full-screen modal scrim. */
+@theme {
+  --color-background: #f4f6f7; /* cool warm-grey near-white */
+  --color-foreground: #0f1f24; /* deep slate near-black text */
+  --color-card: #ffffff; /* raised surfaces (solid white) */
+  --color-border: #e2e7e9; /* soft cool hairline borders */
+  --color-primary: #0d4f4a; /* deep slate-teal — the brand; white text passes */
+  --color-primary-soft: #0f6b63; /* a lighter teal for accents on dark teal */
+  --color-accent: #b1791f; /* muted gold — CTAs, highlights */
+
+  /* Semantic money palette — meaning, not decoration. */
+  --color-gain: #15803d; /* growth / tax-free / good */
+  --color-tax: #b3361f; /* tax owed / warnings */
+  --color-deferred: #b45309; /* pre-tax / "taxes lurking here" amber */
+  --color-roth: #6d28d9; /* tax-free Roth violet */
+  --color-taxable: #0e7490; /* brokerage / capital-gains teal-blue */
+  --color-ss: #1d4ed8; /* Social Security / pension blue */
+
+  --font-display: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Subtle light-mode ambient backdrop (never a dark wash): a faint teal glow up
+   top, a soft gold grounding at the bottom over a cool vertical wash. Rides on
+   `html` so cards stay crisp white on top. */
+html {
+  background-color: var(--color-background);
+  background-image:
+    radial-gradient(120% 75% at 50% -5%, rgba(13, 79, 74, 0.06), transparent 60%),
+    radial-gradient(125% 70% at 50% 108%, rgba(177, 121, 31, 0.08), transparent 60%),
+    linear-gradient(176deg, #f6f8f8 0%, #eef2f2 55%, #e8eded 100%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  min-height: 100%;
+  /* Slightly larger rem root so the whole app reads roomier — easier on older
+     eyes. The in-app Text-size control overrides this inline. */
+  font-size: 17px;
+}
+
+/* Body inherits the rem root (1rem) so a text-size override on <html> flows
+   through the app. Don't re-pin a px size here. */
+body {
+  font-size: 1rem;
+}
+
+html,
+body {
+  color: var(--color-foreground);
+  color-scheme: light;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Body transparent so the html ambient shows through. */
+body {
+  background: transparent;
+}
+
+/* Tabular figures for money columns so digits line up. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* ---------- Motion system: GPU-only (transform + opacity), iOS feel ---------- */
+@theme {
+  --ease-ios: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-ios-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-spring: cubic-bezier(0.34, 1.46, 0.64, 1);
+  --dur-page: 340ms;
+  --dur-sheet: 440ms;
+  --dur-tap: 140ms;
+}
+
+@keyframes ro-page-in {
+  from { opacity: 0; transform: translate3d(0, 8px, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes ro-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ro-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ro-scrim-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes ro-sheet-up { from { transform: translate3d(0, 100%, 0); } to { transform: translate3d(0, 0, 0); } }
+@keyframes ro-sheet-down { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(0, 100%, 0); } }
+@keyframes ro-rise {
+  from { opacity: 0; transform: translate3d(0, 10px, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@utility page-enter { animation: ro-page-in var(--dur-page) var(--ease-ios) backwards; }
+@utility scrim-in  { animation: ro-scrim-in 200ms ease-out both; }
+@utility scrim-out { animation: ro-scrim-out 200ms ease-in both; }
+@utility sheet-panel { animation: ro-sheet-up var(--dur-sheet) var(--ease-ios) both; will-change: transform; }
+@utility sheet-close { animation: ro-sheet-down var(--dur-sheet) var(--ease-ios-in) both; will-change: transform; }
+@utility rise {
+  animation: ro-rise 360ms var(--ease-ios) both;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+
+/* Tactile tap. Press DOWN quick; RELEASE springs back with a small overshoot. */
+@utility press {
+  transition: transform 240ms var(--ease-spring);
+  touch-action: manipulation;
+}
+.press:active {
+  transform: scale(0.97);
+  transition-duration: var(--dur-tap);
+  transition-timing-function: var(--ease-ios);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter, .sheet-panel, .sheet-close, .scrim-in, .scrim-out, .rise {
+    animation: ro-fade-in 1ms linear both;
+  }
+  .press { transition: none; }
+  .press:active { transform: none; }
+}

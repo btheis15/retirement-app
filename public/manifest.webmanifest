@@ -1,0 +1,12 @@
+{
+  "name": "Retirement Tax Optimizer",
+  "short_name": "Retire Tax",
+  "description": "Plan tax-efficient retirement withdrawals across all your accounts.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f6f7",
+  "theme_color": "#0d4f4a",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
