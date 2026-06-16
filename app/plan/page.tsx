@@ -62,11 +62,14 @@ export default function PlanPage() {
 
   // What funds this year's spending (Social Security shown explicitly).
   const ssNow = plan.fixed.socialSecurity;
-  const guaranteed = ssNow + plan.fixed.pension + plan.fixed.dividends;
+  const interestIncome = plan.fixed.taxableInterest + plan.fixed.taxExemptInterest;
+  const allDividends = plan.fixed.dividends + plan.fixed.ordinaryDividends;
+  const guaranteed = ssNow + plan.fixed.pension + allDividends + interestIncome;
   const fundingSegs = [
     { value: ssNow, className: "bg-ss", label: "Social Security" },
     { value: plan.fixed.pension, className: "bg-primary", label: "Pension" },
-    { value: plan.fixed.dividends, className: "bg-gain", label: "Dividends" },
+    { value: allDividends, className: "bg-gain", label: "Dividends" },
+    { value: interestIncome, className: "bg-roth", label: "Interest" },
     { value: totalDraw, className: "bg-taxable", label: "Withdrawals" },
   ].filter((s) => s.value > 0.5);
   const ssPending = (["self", "spouse"] as const)
@@ -88,7 +91,8 @@ export default function PlanPage() {
   const incomeSegments = [
     { label: "Social Security", value: plan.fixed.socialSecurity, color: HEX.ss },
     { label: "Pension", value: plan.fixed.pension, color: HEX.primary },
-    { label: "Dividends", value: plan.fixed.dividends, color: HEX.gain },
+    { label: "Dividends", value: allDividends, color: HEX.gain },
+    { label: "Interest", value: interestIncome, color: HEX.roth },
     { label: "Pre-tax withdrawals", value: w.pretax, color: HEX.deferred },
     { label: "Brokerage", value: w.taxable, color: HEX.taxable },
     { label: "Roth (tax-free)", value: w.roth, color: HEX.roth },
@@ -172,7 +176,7 @@ export default function PlanPage() {
         )}
         <div className="mt-3 space-y-1 border-t border-border pt-3 text-[13px]">
           <div className="flex justify-between">
-            <span className="text-foreground/65">Guaranteed income (SS + pension + dividends)</span>
+            <span className="text-foreground/65">Guaranteed income (SS, pension, dividends, interest)</span>
             <span className="tabular font-medium text-ss">{money(guaranteed)}</span>
           </div>
           <div className="flex justify-between">

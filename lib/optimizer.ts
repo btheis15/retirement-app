@@ -88,7 +88,10 @@ interface YearContext {
   year: number;
   pension: number;
   socialSecurity: number;
-  dividends: number;
+  dividends: number; // qualified
+  ordinaryDividends: number;
+  taxableInterest: number;
+  taxExemptInterest: number;
   num65Plus: number;
   gainFraction: number; // unrealized-gain share of a taxable withdrawal
   balances: { pretax: number; roth: number; taxable: number };
@@ -103,11 +106,15 @@ function evaluate(ctx: YearContext, draws: Draws): { tax: TaxResult; grossInflow
     socialSecurity: ctx.socialSecurity,
     qualifiedDividends: ctx.dividends,
     longTermGains,
-    taxableInterest: 0,
+    taxableInterest: ctx.taxableInterest,
+    ordinaryDividends: ctx.ordinaryDividends,
+    taxExemptInterest: ctx.taxExemptInterest,
     num65Plus: ctx.num65Plus,
   });
-  const grossInflow =
-    ctx.socialSecurity + ctx.pension + ctx.dividends + draws.pretax + draws.taxable + draws.roth;
+  // All of this is cash the household receives, reducing how much it must withdraw.
+  const fixedIncome =
+    ctx.socialSecurity + ctx.pension + ctx.dividends + ctx.ordinaryDividends + ctx.taxableInterest + ctx.taxExemptInterest;
+  const grossInflow = fixedIncome + draws.pretax + draws.taxable + draws.roth;
   return { tax, grossInflow, netCash: grossInflow - tax.totalTax };
 }
 
@@ -164,7 +171,14 @@ export interface YearPlan {
   strategy: StrategyId;
   rmd: number;
   rmdDetails: RmdDetail[];
-  fixed: { socialSecurity: number; pension: number; dividends: number };
+  fixed: {
+    socialSecurity: number;
+    pension: number;
+    dividends: number;
+    ordinaryDividends: number;
+    taxableInterest: number;
+    taxExemptInterest: number;
+  };
   withdrawals: Draws; // pretax INCLUDES the RMD
   spendingTarget: number;
   grossInflow: number;
@@ -215,6 +229,9 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
     pension: household.pensionAnnual,
     socialSecurity,
     dividends: household.brokerageDividendsAnnual,
+    ordinaryDividends: household.ordinaryDividendsAnnual ?? 0,
+    taxableInterest: household.taxableInterestAnnual ?? 0,
+    taxExemptInterest: household.taxExemptInterestAnnual ?? 0,
     num65Plus,
     gainFraction: gf,
     balances,
@@ -313,7 +330,14 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
     strategy,
     rmd,
     rmdDetails,
-    fixed: { socialSecurity, pension: household.pensionAnnual, dividends: household.brokerageDividendsAnnual },
+    fixed: {
+      socialSecurity,
+      pension: household.pensionAnnual,
+      dividends: household.brokerageDividendsAnnual,
+      ordinaryDividends: household.ordinaryDividendsAnnual ?? 0,
+      taxableInterest: household.taxableInterestAnnual ?? 0,
+      taxExemptInterest: household.taxExemptInterestAnnual ?? 0,
+    },
     withdrawals: draws,
     spendingTarget: target,
     grossInflow: finalEval.grossInflow,

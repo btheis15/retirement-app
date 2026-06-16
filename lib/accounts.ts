@@ -14,8 +14,16 @@ export type AccountKind =
   | "traditional_ira"
   | "rollover_401k"
   | "traditional_401k"
+  | "traditional_403b"
+  | "govt_457b"
+  | "tsp_traditional"
+  | "sep_ira"
+  | "simple_ira"
+  | "solo_401k"
   | "roth_ira"
   | "roth_401k"
+  | "roth_403b"
+  | "tsp_roth"
   | "brokerage"
   | "cash";
 
@@ -95,8 +103,17 @@ export interface Household {
   pensionAnnual: number;
   /** Desired annual after-tax spending (today's dollars). */
   annualSpending: number;
-  /** Annual qualified dividends thrown off by the brokerage (taxable each year). */
+  /** Annual QUALIFIED dividends thrown off by the brokerage (preferential rate). */
   brokerageDividendsAnnual: number;
+  /** Annual ordinary/non-qualified dividends (e.g. REITs, bond funds) — taxed as
+   *  ordinary income and counted as net investment income for NIIT. */
+  ordinaryDividendsAnnual?: number;
+  /** Annual taxable interest (CDs, Treasuries, savings, money-market) — ordinary
+   *  income + net investment income. */
+  taxableInterestAnnual?: number;
+  /** Annual tax-exempt (municipal) interest — NOT taxed, but still raises MAGI for
+   *  Medicare IRMAA and the taxability of Social Security. */
+  taxExemptInterestAnnual?: number;
   accounts: Account[];
 }
 
@@ -107,8 +124,16 @@ export const ACCOUNT_KIND_META: Record<
   traditional_ira: { label: "Traditional IRA", bucket: "pretax", hasRmd: true, emoji: "🏦" },
   rollover_401k: { label: "Rollover 401(k)", bucket: "pretax", hasRmd: true, emoji: "🔁" },
   traditional_401k: { label: "Traditional 401(k)", bucket: "pretax", hasRmd: true, emoji: "🏢" },
+  traditional_403b: { label: "403(b) / TSA", bucket: "pretax", hasRmd: true, emoji: "🎓" },
+  govt_457b: { label: "457(b) (govt)", bucket: "pretax", hasRmd: true, emoji: "🏛️" },
+  tsp_traditional: { label: "TSP (Traditional)", bucket: "pretax", hasRmd: true, emoji: "🦅" },
+  sep_ira: { label: "SEP-IRA", bucket: "pretax", hasRmd: true, emoji: "💼" },
+  simple_ira: { label: "SIMPLE IRA", bucket: "pretax", hasRmd: true, emoji: "📋" },
+  solo_401k: { label: "Solo 401(k)", bucket: "pretax", hasRmd: true, emoji: "🧑‍💼" },
   roth_ira: { label: "Roth IRA", bucket: "roth", hasRmd: false, emoji: "🌱" },
   roth_401k: { label: "Roth 401(k)", bucket: "roth", hasRmd: false, emoji: "🌿" },
+  roth_403b: { label: "Roth 403(b)", bucket: "roth", hasRmd: false, emoji: "🌾" },
+  tsp_roth: { label: "TSP (Roth)", bucket: "roth", hasRmd: false, emoji: "🪶" },
   brokerage: { label: "Brokerage", bucket: "taxable", hasRmd: false, emoji: "📈" },
   cash: { label: "Cash / Savings", bucket: "taxable", hasRmd: false, emoji: "💵" },
 };
