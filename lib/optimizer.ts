@@ -25,7 +25,9 @@ import {
   Household,
   bucketOf,
   ageInYear,
+  gainFraction,
 } from "./accounts";
+import { money } from "./format";
 
 export type StrategyId = "smart" | "conventional" | "proportional";
 
@@ -196,10 +198,7 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
     roth: household.accounts.filter((a) => bucketOf(a.kind) === "roth").reduce((s, a) => s + a.balance, 0),
     taxable: household.accounts.filter((a) => bucketOf(a.kind) === "taxable").reduce((s, a) => s + a.balance, 0),
   };
-  const taxableGain = household.accounts
-    .filter((a) => bucketOf(a.kind) === "taxable")
-    .reduce((s, a) => s + Math.max(0, a.balance - (a.costBasis ?? a.balance)), 0);
-  const gf = balances.taxable > 0 ? Math.min(1, taxableGain / balances.taxable) : 0;
+  const gf = gainFraction(household.accounts);
 
   const ctx: YearContext = {
     year,
@@ -313,8 +312,4 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
     tax: finalEval.tax,
     notes,
   };
-}
-
-function money(n: number): string {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 }

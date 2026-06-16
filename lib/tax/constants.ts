@@ -20,8 +20,6 @@
  * ⚠️ Educational estimates only — not tax advice. State taxes are not modeled.
  */
 
-export const TAX_YEAR = 2026;
-
 /** Ordinary-income brackets (MFJ). `upTo` is the top of each bracket's range. */
 export const ORDINARY_BRACKETS_MFJ: { rate: number; upTo: number }[] = [
   { rate: 0.10, upTo: 24_800 },

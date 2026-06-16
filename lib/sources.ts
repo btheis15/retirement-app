@@ -32,5 +32,3 @@ export const SOURCES = {
   },
   stepUp: { label: "IRS — Cost basis step-up at death (inherited property)", url: "https://www.irs.gov/taxtopics/tc703" },
 } as const;
-
-export type SourceKey = keyof typeof SOURCES;

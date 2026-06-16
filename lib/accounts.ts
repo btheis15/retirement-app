@@ -63,7 +63,7 @@ export function holdingValue(h: Holding): number {
   return h.shares * h.price;
 }
 
-export function holdingBasis(h: Holding): number {
+function holdingBasis(h: Holding): number {
   return h.shares * (h.costPerShare ?? h.price);
 }
 
