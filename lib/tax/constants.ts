@@ -24,7 +24,7 @@
 export const ORDINARY_BRACKETS_MFJ: { rate: number; upTo: number }[] = [
   { rate: 0.10, upTo: 24_800 },
   { rate: 0.12, upTo: 100_800 },
-  { rate: 0.22, upTo: 211_100 },
+  { rate: 0.22, upTo: 211_400 },
   { rate: 0.24, upTo: 403_550 },
   { rate: 0.32, upTo: 512_450 },
   { rate: 0.35, upTo: 768_700 },
