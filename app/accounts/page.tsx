@@ -20,6 +20,7 @@ import { rmdStartAge } from "@/lib/tax/constants";
 import { adjustedAnnualBenefit, fullRetirementAge } from "@/lib/socialSecurity";
 import { searchTickers, getSeries, latestPrices, assetTypeLabel, SearchResult } from "@/lib/prices";
 import { PortfolioCard } from "@/components/PortfolioCard";
+import { DataVaultCard } from "@/components/DataVaultCard";
 
 const KIND_OPTIONS: AccountKind[] = [
   "rollover_401k",
@@ -168,6 +169,8 @@ export default function AccountsPage() {
           Clear all my data
         </button>
       )}
+
+      <DataVaultCard />
 
       <div className="mt-6">
         <Disclaimer />
@@ -409,25 +412,27 @@ function HoldingsEditor({
   isTaxable: boolean;
   onChange: (next: Holding[]) => void;
 }) {
+  const [open, setOpen] = useState(false); // search screen open?
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [searching, setSearching] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [adding, setAdding] = useState<string | null>(null);
-  const boxRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Debounced live search.
   useEffect(() => {
     const q = query.trim();
     if (q.length < 1) {
       setResults([]);
+      setLoading(false);
       return;
     }
     const ctrl = new AbortController();
-    setSearching(true);
+    setLoading(true);
     const t = setTimeout(() => {
       searchTickers(q, ctrl.signal)
         .then((r) => setResults(r))
-        .finally(() => setSearching(false));
+        .finally(() => setLoading(false));
     }, 250);
     return () => {
       clearTimeout(t);
@@ -435,10 +440,24 @@ function HoldingsEditor({
     };
   }, [query]);
 
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+  }, [open]);
+
+  const openSearch = () => {
+    setQuery("");
+    setResults([]);
+    setOpen(true);
+  };
+  const closeSearch = () => {
+    setOpen(false);
+    setQuery("");
+    setResults([]);
+  };
+
   const add = async (r: SearchResult) => {
     if (holdings.some((h) => h.ticker === r.symbol)) {
-      setQuery("");
-      setResults([]);
+      closeSearch();
       return;
     }
     setAdding(r.symbol);
@@ -459,19 +478,61 @@ function HoldingsEditor({
     };
     onChange([...holdings, holding]);
     setAdding(null);
-    setQuery("");
-    setResults([]);
+    closeSearch();
   };
 
   const update = (i: number, patch: Partial<Holding>) =>
     onChange(holdings.map((h, j) => (j === i ? { ...h, ...patch } : h)));
   const remove = (i: number) => onChange(holdings.filter((_, j) => j !== i));
-
   const numFrom = (s: string) => Math.max(0, Number(s.replace(/[^0-9.]/g, "")) || 0);
 
+  // ---- Search screen: tap "+ Add holding" to get here, pick an asset. ----
+  if (open) {
+    const q = query.trim();
+    return (
+      <div className="mt-2">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-[13px] font-semibold">Add a holding</span>
+          <button onClick={closeSearch} className="press text-[12px] font-medium text-foreground/60">
+            Cancel
+          </button>
+        </div>
+        <input
+          ref={inputRef}
+          className={INPUT}
+          value={query}
+          placeholder="Search a stock or fund — e.g. Apple, VTI, Vanguard…"
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <div className="mt-1 overflow-hidden rounded-xl border border-border bg-card">
+          {!q && <div className="px-3 py-3 text-[12px] text-foreground/50">Type a company name or ticker symbol to search.</div>}
+          {q && loading && results.length === 0 && <div className="px-3 py-3 text-[12px] text-foreground/50">Searching…</div>}
+          {q && !loading && results.length === 0 && (
+            <div className="px-3 py-3 text-[12px] text-foreground/50">No matches — try a ticker like VTI or a full company name.</div>
+          )}
+          {results.map((r) => (
+            <button
+              key={r.symbol}
+              onClick={() => add(r)}
+              disabled={adding === r.symbol}
+              className="press flex w-full items-center justify-between gap-2 border-b border-border/50 px-3 py-2.5 text-left last:border-0"
+            >
+              <span className="min-w-0">
+                <span className="font-semibold">{r.symbol}</span>
+                <span className="ml-1.5 text-[10px] uppercase text-foreground/40">{assetTypeLabel(r.type)}</span>
+                <span className="block truncate text-[11px] text-foreground/55">{r.name}</span>
+              </span>
+              <span className="shrink-0 text-[12px] font-medium text-primary">{adding === r.symbol ? "Adding…" : "Add +"}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ---- List of holdings + the "+ Add holding" button. ----
   return (
-    <div className="mt-2" ref={boxRef}>
-      {/* Existing holdings */}
+    <div className="mt-2">
       {holdings.length > 0 && (
         <div className="mb-2 space-y-2">
           {holdings.map((h, i) => (
@@ -510,9 +571,7 @@ function HoldingsEditor({
                 )}
                 <div className="flex-1 text-right">
                   <span className="mb-1 block text-[10px] text-foreground/55">Value</span>
-                  <span className="tabular text-sm font-semibold">
-                    {h.price ? money(holdingValue(h)) : "—"}
-                  </span>
+                  <span className="tabular text-sm font-semibold">{h.price ? money(holdingValue(h)) : "—"}</span>
                 </div>
               </div>
               {h.price > 0 && (
@@ -523,37 +582,12 @@ function HoldingsEditor({
         </div>
       )}
 
-      {/* Search box */}
-      <div className="relative">
-        <input
-          className={INPUT}
-          value={query}
-          placeholder="Search a stock or fund — e.g. Apple, VTI, Vanguard…"
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        {(results.length > 0 || searching) && query.trim().length > 0 && (
-          <div className="mt-1 max-h-64 overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
-            {searching && results.length === 0 && (
-              <div className="px-3 py-2 text-[12px] text-foreground/50">Searching…</div>
-            )}
-            {results.map((r) => (
-              <button
-                key={r.symbol}
-                onClick={() => add(r)}
-                disabled={adding === r.symbol}
-                className="press flex w-full items-center justify-between gap-2 border-b border-border/50 px-3 py-2 text-left last:border-0"
-              >
-                <span className="min-w-0">
-                  <span className="font-semibold">{r.symbol}</span>
-                  <span className="ml-1.5 text-[10px] uppercase text-foreground/40">{assetTypeLabel(r.type)}</span>
-                  <span className="block truncate text-[11px] text-foreground/55">{r.name}</span>
-                </span>
-                <span className="shrink-0 text-[11px] text-primary">{adding === r.symbol ? "Adding…" : "Add +"}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      <button
+        onClick={openSearch}
+        className="press w-full rounded-xl border-2 border-dashed border-border py-2.5 text-sm font-semibold text-primary"
+      >
+        + Add holding
+      </button>
     </div>
   );
 }

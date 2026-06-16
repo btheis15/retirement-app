@@ -29,6 +29,8 @@ interface Store {
    *  No-op in demo mode so the example stays fixed; only ticker symbols were
    *  ever sent to fetch these — never amounts. */
   applyLivePrices: (priceBySymbol: Record<string, number>) => void;
+  /** Replace your own data wholesale (used when importing a backup file). */
+  loadOwn: (household: Household, settings?: Partial<PlannerSettings>) => void;
 }
 
 const KEY_MODE = "rto-mode";
@@ -174,6 +176,25 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     [mode],
   );
 
+  const loadOwn = useCallback(
+    (h: Household, s?: Partial<PlannerSettings>) => {
+      setMode("own");
+      persistOwn(h);
+      if (s) {
+        setSettings((prev) => {
+          const next = { ...prev, ...s };
+          try {
+            localStorage.setItem(KEY_SETTINGS, JSON.stringify(next));
+          } catch {
+            /* ignore */
+          }
+          return next;
+        });
+      }
+    },
+    [setMode, persistOwn],
+  );
+
   const value = useMemo<Store>(
     () => ({
       ready,
@@ -188,8 +209,9 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       updateSettings,
       resetOwn,
       applyLivePrices,
+      loadOwn,
     }),
-    [ready, mode, household, settings, setMode, updateHousehold, setAccounts, upsertAccount, removeAccount, updateSettings, resetOwn, applyLivePrices],
+    [ready, mode, household, settings, setMode, updateHousehold, setAccounts, upsertAccount, removeAccount, updateSettings, resetOwn, applyLivePrices, loadOwn],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
