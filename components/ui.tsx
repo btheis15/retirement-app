@@ -2,7 +2,7 @@
 
 /** Small shared UI primitives so pages stay consistent. Light-mode only. */
 
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
 
 export function Card({
   children,
@@ -104,6 +104,100 @@ export function StackedBar({
           title={s.label}
         />
       ))}
+    </div>
+  );
+}
+
+/** A highlighted, plain-English teaching/summary box. Use for "here's what this
+ *  means" callouts and headline takeaways. */
+export function Callout({
+  tone = "info",
+  icon,
+  title,
+  children,
+  className = "",
+}: {
+  tone?: "info" | "good" | "warn" | "neutral";
+  icon?: ReactNode;
+  title?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  const cls = {
+    info: "border-ss/25 bg-ss/5",
+    good: "border-gain/25 bg-gain/5",
+    warn: "border-tax/25 bg-tax/5",
+    neutral: "border-border bg-foreground/[0.03]",
+  }[tone];
+  return (
+    <div className={`rounded-2xl border ${cls} p-4 ${className}`}>
+      {title && (
+        <div className="mb-1 flex items-center gap-2 font-semibold">
+          {icon && <span className="text-lg leading-none">{icon}</span>}
+          <span>{title}</span>
+        </div>
+      )}
+      <div className="text-[13px] leading-relaxed text-foreground/75">{children}</div>
+    </div>
+  );
+}
+
+/** A short muted helper paragraph that sits under a SectionTitle to explain
+ *  what the reader is looking at. */
+export function Explainer({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <p className={`-mt-1 mb-2 text-[12px] leading-relaxed text-foreground/55 ${className}`}>{children}</p>;
+}
+
+/** A tappable "what's this?" click-through: a question row that expands to a
+ *  plain-English explanation plus links to the authoritative source(s). Use
+ *  liberally next to any jargon so nothing on the screen is a mystery. */
+export function Info({
+  q,
+  children,
+  sources,
+  defaultOpen = false,
+  className = "",
+}: {
+  q: ReactNode;
+  children: ReactNode;
+  sources?: readonly { label: string; url: string }[];
+  defaultOpen?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className={`my-2 overflow-hidden rounded-xl border border-ss/25 bg-ss/[0.04] ${className}`}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="press flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[12px] font-semibold text-ss"
+      >
+        <span className="flex items-center gap-1.5">
+          <span aria-hidden className="text-[13px]">ⓘ</span>
+          {q}
+        </span>
+        <span className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}>⌄</span>
+      </button>
+      {open && (
+        <div className="rise border-t border-ss/15 px-3 pb-3 pt-2 text-[12px] leading-relaxed text-foreground/75">
+          {children}
+          {sources && sources.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+              {sources.map((s, i) => (
+                <a
+                  key={i}
+                  href={s.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] text-primary underline decoration-primary/30 underline-offset-2"
+                >
+                  {s.label} ↗
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
