@@ -92,6 +92,91 @@ const TOPICS: Topic[] = [
     ],
     sources: [SOURCES.seniorDeduction, SOURCES.brackets2026],
   },
+  {
+    icon: "💣",
+    title: "The RMD 'tax bomb' — and Roth conversions",
+    body: [
+      "A large pre-tax balance (Traditional IRA / 401k) is a tax bill waiting to happen. Starting at 73 or 75 the IRS forces Required Minimum Distributions, and because the divisor shrinks every year while the balance keeps growing, those forced withdrawals balloon — often pushing you into a higher bracket, taxing more of your Social Security, and tripping Medicare (IRMAA) surcharges, whether you need the money or not.",
+      "The classic defense is a Roth conversion: in your low-income years (after work, before Social Security and RMDs), you deliberately move money from pre-tax to Roth and pay tax on it now, at today's low rate. That shrinks the future forced withdrawals, and the money then grows tax-free in the Roth with no RMDs ever.",
+      "The trade-off: you pay tax sooner. It pays off if your rate later (or your heirs' rate) would be higher than your rate now — which is common for a pre-tax-heavy couple, and is even stronger once you factor in the survivor years (see the widow's-penalty topic). It's usually NOT worth converting so much that you jump a bracket or cross an IRMAA cliff.",
+      "Even while you're spending from the brokerage, those same low-income early years are often the best time to convert — the two work together. Use the bracket-fill control on the Plan tab to fill a low bracket without overshooting.",
+    ],
+    sources: [SOURCES.rothConversion, SOURCES.rmd, SOURCES.brackets2026],
+  },
+  {
+    icon: "🕊️",
+    title: "The widow(er)'s penalty (why survivors pay more)",
+    body: [
+      "When one spouse dies, the survivor usually keeps only the LARGER of the two Social Security checks — the smaller one stops. But the next year they file as Single, with roughly half the standard deduction, narrower tax brackets, and Medicare (IRMAA) income thresholds cut about in half — all while the pre-tax balance and its RMDs roll on.",
+      "So the same income that was comfortable as a couple can be taxed far harder for the survivor. This is one of the strongest reasons to do Roth conversions while both spouses are alive (wide joint brackets), and to delay the higher earner's Social Security so the survivor's lifelong check is as large as possible.",
+    ],
+    sources: [SOURCES.ssSurvivor, SOURCES.filingStatus],
+  },
+  {
+    icon: "🚀",
+    title: "The Social Security 'tax torpedo'",
+    body: [
+      "Because more of your Social Security becomes taxable as your other income rises, a single extra dollar of withdrawal can drag a dollar (or 85¢) of benefits into tax at the same time. In a band of income, that makes your TRUE marginal rate much higher than the bracket suggests — a 12% bracket can behave like ~22%, and 22% like ~40%.",
+      "This is why pulling a big pre-tax withdrawal 'just into the 12% bracket' can quietly cost far more than 12%. The planner accounts for it; watch the effective vs. marginal rate, and consider tax-free Roth for the slice of spending that would otherwise sail through the torpedo.",
+    ],
+    sources: [SOURCES.ssTax],
+  },
+  {
+    icon: "❤️",
+    title: "QCDs — give to charity straight from your IRA",
+    body: [
+      "From age 70½ you can send money directly from a Traditional IRA to charity — a Qualified Charitable Distribution. Up to a per-person limit (about $108,000 in 2025, indexed), it's excluded from your income entirely.",
+      "Because it never hits your AGI, a QCD is more powerful than donating cash and deducting it: it lowers the income that determines how much of your Social Security is taxed and which IRMAA tier you land in, and once you're taking RMDs the QCD counts toward satisfying them. If you're charitably inclined and have a big pre-tax balance, it's one of the cleanest tax moves available.",
+    ],
+    sources: [SOURCES.qcd, SOURCES.rmd],
+  },
+  {
+    icon: "⏳",
+    title: "Inherited IRAs & the 10-year rule",
+    body: [
+      "If you inherited an IRA from someone other than a spouse (a parent, say) after 2019, the SECURE Act generally requires the whole account to be emptied within 10 years. If the original owner had already started their RMDs, you also have to take a minimum each year in between.",
+      "This matters for timing: those withdrawals stack on top of your own income, so it's often worth spreading them across the 10 years to fill low brackets rather than taking a big lump in one year. An inherited IRA is taxed on its own schedule — don't confuse it with your own IRA's RMD age.",
+    ],
+    sources: [SOURCES.inheritedIra],
+  },
+  {
+    icon: "🏢",
+    title: "Company stock in a 401(k) — the NUA move",
+    body: [
+      "If you hold a lot of appreciated EMPLOYER stock inside a 401(k), rolling it all to an IRA can be a mistake. A Net Unrealized Appreciation election lets you move the shares to a brokerage account, pay ordinary tax only on your original cost basis now, and have the entire gain taxed later at the lower long-term capital-gains rate (and it sidesteps RMDs on those shares).",
+      "It's a one-time, rules-heavy decision worth running by a professional — but if you have low-basis company stock, ask specifically about NUA versus a plain rollover-and-convert.",
+    ],
+    sources: [SOURCES.nua, SOURCES.capGains],
+  },
+  {
+    icon: "🏖️",
+    title: "Does buying a second / summer home save on taxes?",
+    body: [
+      "Short version: for a home you use yourself (not rent out), the federal income-tax benefit is small — often zero. A personal second home generates NO depreciation (only rentals do); its mortgage interest and property tax are deductible only if you itemize, and most retirees come out ahead taking the big standard deduction, so those write-offs go unused; and the home-sale gain exclusion ($500k for a couple) applies only to your PRIMARY residence, not a vacation home. Buying a house mainly 'to save on taxes' as a personal residence is largely a myth.",
+      "So why would an advisor suggest it? Usually one of three real angles — and it's worth asking which they meant: (1) STATE taxes — if the home is in a no-income-tax state (Florida, Texas, etc.) and you make it your legal primary residence, you can stop paying state income tax on your retirement income. For many retirees that's the biggest lever of all. (2) ESTATE — real estate gets a 'stepped-up' basis at death, so its appreciation can pass to heirs with the gain wiped out. (3) If you RENT it out, it becomes investment property: depreciation then shelters the rental income, and you can defer gains by exchanging into another property (a §1031 exchange).",
+      "The catches: a personal home ties up a lot of cash in an illiquid, concentrated, hard-to-manage asset (you can't sell a bedroom to fund a year of spending), with ongoing costs — and you'd be spending real capital largely for a benefit that, for a personal home, mostly isn't there. Establishing a new state domicile also has real rules (days present, where you vote/license/bank).",
+      "Does it fit YOUR plan? This tool models federal withdrawal tax, not real estate or state tax. If the goal is the lowest tax PERCENT and the most after-tax wealth, buy a second home because you want it — not for a federal tax break that, for personal use, is mostly a mirage. The genuine tax wins live in the state-residency and estate angles, or in actually renting it.",
+    ],
+    sources: [SOURCES.realEstate, SOURCES.stepUp],
+  },
+  {
+    icon: "🏥",
+    title: "Health coverage before 65 (ACA subsidies)",
+    body: [
+      "Retiring before 65 means buying health insurance on the ACA marketplace until Medicare starts. The subsidy (premium tax credit) is based on your income — so a big Roth conversion or IRA withdrawal in those years can cost you thousands in lost subsidy, sometimes a bigger hit than IRMAA later.",
+      "If a spouse is under 65, weigh conversions against the subsidy you'd give up. This app models federal tax, not ACA subsidies, so keep this trade-off in mind for the pre-65 years.",
+    ],
+    sources: [SOURCES.aca],
+  },
+  {
+    icon: "📍",
+    title: "Muni-bond interest & state taxes (two quiet gotchas)",
+    body: [
+      "Tax-exempt municipal bond interest isn't taxed federally — but it still counts toward the income that determines how much of your Social Security is taxed and which Medicare (IRMAA) tier you're in. 'Tax-free' isn't free of those effects, and the planner now accounts for it (enter it on the Accounts tab).",
+      "Everything here is FEDERAL tax only. Your state may tax retirement income very differently — some don't tax Social Security or retirement withdrawals at all, others do — and that can change which strategy wins. Treat the results as the federal piece of the picture.",
+    ],
+    sources: [SOURCES.ssTax, SOURCES.irmaa],
+  },
 ];
 
 export default function LearnPage() {
