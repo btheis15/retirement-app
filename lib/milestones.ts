@@ -17,6 +17,7 @@
 import { Household, ageInYear } from "./accounts";
 import { rmdStartAge } from "./tax/constants";
 import { ProjectionResult } from "./projection";
+import { money } from "./format";
 
 export interface Milestone {
   year: number;
@@ -42,7 +43,7 @@ export function detectMilestones(household: Household, proj: ProjectionResult): 
         age: ageInYear(household.self.birthYear, year),
         icon: "💵",
         title: `${p.label} claims Social Security`,
-        detail: `Benefits of about ${fmt(p.socialSecurityAnnual)}/yr begin. Up to 85% can become taxable, so lower-tax pre-tax withdrawals before this point are often worth front-loading.`,
+        detail: `Benefits of about ${money(p.socialSecurityAnnual)}/yr begin. Up to 85% can become taxable, so lower-tax pre-tax withdrawals before this point are often worth front-loading.`,
         tone: "info",
       });
     }
@@ -60,7 +61,7 @@ export function detectMilestones(household: Household, proj: ProjectionResult): 
         age: ageInYear(household.self.birthYear, year),
         icon: "📌",
         title: `${p.label}'s RMDs begin (age ${start})`,
-        detail: `You're now required to pull at least ${fmt(row.rmd)} from pre-tax accounts and it's taxed as ordinary income — whether you need it or not. Drawing pre-tax down earlier shrinks these forced withdrawals.`,
+        detail: `You're now required to pull at least ${money(row.rmd)} from pre-tax accounts and it's taxed as ordinary income — whether you need it or not. Drawing pre-tax down earlier shrinks these forced withdrawals.`,
         tone: "warn",
       });
     }
@@ -93,7 +94,7 @@ export function detectMilestones(household: Household, proj: ProjectionResult): 
       age: firstRoth.selfAge,
       icon: "🌱",
       title: "Roth withdrawals begin",
-      detail: `The plan starts using tax-free Roth (${fmt(firstRoth.fromRoth)}) — usually to cover spending without spiking your bracket or an IRMAA tier. Roth has no RMDs, so it's the natural last-resort, tax-free buffer.`,
+      detail: `The plan starts using tax-free Roth (${money(firstRoth.fromRoth)}) — usually to cover spending without spiking your bracket or an IRMAA tier. Roth has no RMDs, so it's the natural last-resort, tax-free buffer.`,
       tone: "good",
     });
   }
@@ -139,8 +140,4 @@ export function detectMilestones(household: Household, proj: ProjectionResult): 
       return true;
     })
     .sort((a, b) => a.year - b.year);
-}
-
-function fmt(n: number): string {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 }

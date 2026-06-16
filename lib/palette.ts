@@ -10,10 +10,3 @@ export const HEX = {
   taxable: "#0e7490",
   ss: "#1d4ed8",
 } as const;
-
-/** Bucket → chart color. */
-export const BUCKET_HEX = {
-  pretax: HEX.deferred,
-  taxable: HEX.taxable,
-  roth: HEX.roth,
-} as const;

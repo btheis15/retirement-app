@@ -12,6 +12,7 @@ import { YearPlan, BracketTarget } from "./optimizer";
 import { ordinaryBracketCeiling, LTCG_ZERO_CEILING } from "./tax/engine";
 import { IRMAA_TIERS_MFJ, rmdStartAge } from "./tax/constants";
 import { SOURCES, Source } from "./sources";
+import { money } from "./format";
 
 export interface Opportunity {
   id: string;
@@ -161,8 +162,4 @@ export function detectOpportunities(
   }
 
   return out;
-}
-
-function money(n: number): string {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 }

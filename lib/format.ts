@@ -20,7 +20,3 @@ export function moneyCompact(n: number): string {
 export function percent(frac: number, digits = 1): string {
   return `${(frac * 100).toFixed(digits)}%`;
 }
-
-export function ratePct(rate: number): string {
-  return `${Math.round(rate * 100)}%`;
-}
