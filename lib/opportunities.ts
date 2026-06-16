@@ -104,13 +104,14 @@ export function detectOpportunities(
     }
   }
 
-  // 4) QCD once RMD-eligible (age 70½+) — turns taxable RMDs into tax-free gifts.
-  if (selfAge >= 70 && plan.rmd > 0) {
+  // 4) QCD from age 70½ — available BEFORE RMDs begin (a pure AGI-management tool),
+  //    and once RMDs start it also counts toward satisfying them.
+  if (selfAge >= 70 || plan.spouseAge >= 70) {
     out.push({
       id: "qcd",
       icon: "❤️",
       title: "Give to charity straight from the IRA (QCD)",
-      detail: `If you donate to charity, a Qualified Charitable Distribution sends money directly from your IRA to the charity and counts toward your RMD — but never hits your taxable income. That lowers AGI, can reduce how much Social Security is taxed, and can keep you under an IRMAA tier. Available from age 70½.`,
+      detail: `From age 70½ you can send up to about $108,000 per person (2025, indexed) directly from a Traditional IRA to charity. It never hits your taxable income — lowering AGI, reducing how much Social Security is taxed, and helping keep you under an IRMAA tier${plan.rmd > 0 ? ", and it counts toward your required minimum distribution" : " (you don't have to wait for RMDs to start)"}.`,
       impact: "RMD dollars given this way are 100% tax-free",
       tone: "info",
       sources: [SOURCES.qcd, SOURCES.rmd],

@@ -34,4 +34,9 @@ export const SOURCES = {
   ssClaimEarly: { label: "SSA — Early retirement benefit reduction (claiming before FRA)", url: "https://www.ssa.gov/benefits/retirement/planner/agereduction.html" },
   ssDelayed: { label: "SSA — Delayed retirement credits (waiting past FRA to age 70)", url: "https://www.ssa.gov/benefits/retirement/planner/delayret.html" },
   ssSurvivor: { label: "SSA — Survivors benefits (survivor keeps the larger benefit)", url: "https://www.ssa.gov/benefits/survivors/" },
+  filingStatus: { label: "IRS — Filing status (Single vs. Married Filing Jointly)", url: "https://www.irs.gov/filing/individuals/how-to-file" },
+  inheritedIra: { label: "IRS — Inherited IRA & the SECURE Act 10-year rule", url: "https://www.irs.gov/retirement-plans/required-minimum-distributions-for-ira-beneficiaries" },
+  nua: { label: "IRS — Net Unrealized Appreciation on employer stock (Pub. 575)", url: "https://www.irs.gov/publications/p575" },
+  aca: { label: "HealthCare.gov — Premium tax credit (income-based ACA subsidy)", url: "https://www.healthcare.gov/lower-costs/save-on-monthly-premiums/" },
+  realEstate: { label: "IRS — Depreciation & §1031 like-kind exchanges (Pub. 527 / Topic 409)", url: "https://www.irs.gov/publications/p527" },
 } as const;
