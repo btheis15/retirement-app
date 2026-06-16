@@ -31,4 +31,7 @@ export const SOURCES = {
     url: "https://www.irs.gov/credits-deductions/individuals/standard-deduction",
   },
   stepUp: { label: "IRS — Cost basis step-up at death (inherited property)", url: "https://www.irs.gov/taxtopics/tc703" },
+  ssClaimEarly: { label: "SSA — Early retirement benefit reduction (claiming before FRA)", url: "https://www.ssa.gov/benefits/retirement/planner/agereduction.html" },
+  ssDelayed: { label: "SSA — Delayed retirement credits (waiting past FRA to age 70)", url: "https://www.ssa.gov/benefits/retirement/planner/delayret.html" },
+  ssSurvivor: { label: "SSA — Survivors benefits (survivor keeps the larger benefit)", url: "https://www.ssa.gov/benefits/survivors/" },
 } as const;

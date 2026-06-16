@@ -3,11 +3,20 @@
 import { useMemo, ReactNode } from "react";
 import Link from "next/link";
 import { useStore } from "@/components/HouseholdProvider";
-import { Card, PageTitle, SectionTitle, Pill, Stat, Disclaimer, Callout, Explainer, Info } from "@/components/ui";
+import { Card, PageTitle, SectionTitle, Pill, Stat, Disclaimer, Callout, Explainer, Info, StackedBar } from "@/components/ui";
 import { Donut, Legend, AnimatedNumber } from "@/components/charts";
 import { planYear, STRATEGY_META, StrategyId, BracketTarget } from "@/lib/optimizer";
 import { ordinaryBracketCeiling } from "@/lib/tax/engine";
 import { detectOpportunities } from "@/lib/opportunities";
+import {
+  adjustedAnnualBenefit,
+  ssBenefitFactor,
+  fullRetirementAge,
+  breakevenAge,
+  CLAIM_MIN,
+  CLAIM_MAX,
+} from "@/lib/socialSecurity";
+import { ageInYear, Household } from "@/lib/accounts";
 import { money, moneyCompact, percent } from "@/lib/format";
 import { HEX } from "@/lib/palette";
 import { SOURCES } from "@/lib/sources";
@@ -50,6 +59,25 @@ export default function PlanPage() {
   const totalDraw = w.pretax + w.taxable + w.roth;
   const voluntaryPretax = Math.max(0, w.pretax - plan.rmd);
   const coveredByIncome = totalDraw < 0.5;
+
+  // What funds this year's spending (Social Security shown explicitly).
+  const ssNow = plan.fixed.socialSecurity;
+  const guaranteed = ssNow + plan.fixed.pension + plan.fixed.dividends;
+  const fundingSegs = [
+    { value: ssNow, className: "bg-ss", label: "Social Security" },
+    { value: plan.fixed.pension, className: "bg-primary", label: "Pension" },
+    { value: plan.fixed.dividends, className: "bg-gain", label: "Dividends" },
+    { value: totalDraw, className: "bg-taxable", label: "Withdrawals" },
+  ].filter((s) => s.value > 0.5);
+  const ssPending = (["self", "spouse"] as const)
+    .map((who) => {
+      const p = household[who];
+      if (p.socialSecurityAnnual > 0 && ageInYear(p.birthYear, year) < p.ssClaimAge) {
+        return `${p.label}'s Social Security (${money(adjustedAnnualBenefit(p.socialSecurityAnnual, p.birthYear, p.ssClaimAge))}/yr) starts at age ${p.ssClaimAge}`;
+      }
+      return null;
+    })
+    .filter(Boolean) as string[];
 
   const sourceSegments = [
     { label: "Pre-tax (IRA/401k)", value: w.pretax, color: HEX.deferred },
@@ -122,6 +150,54 @@ export default function PlanPage() {
           </>
         )}
       </Callout>
+
+      {/* ---------- What funds the spending (SS shown) ---------- */}
+      <SectionTitle>What pays for it</SectionTitle>
+      <Explainer>Your guaranteed income — Social Security first — covers what it can; withdrawals fill the rest. Tax comes out of the total.</Explainer>
+      <Card>
+        {fundingSegs.length > 0 ? (
+          <>
+            <StackedBar segments={fundingSegs} />
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+              {fundingSegs.map((s) => (
+                <span key={s.label} className="inline-flex items-center gap-1 text-foreground/65">
+                  <span className={`h-2 w-2 rounded-full ${s.className}`} />
+                  {s.label} {money(s.value)}
+                </span>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-foreground/70">No income or withdrawals yet — add accounts and benefits to see the breakdown.</p>
+        )}
+        <div className="mt-3 space-y-1 border-t border-border pt-3 text-[13px]">
+          <div className="flex justify-between">
+            <span className="text-foreground/65">Guaranteed income (SS + pension + dividends)</span>
+            <span className="tabular font-medium text-ss">{money(guaranteed)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-foreground/65">Withdrawals from accounts</span>
+            <span className="tabular font-medium text-taxable">{money(totalDraw)}</span>
+          </div>
+          <div className="flex justify-between border-t border-border/60 pt-1">
+            <span className="text-foreground/65">Total income</span>
+            <span className="tabular">{money(plan.grossInflow)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-foreground/65">− Federal tax</span>
+            <span className="tabular text-tax">− {money(plan.tax.totalTax)}</span>
+          </div>
+          <div className="flex justify-between font-semibold">
+            <span>= Yours to spend</span>
+            <span className="tabular">{money(plan.spendingTarget)}</span>
+          </div>
+        </div>
+        {ssPending.length > 0 && (
+          <p className="mt-3 rounded-xl bg-ss/5 px-3 py-2 text-[12px] text-foreground/65">
+            ⏳ {ssPending.join("; ")} — until then, withdrawals cover more (see &quot;when to claim&quot; below).
+          </p>
+        )}
+      </Card>
 
       {/* ---------- Spending control ---------- */}
       <SectionTitle>How much do you want to spend?</SectionTitle>
@@ -256,6 +332,16 @@ export default function PlanPage() {
             <li><strong>IRMAA</strong>: which Medicare premium tier this income lands in — higher income = higher Part B/D premiums two years later.</li>
           </ul>
         </Info>
+        {plan.tax.irmaa.perPerson > 0 && (
+          <Info q="Should I be afraid of this IRMAA surcharge?" sources={[SOURCES.irmaa]}>
+            You&apos;re in an IRMAA tier — about <strong>{money(plan.tax.irmaa.householdAnnual)}/yr</strong> in extra
+            Medicare premiums for the couple, two years out. It feels scary because it&apos;s a cliff, but it&apos;s a
+            relatively small, fixed cost. Avoiding it is only worth it if dodging income now doesn&apos;t cost you more
+            in growth or bigger forced taxes later. If your goal is the biggest nest egg, check the{" "}
+            <strong>Compare</strong> tab — if the higher-income plan still ends with more after-tax money, the surcharge
+            is worth paying and you shouldn&apos;t contort your plan to avoid it.
+          </Info>
+        )}
       </Card>
 
       {/* ---------- Full income picture ---------- */}
@@ -334,6 +420,9 @@ export default function PlanPage() {
           </div>
         </>
       )}
+
+      {/* ---------- Social Security timing ---------- */}
+      <SsTiming household={household} year={year} update={updateHousehold} />
 
       {/* ---------- Strategy controls (explained) ---------- */}
       <SectionTitle>Change the strategy</SectionTitle>
@@ -451,5 +540,173 @@ function Row({ label, value, bold, tone }: { label: string; value: ReactNode; bo
       <span className={`${bold ? "font-semibold" : "text-foreground/65"}`}>{label}</span>
       <span className={`tabular ${bold ? "font-semibold" : ""} ${tone === "tax" ? "text-tax" : ""}`}>{value}</span>
     </div>
+  );
+}
+
+/** Friendly age label, e.g. 67 → "67", 66.833 → "66 yr 10 mo". */
+function fmtAgePlan(years: number): string {
+  const whole = Math.floor(years);
+  const months = Math.round((years - whole) * 12);
+  return months === 0 ? `${whole}` : `${whole} yr ${months} mo`;
+}
+
+const clampClaim = (a: number) => Math.min(CLAIM_MAX, Math.max(CLAIM_MIN, Math.round(a)));
+
+/** Social Security claim-timing: per-spouse benefit by claim age, the early-death
+ *  breakeven, and the couple's survivor-benefit angle. */
+function SsTiming({
+  household,
+  year,
+  update,
+}: {
+  household: Household;
+  year: number;
+  update: (patch: Partial<Household>) => void;
+}) {
+  const anyBenefit = household.self.socialSecurityAnnual > 0 || household.spouse.socialSecurityAnnual > 0;
+  const higher =
+    household.self.socialSecurityAnnual >= household.spouse.socialSecurityAnnual ? household.self : household.spouse;
+
+  return (
+    <>
+      <SectionTitle>Social Security: when to claim</SectionTitle>
+      <Explainer>
+        Claiming later means a bigger check for life (about +8%/yr after full retirement, up to age 70) — but you
+        collect nothing while you wait. Here&apos;s the trade-off for each of you. Changing it updates the whole forecast.
+      </Explainer>
+
+      {(["self", "spouse"] as const).map((who) => {
+        const p = household[who];
+        const fra = fullRetirementAge(p.birthYear);
+        const claim = clampClaim(p.ssClaimAge);
+        const setClaim = (a: number) =>
+          update({ [who]: { ...p, ssClaimAge: clampClaim(a) } } as Partial<Household>);
+
+        if (p.socialSecurityAnnual <= 0) {
+          return (
+            <Card key={who} className="mb-2">
+              <div className="font-semibold">{p.label}</div>
+              <p className="mt-1 text-[12px] text-foreground/60">
+                Add {p.label}&apos;s full-retirement benefit on the Accounts tab to compare claim ages.
+              </p>
+            </Card>
+          );
+        }
+
+        const benefit = adjustedAnnualBenefit(p.socialSecurityAnnual, p.birthYear, claim);
+        const pct = ssBenefitFactor(p.birthYear, claim);
+        const fraInt = Math.round(fra);
+        const opts = Array.from(new Set([62, fraInt, 70])).sort((a, b) => a - b);
+
+        return (
+          <Card key={who} className="mb-2">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold">{p.label}</span>
+              <span className="text-[11px] text-foreground/55">full retirement age {fmtAgePlan(fra)}</span>
+            </div>
+
+            <div className="mt-2 flex items-center justify-between rounded-xl border border-border bg-background/60 px-3 py-2">
+              <span className="text-[12px] font-medium text-foreground/60">Claim at age</span>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setClaim(claim - 1)}
+                  disabled={claim <= CLAIM_MIN}
+                  className="press flex h-7 w-7 items-center justify-center rounded-full border border-border text-lg leading-none disabled:opacity-30"
+                  aria-label="Claim one year earlier"
+                >
+                  −
+                </button>
+                <span className="tabular w-6 text-center text-lg font-bold">{claim}</span>
+                <button
+                  onClick={() => setClaim(claim + 1)}
+                  disabled={claim >= CLAIM_MAX}
+                  className="press flex h-7 w-7 items-center justify-center rounded-full border border-border text-lg leading-none disabled:opacity-30"
+                  aria-label="Claim one year later"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-2 flex items-baseline justify-between">
+              <span className="tabular text-xl font-bold text-ss">{money(Math.round(benefit / 12))}/mo</span>
+              <span className="text-[12px] text-foreground/60">
+                {money(benefit)}/yr · {percent(pct, 0)} of full
+              </span>
+            </div>
+
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {opts.map((a) => {
+                const b = adjustedAnnualBenefit(p.socialSecurityAnnual, p.birthYear, a);
+                const active = a === claim;
+                return (
+                  <button
+                    key={a}
+                    onClick={() => setClaim(a)}
+                    className={`press rounded-xl border py-2 text-center ${
+                      active ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/70"
+                    }`}
+                  >
+                    <div className="text-[12px] font-semibold">Age {a}{a === fraInt ? "*" : ""}</div>
+                    <div className="tabular text-[13px] font-bold">{money(Math.round(b / 12))}</div>
+                    <div className="text-[9px] text-foreground/45">/mo</div>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1 text-[10px] text-foreground/45">* full retirement age</p>
+          </Card>
+        );
+      })}
+
+      {anyBenefit && (
+        <Callout tone="info" icon="⏳" title="Is waiting worth it? (the 'die early' risk)">
+          {(() => {
+            const be = breakevenAge(higher.socialSecurityAnnual, higher.birthYear, 62, 70);
+            return (
+              <>
+                Waiting trades smaller checks now for bigger checks later. For {higher.label}, claiming at 70 instead of
+                62{" "}
+                {be ? (
+                  <>
+                    breaks even around <strong>age {Math.round(be)}</strong>
+                  </>
+                ) : (
+                  <>doesn&apos;t change the benefit</>
+                )}
+                . Live past that and waiting wins; pass away earlier and claiming early collected more total cash. (Nominal
+                dollars, no COLA or investment growth modeled — so treat it as a rule of thumb.)
+              </>
+            );
+          })()}
+        </Callout>
+      )}
+
+      {anyBenefit && (
+        <Callout tone="good" icon="❤️" title="The couple angle: survivor benefit">
+          When one of you passes, the survivor keeps only the <strong>larger</strong> of your two Social Security checks —
+          the smaller one stops. So delaying the higher earner&apos;s claim ({higher.label}) permanently raises the
+          benefit that lasts as long as <em>either</em> of you lives. With both of you near the same age, that survivor
+          protection is often the strongest reason for the higher earner to wait.
+          <div className="mt-2">
+            <a
+              href={SOURCES.ssSurvivor.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[11px] text-primary underline decoration-primary/30 underline-offset-2"
+            >
+              {SOURCES.ssSurvivor.label} ↗
+            </a>
+          </div>
+        </Callout>
+      )}
+
+      <Info q="How claim age changes your check (the SSA rules)" sources={[SOURCES.ssClaimEarly, SOURCES.ssDelayed]}>
+        Your full benefit is set at your Full Retirement Age (~67, a bit earlier if born before 1960). Claim as early as
+        62 and it&apos;s permanently reduced — roughly 25–30% less. Wait past full retirement and you earn delayed-retirement
+        credits of about 8% per year up to age 70 (no benefit to waiting beyond 70). The amount you enter on the Accounts
+        tab is your full-retirement benefit; this control adjusts it.
+      </Info>
+    </>
   );
 }

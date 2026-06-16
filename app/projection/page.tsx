@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useStore } from "@/components/HouseholdProvider";
 import { Card, PageTitle, SectionTitle, Stat, Pill, Disclaimer, Callout, Explainer, Info } from "@/components/ui";
 import { StackedArea, Bars, CompareBars, AnimatedNumber } from "@/components/charts";
@@ -8,14 +8,12 @@ import { projectLifetime } from "@/lib/projection";
 import { detectMilestones } from "@/lib/milestones";
 import { STRATEGY_META } from "@/lib/optimizer";
 import { Household, sumBuckets } from "@/lib/accounts";
+import { returnModel } from "@/lib/returns";
+import { ReturnMethodInfo } from "@/components/ReturnMethodInfo";
 import { money, moneyCompact, percent } from "@/lib/format";
 import { HEX } from "@/lib/palette";
 
-const SCENARIOS = [
-  { id: "cons", label: "Conservative", rate: 0.035 },
-  { id: "mod", label: "Moderate", rate: 0.05 },
-  { id: "opt", label: "Optimistic", rate: 0.07 },
-] as const;
+// Return scenarios are derived from the household's holdings (see lib/returns).
 
 const SPEND_MAX = 500_000;
 const SPEND_STEP = 5_000;
@@ -37,15 +35,17 @@ interface SpendBase {
  * Ending estate falls monotonically as spending rises, so we bisect.
  */
 function maxSustainableSpend(household: Household, base: SpendBase, startTotal: number) {
-  if (startTotal <= 0) return { real: 0, nominal: 0, years: 0, realPossible: false };
+  if (startTotal <= 0) return { real: 0, nominal: 0, lastsMax: 0, years: 0, realPossible: false };
   const run = (s: number) => projectLifetime({ ...household, annualSpending: s }, base);
   const zero = run(0);
   const years = zero.yearsModeled;
+  const cap = Math.max(startTotal, 50_000);
   const realGoal = startTotal * Math.pow(1 + base.inflationRate, years);
-  const find = (goal: number) => {
+  // Highest spend whose ending estate still clears `goal`.
+  const findByEstate = (goal: number) => {
     if (zero.endingEstate < goal) return 0;
     let lo = 0;
-    let hi = Math.max(startTotal, 50_000);
+    let hi = cap;
     for (let i = 0; i < 18; i++) {
       const mid = (lo + hi) / 2;
       if (run(mid).endingEstate >= goal) lo = mid;
@@ -53,7 +53,26 @@ function maxSustainableSpend(household: Household, base: SpendBase, startTotal: 
     }
     return lo;
   };
-  return { real: find(realGoal), nominal: find(startTotal), years, realPossible: zero.endingEstate >= realGoal };
+  // Highest spend that doesn't run short before the horizon ends.
+  const findLasts = () => {
+    if (zero.depleted) return 0;
+    if (!run(cap).depleted) return cap;
+    let lo = 0;
+    let hi = cap;
+    for (let i = 0; i < 18; i++) {
+      const mid = (lo + hi) / 2;
+      if (!run(mid).depleted) lo = mid;
+      else hi = mid;
+    }
+    return lo;
+  };
+  return {
+    real: findByEstate(realGoal),
+    nominal: findByEstate(startTotal),
+    lastsMax: findLasts(),
+    years,
+    realPossible: zero.endingEstate >= realGoal,
+  };
 }
 
 export default function ProjectionPage() {
@@ -106,6 +125,26 @@ export default function ProjectionPage() {
     ],
   );
 
+  // Return scenarios derived from the actual holdings.
+  const rm = useMemo(() => returnModel(household.accounts), [JSON.stringify(household.accounts)]);
+  const scenarios = useMemo(
+    () => [
+      { id: "cons", label: "Conservative", rate: rm.conservative },
+      { id: "mod", label: "Moderate", rate: rm.expected },
+      { id: "opt", label: "Optimistic", rate: rm.optimistic },
+    ],
+    [rm],
+  );
+
+  // If the saved return doesn't match any holdings-based card (e.g. a stale
+  // default), snap to the expected (Moderate) rate for this portfolio.
+  useEffect(() => {
+    if (!ready) return;
+    const matches = scenarios.some((s) => Math.abs(s.rate - settings.returnRate) < 0.0025);
+    if (!matches) updateSettings({ returnRate: rm.expected });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, rm.expected, rm.conservative, rm.optimistic]);
+
   if (!ready) return <div className="h-screen" />;
 
   const { chosen, smart, conventional, milestones } = result;
@@ -127,7 +166,7 @@ export default function ProjectionPage() {
   const estateGain = smart.endingEstateAfterTax - conventional.endingEstateAfterTax;
 
   // Spending-power helpers.
-  const returnLabel = SCENARIOS.find((s) => Math.abs(settings.returnRate - s.rate) < 0.001)?.label ?? "custom";
+  const returnLabel = scenarios.find((s) => Math.abs(settings.returnRate - s.rate) < 0.0025)?.label ?? "custom";
   const endsRicher = chosen.endingEstate > startTotal * 1.001;
   const current = household.annualSpending;
   const sustainMessage =
@@ -141,14 +180,14 @@ export default function ProjectionPage() {
     <div>
       <PageTitle title="Lifetime forecast" subtitle={`Year-by-year through age ${settings.endAge}, with growth & inflation.`} />
 
-      {/* Scenario controls */}
+      {/* Scenario controls — derived from holdings */}
       <div className="flex gap-2">
-        {SCENARIOS.map((s) => (
+        {scenarios.map((s) => (
           <button
             key={s.id}
             onClick={() => updateSettings({ returnRate: s.rate })}
             className={`press flex-1 rounded-xl border py-2 text-center ${
-              Math.abs(settings.returnRate - s.rate) < 0.001
+              Math.abs(settings.returnRate - s.rate) < 0.0025
                 ? "border-primary bg-primary/10 text-primary"
                 : "border-border"
             }`}
@@ -158,6 +197,12 @@ export default function ProjectionPage() {
           </button>
         ))}
       </div>
+      <p className="mt-1.5 text-[11px] text-foreground/55">
+        Based on your holdings ({percent(rm.equityPct, 0)} stocks · {percent(rm.bondPct, 0)} bonds · {percent(rm.cashPct, 0)} cash).
+        Stocks have averaged ~10%/yr long-term, so a stock-heavy mix sits high; these scenarios bracket your blend.
+        {rm.basis !== "holdings" && " (Accounts without itemized holdings use an assumed mix — add holdings for precision.)"}
+      </p>
+      <ReturnMethodInfo rm={rm} />
       <div className="mt-3 grid grid-cols-2 gap-3">
         <label className="block">
           <span className="mb-1 block text-[12px] font-medium text-foreground/60">Inflation</span>
@@ -229,6 +274,16 @@ export default function ProjectionPage() {
           <span>{moneyCompact(0)}</span>
           <span>{moneyCompact(SPEND_MAX)}+</span>
         </div>
+        {startTotal > 0 && (
+          <SpendScale
+            max={SPEND_MAX}
+            current={household.annualSpending}
+            real={sustain.real}
+            nominal={sustain.nominal}
+            lasts={sustain.lastsMax}
+            endAge={settings.endAge}
+          />
+        )}
         <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-[13px]">
           <span className="text-foreground/65">At age {settings.endAge} you&apos;d have</span>
           <span className="tabular font-semibold text-gain">{money(chosen.endingEstateAfterTax)}</span>
@@ -427,4 +482,67 @@ function Key({ color, label }: { color: string; label: string }) {
 
 function toneBorder(tone: "info" | "warn" | "good"): string {
   return tone === "warn" ? "border-l-tax" : tone === "good" ? "border-l-gain" : "border-l-ss";
+}
+
+/** A color-zoned scale under the spending slider so the ranges are obvious
+ *  without trial-and-error: grow / hold / draw-down / run-short, with the
+ *  dollar boundaries labeled. */
+function SpendScale({
+  max,
+  current,
+  real,
+  nominal,
+  lasts,
+  endAge,
+}: {
+  max: number;
+  current: number;
+  real: number;
+  nominal: number;
+  lasts: number;
+  endAge: number;
+}) {
+  const pct = (v: number) => Math.max(0, Math.min(100, (v / max) * 100));
+  // Keep the boundaries monotonic for clean zones.
+  const r = real;
+  const n = Math.max(nominal, real);
+  const l = Math.max(lasts, n);
+  const zones = [
+    { from: 0, to: pct(r), cls: "bg-gain/70" },
+    { from: pct(r), to: pct(n), cls: "bg-ss/55" },
+    { from: pct(n), to: pct(l), cls: "bg-deferred/55" },
+    { from: pct(l), to: 100, cls: "bg-tax/55" },
+  ];
+  const rows = [
+    { color: "bg-gain/70", label: `up to ${moneyCompact(r)}/yr`, note: "grows — keeps up with inflation", show: r > 0 },
+    { color: "bg-ss/55", label: `${moneyCompact(r)} – ${moneyCompact(n)}/yr`, note: "holds its value (loses a little to inflation)", show: n > r },
+    { color: "bg-deferred/55", label: `${moneyCompact(n)} – ${moneyCompact(l)}/yr`, note: `draws down, but lasts to age ${endAge}`, show: l > n },
+    { color: "bg-tax/55", label: `above ${moneyCompact(l)}/yr`, note: `runs short before age ${endAge}`, show: l < max },
+  ].filter((x) => x.show);
+  return (
+    <div className="mt-3">
+      <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-foreground/10">
+        {zones.map((z, i) => (
+          <div
+            key={i}
+            className={`absolute top-0 h-full ${z.cls}`}
+            style={{ left: `${z.from}%`, width: `${Math.max(0, z.to - z.from)}%` }}
+          />
+        ))}
+        {/* current spend marker */}
+        <div className="absolute -top-1 h-[18px] w-[2px] bg-foreground" style={{ left: `calc(${pct(current)}% - 1px)` }} />
+      </div>
+      <div className="mt-2 space-y-1">
+        {rows.map((row, i) => (
+          <div key={i} className="flex items-start gap-2 text-[11px]">
+            <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${row.color}`} />
+            <span className="text-foreground/75">
+              <strong className="tabular">{row.label}</strong> — {row.note}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-1.5 text-[10px] text-foreground/45">▏The line marks your current {moneyCompact(current)}/yr.</p>
+    </div>
+  );
 }

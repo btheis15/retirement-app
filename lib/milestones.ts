@@ -93,8 +93,8 @@ export function detectMilestones(household: Household, proj: ProjectionResult): 
       year: firstRoth.year,
       age: firstRoth.selfAge,
       icon: "🌱",
-      title: "Roth withdrawals begin",
-      detail: `The plan starts using tax-free Roth (${money(firstRoth.fromRoth)}) — usually to cover spending without spiking your bracket or an IRMAA tier. Roth has no RMDs, so it's the natural last-resort, tax-free buffer.`,
+      title: "Roth first tapped (tax-free, last resort)",
+      detail: `Up to here, your pre-tax and brokerage accounts covered everything. From ${firstRoth.year} the plan dips into tax-free Roth (${money(firstRoth.fromRoth)}). This is NOT a required withdrawal — Roth has no RMDs, ever. It's spent last on purpose, so reaching it only now means your other money lasted this long.`,
       tone: "good",
     });
   }

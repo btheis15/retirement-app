@@ -27,6 +27,7 @@ import {
   ageInYear,
   gainFraction,
 } from "./accounts";
+import { adjustedAnnualBenefit } from "./socialSecurity";
 import { money } from "./format";
 
 export type StrategyId = "smart" | "conventional" | "proportional";
@@ -189,8 +190,17 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
   const spouseAge = ageInYear(household.spouse.birthYear, year);
   const num65Plus = (selfAge >= 65 ? 1 : 0) + (spouseAge >= 65 ? 1 : 0);
 
-  const ssSelf = selfAge >= household.self.ssClaimAge ? household.self.socialSecurityAnnual : 0;
-  const ssSpouse = spouseAge >= household.spouse.ssClaimAge ? household.spouse.socialSecurityAnnual : 0;
+  // The stored benefit is the full-retirement (PIA) amount; the actual check is
+  // reduced for early claiming or boosted by delayed-retirement credits, and is
+  // only received once each spouse reaches their claim age.
+  const ssSelf =
+    selfAge >= household.self.ssClaimAge
+      ? adjustedAnnualBenefit(household.self.socialSecurityAnnual, household.self.birthYear, household.self.ssClaimAge)
+      : 0;
+  const ssSpouse =
+    spouseAge >= household.spouse.ssClaimAge
+      ? adjustedAnnualBenefit(household.spouse.socialSecurityAnnual, household.spouse.birthYear, household.spouse.ssClaimAge)
+      : 0;
   const socialSecurity = ssSelf + ssSpouse;
 
   const balances = {
