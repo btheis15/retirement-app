@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, ReactNode } from "react";
+import { useMemo, useState, useRef, ReactNode } from "react";
 import Link from "next/link";
 import { useStore } from "@/components/HouseholdProvider";
 import { Card, PageTitle, SectionTitle, Pill, Stat, Disclaimer, Callout, Explainer, Info, StackedBar, PageSkeleton } from "@/components/ui";
@@ -54,7 +54,15 @@ export default function PlanPage() {
   const { ready, household, settings, updateSettings, updateHousehold } = useStore();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  const detailsRef = useRef<HTMLDivElement>(null);
   const year = useMemo(() => new Date().getFullYear(), []);
+
+  // Reveal the full dashboard AND scroll to it, so tapping "see all the numbers"
+  // (or Finish) obviously does something instead of silently expanding below.
+  const revealDetails = () => {
+    setShowAll(true);
+    setTimeout(() => detailsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+  };
 
   const plan = useMemo(
     () => planYear(household, { strategy: settings.strategy, bracketTarget: settings.bracketTarget, year }),
@@ -178,10 +186,10 @@ export default function PlanPage() {
       <PageTitle title={`What to do in ${year}`} subtitle="A step-by-step walkthrough — one thing at a time, in plain English." />
 
       {/* ---------- GUIDED WALKTHROUGH (the calm front door) ---------- */}
-      <GuidedPlan onSeeDetails={() => setShowAll(true)} />
+      <GuidedPlan onSeeDetails={revealDetails} />
 
       <button
-        onClick={() => setShowAll((v) => !v)}
+        onClick={() => (showAll ? setShowAll(false) : revealDetails())}
         aria-expanded={showAll}
         className="press mt-3 flex w-full items-center justify-between rounded-xl border border-border bg-card px-4 py-3 text-sm font-semibold text-foreground/70"
       >
@@ -190,7 +198,7 @@ export default function PlanPage() {
       </button>
 
       {showAll && (
-      <div className="rise mt-2">
+      <div ref={detailsRef} className="rise mt-2 scroll-mt-4">
       {/* ---------- ROBO-ADVISOR: goal → recommended plan ---------- */}
       <GoalAndRecommendation />
 
@@ -1088,16 +1096,16 @@ function RolloverPlanCard() {
 
   return (
     <>
-      <SectionTitle>The RMD tax bomb — and the rollover plan that defuses it</SectionTitle>
+      <SectionTitle>Smooth your future taxes with Roth rollovers</SectionTitle>
       <Explainer>
-        {Math.round(conv.pretaxShare * 100)}% of your money sits in pre-tax accounts. Left alone, the IRS forces
-        ever-larger taxable withdrawals (RMDs) in your 70s–80s. Rolling some to Roth now, in your low-tax years, shrinks
-        that future bill.
+        {Math.round(conv.pretaxShare * 100)}% of your money is pre-tax. The goal isn&apos;t to avoid RMDs — it&apos;s to
+        keep them from arriving as big, high-bracket chunks later. Moving a little to Roth now, while you&apos;re in a low
+        bracket, smooths your income and lowers your <em>lifetime</em> tax.
       </Explainer>
       <Callout
-        tone={conv.recommended ? "warn" : "info"}
-        icon="💣"
-        title={conv.recommended ? "Recommended: roll pre-tax → Roth" : "Consider rolling pre-tax → Roth"}
+        tone={conv.recommended ? "good" : "info"}
+        icon="🧭"
+        title={conv.recommended ? "Recommended: smooth some into Roth each year" : "Consider smoothing some into Roth"}
       >
         <p>
           Rolling about <strong>{money(conv.avgAnnualConversion)}/yr</strong> through <strong>{conv.windowEndYear}</strong>{" "}

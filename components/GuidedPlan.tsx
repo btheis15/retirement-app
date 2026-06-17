@@ -10,24 +10,28 @@
  */
 
 import { useMemo, useState, useEffect, useDeferredValue, useTransition, ReactNode } from "react";
+import Link from "next/link";
 import { useStore } from "@/components/HouseholdProvider";
 import { Card, Pill } from "@/components/ui";
 import { StackedBar } from "@/components/ui";
+import { spendingSweep, SpendingSweep } from "@/lib/spendingSweep";
 import { AnimatedNumber } from "@/components/charts";
 import { planYear } from "@/lib/optimizer";
-import { projectLifetime } from "@/lib/projection";
+import { ltcgZeroCeiling } from "@/lib/tax/engine";
+import { projectLifetime, ProjectionAssumptions } from "@/lib/projection";
 import { recommendPlan, GOAL_META } from "@/lib/goals";
 import { runMonteCarlo } from "@/lib/monteCarlo";
 import { returnModel } from "@/lib/returns";
 import { buildActionPlan } from "@/lib/actionPlan";
 import { GoalId, survivorFromSettings } from "@/lib/defaults";
+import { bucketOf } from "@/lib/accounts";
 import { money, moneyCompact, percent } from "@/lib/format";
 
 const GOALS: GoalId[] = ["maxCapital", "lowestTax", "lowestRate"];
 const SPEND_MAX = 400_000;
 
 export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
-  const { household, settings, updateSettings, updateHousehold } = useStore();
+  const { household, settings, updateSettings, updateHousehold, mode } = useStore();
   const year = useMemo(() => new Date().getFullYear(), []);
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState<"fwd" | "back">("fwd");
@@ -97,6 +101,25 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   }, [dHousehold, dAssumptions]);
   const rec = useMemo(() => recommendPlan(dHousehold, inputs, settings.goal), [dHousehold, settings]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Pre-tax share decides whether the rollover step is even relevant.
+  const pretaxShare = useMemo(() => {
+    const total = household.accounts.reduce((s, a) => s + a.balance, 0);
+    const pre = household.accounts.filter((a) => bucketOf(a.kind) === "pretax").reduce((s, a) => s + a.balance, 0);
+    return total > 0 ? pre / total : 0;
+  }, [household]);
+  // "How much CAN I spend?" — project across spending levels once (cached) to
+  // color the slider and show the impact on the account value live.
+  const sweep = useMemo(() => spendingSweep(dHousehold, dAssumptions), [dHousehold, dAssumptions]);
+  // Prove the point: same household, three rollover approaches, side by side.
+  const compare = useMemo(() => {
+    const mk = (over: Partial<ProjectionAssumptions>) => projectLifetime(dHousehold, { ...dAssumptions, ...over });
+    return {
+      none: mk({ convert: null }),
+      smooth: mk({ convert: { untilAge: settings.convertUntilAge, mode: "recommended" } }),
+      aggressive: mk({ convert: { untilAge: settings.convertUntilAge, mode: "fillBracket" }, bracketTarget: 0.24 }),
+    };
+  }, [dHousehold, dAssumptions, settings.convertUntilAge]);
+
   // ---- Derived, plain-English values for this year ----
   const w = plan.withdrawals;
   const totalDraw = w.pretax + w.taxable + w.roth;
@@ -113,6 +136,10 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   const spendingTax = Math.max(0, totalTax - conversionTax);
   const coveredByIncome = totalDraw < 0.5;
   const isIL = (household.state ?? "IL") === "IL";
+  // Federal can legitimately be ~$0 when income is mostly 0%-rate long-term gains/
+  // qualified dividends and ordinary income is under the standard deduction.
+  const federalZero = plan.tax.federalTax < 100 && plan.tax.taxableIncome > 1000;
+  const zeroCeiling = ltcgZeroCeiling(plan.filingStatus);
 
   const applyGoal = (goal: GoalId) => {
     startTransition(() => {
@@ -130,10 +157,79 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   // ---- Steps ----
   type Step = { key: string; eyebrow: string; render: () => ReactNode };
   const steps: Step[] = [];
+  const total = household.accounts.reduce((s, a) => s + a.balance, 0);
+  const needsSetup = mode === "demo" || household.accounts.length === 0;
+
+  steps.push({
+    key: "accounts",
+    eyebrow: "start with your money",
+    render: () => {
+      if (needsSetup) {
+        return (
+          <div>
+            <h2 className="text-xl font-bold leading-snug">First, let&apos;s use your real numbers</h2>
+            <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+              {mode === "demo"
+                ? "Right now you're looking at a $5M example."
+                : "You haven't added any accounts yet."}{" "}
+              Add your accounts — balances, which funds, your IRAs/401(k)s/Roth — and this whole plan recalculates around
+              what you actually have.
+            </p>
+            <Link
+              href="/accounts"
+              className="press mt-4 block rounded-2xl bg-primary px-4 py-3 text-center text-sm font-semibold text-white"
+            >
+              Add my accounts →
+            </Link>
+            {mode === "demo" && (
+              <button
+                onClick={() => go(1)}
+                className="press mt-2 block w-full rounded-2xl border border-border py-3 text-center text-sm font-semibold text-foreground/70"
+              >
+                Or keep exploring the example
+              </button>
+            )}
+          </div>
+        );
+      }
+      const pre = household.accounts.filter((a) => bucketOf(a.kind) === "pretax").reduce((s, a) => s + a.balance, 0);
+      const roth = household.accounts.filter((a) => bucketOf(a.kind) === "roth").reduce((s, a) => s + a.balance, 0);
+      const taxable = household.accounts.filter((a) => bucketOf(a.kind) === "taxable").reduce((s, a) => s + a.balance, 0);
+      return (
+        <div>
+          <h2 className="text-xl font-bold leading-snug">Here&apos;s what you have</h2>
+          <p className="mt-1 text-[13px] text-foreground/60">Everything below is built from these accounts. Looks right?</p>
+          <div className="mt-5 text-center">
+            <div className="tabular text-4xl font-bold text-primary">
+              <AnimatedNumber value={total} format={(n) => money(n)} />
+            </div>
+            <div className="text-[12px] text-foreground/50">across {household.accounts.length} accounts</div>
+          </div>
+          <div className="mt-4">
+            <StackedBar
+              segments={[
+                { value: pre, className: "bg-deferred", label: "Pre-tax" },
+                { value: taxable, className: "bg-taxable", label: "Taxable" },
+                { value: roth, className: "bg-roth", label: "Roth" },
+              ].filter((s) => s.value > 0.5)}
+            />
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-foreground/60">
+              {pre > 0.5 && <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-deferred align-middle" />Pre-tax {moneyCompact(pre)}</span>}
+              {taxable > 0.5 && <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-taxable align-middle" />Taxable {moneyCompact(taxable)}</span>}
+              {roth > 0.5 && <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-roth align-middle" />Roth {moneyCompact(roth)}</span>}
+            </div>
+          </div>
+          <Link href="/accounts" className="press mt-4 block rounded-xl border border-border py-2.5 text-center text-[13px] font-semibold text-primary">
+            Edit my accounts
+          </Link>
+        </div>
+      );
+    },
+  });
 
   steps.push({
     key: "goal",
-    eyebrow: "First, what matters most?",
+    eyebrow: "what matters most",
     render: () => (
       <div>
         <h2 className="text-xl font-bold leading-snug">What&apos;s your #1 goal for this money?</h2>
@@ -169,41 +265,91 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
   steps.push({
     key: "spend",
-    eyebrow: "Step 1 — your target",
-    render: () => (
-      <div>
-        <h2 className="text-xl font-bold leading-snug">How much do you want to spend each year?</h2>
-        <p className="mt-1 text-[13px] text-foreground/60">
-          This is your <strong>take-home</strong> number — money in your pocket after all taxes. Everything else flows from it.
-        </p>
-        <div className="mt-5 text-center">
-          <div className="tabular text-4xl font-bold text-primary">
-            <AnimatedNumber value={localSpend} format={(n) => money(n)} />
+    eyebrow: "how much you can spend",
+    render: () => {
+      const cur = sweep.at(localSpend);
+      const compPct = Math.max(0, Math.min(100, (sweep.comfortableMax / sweep.max) * 100));
+      const sustPct = Math.max(compPct, Math.min(100, (sweep.sustainableMax / sweep.max) * 100));
+      const zone = localSpend <= sweep.comfortableMax ? "comfortable" : localSpend <= sweep.sustainableMax ? "tight" : "short";
+      const hasRoom = sweep.sustainableMax > 0;
+      return (
+        <div>
+          <h2 className="text-xl font-bold leading-snug">How much do you want to spend each year?</h2>
+          <p className="mt-1 text-[13px] text-foreground/60">
+            Your <strong>take-home</strong> target — money in your pocket after all taxes. The colored bar shows how much
+            your savings can actually support.
+          </p>
+          <div className="mt-4 text-center">
+            <div className="tabular text-4xl font-bold text-primary">
+              <AnimatedNumber value={localSpend} format={(n) => money(n)} />
+            </div>
+            <div className="text-[12px] text-foreground/50">per year, after tax</div>
           </div>
-          <div className="text-[12px] text-foreground/50">per year, after tax</div>
+
+          {/* Colored "how much you can spend" zones + slider */}
+          <div className="mt-4 flex h-2.5 w-full overflow-hidden rounded-full bg-foreground/5">
+            <div className="bg-gain/70" style={{ width: `${compPct}%` }} title="Comfortable" />
+            <div className="bg-accent/60" style={{ width: `${sustPct - compPct}%` }} title="Doable but tight" />
+            <div className="bg-tax/50" style={{ width: `${100 - sustPct}%` }} title="Runs short" />
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={SPEND_MAX}
+            step={5_000}
+            value={Math.min(SPEND_MAX, localSpend)}
+            onChange={(e) => setLocalSpend(Number(e.target.value))}
+            className="mt-1.5 w-full accent-primary"
+            aria-label="Yearly spending"
+          />
+
+          {/* Live impact on the account value */}
+          {hasRoom && (
+            <p
+              className={`mt-3 rounded-xl px-3 py-2 text-[13px] leading-relaxed ${
+                zone === "comfortable" ? "bg-gain/5 text-foreground/80" : zone === "tight" ? "bg-accent/10 text-foreground/80" : "bg-tax/5 text-foreground/80"
+              }`}
+            >
+              {zone === "comfortable" && (
+                <>✅ <strong>Comfortable.</strong> Your money lasts to {settings.endAge} and you&apos;d still have about{" "}
+                  <strong>{money(cur.endingEstate)}</strong> left.</>
+              )}
+              {zone === "tight" && (
+                <>🟡 <strong>Doable, but tight.</strong> It lasts to {settings.endAge}, but you&apos;d end with only about{" "}
+                  <strong>{money(cur.endingEstate)}</strong>.</>
+              )}
+              {zone === "short" && (
+                <>🔴 <strong>Too high.</strong> At this level your savings would run short around <strong>age {Number.isFinite(cur.depletionAge) ? cur.depletionAge : settings.endAge}</strong>.</>
+              )}
+            </p>
+          )}
+
+          {/* Sparkline: account value left vs how much you spend */}
+          {hasRoom && <SpendSparkline sweep={sweep} current={localSpend} endAge={settings.endAge} />}
+
+          {hasRoom && (
+            <p className="mt-3 rounded-xl bg-primary/5 px-3 py-2 text-[12px] leading-relaxed text-foreground/70">
+              💡 Most careful savers <em>under</em>-spend. Based on your accounts, you can comfortably spend up to about{" "}
+              <strong>{money(sweep.comfortableMax)}/yr</strong> — and up to <strong>{money(sweep.sustainableMax)}/yr</strong>{" "}
+              before you&apos;d risk running short.
+              {localSpend < sweep.comfortableMax - 10_000 && (
+                <>
+                  {" "}
+                  <button onClick={() => setLocalSpend(Math.round(sweep.comfortableMax / 5_000) * 5_000)} className="press font-semibold text-primary underline">
+                    Try {moneyCompact(sweep.comfortableMax)} →
+                  </button>
+                </>
+              )}
+            </p>
+          )}
         </div>
-        <input
-          type="range"
-          min={0}
-          max={SPEND_MAX}
-          step={5_000}
-          value={Math.min(SPEND_MAX, localSpend)}
-          onChange={(e) => setLocalSpend(Number(e.target.value))}
-          className="mt-4 w-full accent-primary"
-          aria-label="Yearly spending"
-        />
-        <div className="mt-1 flex justify-between text-[11px] text-foreground/45">
-          <span>{moneyCompact(0)}</span>
-          <span>{moneyCompact(SPEND_MAX)}+</span>
-        </div>
-        <p className="mt-3 text-[12px] text-foreground/60">Drag the slider — the plan on the next steps updates instantly.</p>
-      </div>
-    ),
+      );
+    },
   });
 
   steps.push({
     key: "cover",
-    eyebrow: "Step 2 — what pays for it",
+    eyebrow: "what pays for it",
     render: () => (
       <div>
         <h2 className="text-xl font-bold leading-snug">Good news — most of it is already covered</h2>
@@ -233,7 +379,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
   steps.push({
     key: "pull",
-    eyebrow: "Step 3 — where to pull it",
+    eyebrow: "where to pull it",
     render: () => {
       const items: { label: string; amount: number; why: string; dot: string }[] = [];
       if (rmd > 0.5) items.push({ label: "Take your required withdrawal (RMD)", amount: rmd, why: "The IRS forces this out of pre-tax accounts first; it's taxed as ordinary income.", dot: "bg-deferred" });
@@ -267,44 +413,104 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     },
   });
 
-  if (conversion > 0.5) {
+  if (pretaxShare > 0.2) {
     steps.push({
       key: "roll",
-      eyebrow: "Step 4 — the smart move",
-      render: () => (
-        <div>
-          <h2 className="text-xl font-bold leading-snug">Now roll {money(conversion)} into your Roth</h2>
-          <p className="mt-1 text-[13px] text-foreground/60">
-            This is <strong>not spending</strong> — you&apos;re moving money from your pre-tax IRA/401(k) into Roth on purpose.
-          </p>
-          <div className="mt-4 flex items-center justify-center gap-3 text-center">
-            <div className="rounded-2xl border border-deferred/30 bg-deferred/5 px-4 py-3">
-              <div className="text-[11px] uppercase tracking-wide text-foreground/50">From pre-tax</div>
-              <div className="tabular text-lg font-bold text-deferred">{moneyCompact(conversion)}</div>
-            </div>
-            <span className="text-2xl text-foreground/40">→</span>
-            <div className="rounded-2xl border border-roth/30 bg-roth/5 px-4 py-3">
-              <div className="text-[11px] uppercase tracking-wide text-foreground/50">Into Roth</div>
-              <div className="tabular text-lg font-bold text-roth">{moneyCompact(conversion)}</div>
-            </div>
-          </div>
-          <p className="mt-4 rounded-xl bg-roth/5 px-3 py-2 text-[13px] text-foreground/75">
-            Why? Left alone, this money would be force-withdrawn later as RMDs and taxed at a higher rate. Moving it now —
-            at today&apos;s lower rate — shrinks that future tax bomb, and it then grows <strong>tax-free, with no future RMDs</strong>.
-          </p>
-          {isIL && (
-            <p className="mt-2 rounded-xl bg-gain/10 px-3 py-2 text-[12px] text-gain">
-              🟢 In Illinois the rollover itself is <strong>state-tax-free</strong> — you only owe federal tax to do it.
+      eyebrow: "smoothing your future taxes",
+      render: () => {
+        const lt = (p: { lifetimeTax: number }) => p.lifetimeTax;
+        const rows = [
+          { name: "Do nothing extra", p: compare.none, hint: "RMDs come out in big chunks later" },
+          { name: "Smooth (recommended)", p: compare.smooth, hint: "small rollovers, stay in low brackets", best: true },
+          { name: "Convert aggressively", p: compare.aggressive, hint: "fill the 24% bracket every year" },
+        ];
+        const lowestLifetime = Math.min(...rows.map((r) => lt(r.p)));
+        return (
+          <div>
+            <h2 className="text-xl font-bold leading-snug">Smooth your future tax bill</h2>
+            <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+              RMDs aren&apos;t the enemy — a steady withdrawal is fine. The trap is a <strong>big</strong> one that jumps
+              you into a higher bracket. The fix isn&apos;t to wipe out RMDs; it&apos;s to move a little to Roth now —
+              only up to the top of a low bracket — so every year stays low and your <strong>lifetime</strong> tax is the
+              smallest. We never convert a dollar at a higher rate than you&apos;d pay later.
             </p>
-          )}
-        </div>
-      ),
+
+            {/* Proof: three approaches on YOUR numbers */}
+            <div className="mt-4 overflow-hidden rounded-2xl border border-border">
+              <div className="grid grid-cols-[1.4fr_1fr_1fr] bg-foreground/[0.03] px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-foreground/50">
+                <span>Approach</span>
+                <span className="text-right">Lifetime tax</span>
+                <span className="text-right">Worst RMD</span>
+              </div>
+              {rows.map((r) => (
+                <div
+                  key={r.name}
+                  className={`grid grid-cols-[1.4fr_1fr_1fr] items-center px-3 py-2 text-[12px] ${r.best ? "bg-gain/[0.06]" : "border-t border-border/50"}`}
+                >
+                  <span>
+                    <span className={`font-semibold ${r.best ? "text-gain" : ""}`}>{r.name}</span>
+                    <span className="block text-[10px] leading-tight text-foreground/50">{r.hint}</span>
+                  </span>
+                  <span className={`tabular text-right font-semibold ${lt(r.p) === lowestLifetime ? "text-gain" : "text-foreground/80"}`}>
+                    {moneyCompact(r.p.lifetimeTax)}
+                  </span>
+                  <span className="tabular text-right text-foreground/70">{moneyCompact(r.p.peakRmd)}</span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 text-[12px] leading-relaxed text-foreground/65">
+              See it? <strong>Smoothing</strong> pays the least lifetime tax — small rollovers keep every year in a low
+              bracket. Doing nothing lets RMDs balloon; converting aggressively just pre-pays tax you didn&apos;t need to.
+            </p>
+
+            {/* The decision, right here */}
+            <div className="mt-4 rounded-2xl border border-border p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[13px] font-semibold">Use the smoothing rollover plan?</span>
+                <button
+                  onClick={() => updateSettings({ useConversions: !settings.useConversions })}
+                  className={`press rounded-full px-4 py-1.5 text-[13px] font-semibold ${settings.useConversions ? "bg-gain/15 text-gain" : "bg-primary text-white"}`}
+                >
+                  {settings.useConversions ? "✓ On" : "Turn on"}
+                </button>
+              </div>
+              {settings.useConversions && (
+                <>
+                  <p className="mt-2 text-[12px] text-foreground/65">
+                    This year that&apos;s about <strong>{money(conversion)}</strong> moved pre-tax → Roth — sized to fill
+                    your low bracket, no more.
+                  </p>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => updateSettings({ convertMode: "recommended" })}
+                      className={`press rounded-xl border px-2 py-1.5 text-center text-[12px] ${settings.convertMode === "recommended" ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/70"}`}
+                    >
+                      Smooth (recommended)
+                    </button>
+                    <button
+                      onClick={() => updateSettings({ convertMode: "fillBracket" })}
+                      className={`press rounded-xl border px-2 py-1.5 text-center text-[12px] ${settings.convertMode === "fillBracket" ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/70"}`}
+                    >
+                      Fill the {percent(settings.bracketTarget, 0)} bracket
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+            {isIL && (
+              <p className="mt-2 rounded-xl bg-gain/10 px-3 py-2 text-[12px] text-gain">
+                🟢 In Illinois the rollover itself is <strong>state-tax-free</strong> — you only owe federal tax to do it.
+              </p>
+            )}
+          </div>
+        );
+      },
     });
   }
 
   steps.push({
     key: "tax",
-    eyebrow: `Step ${conversion > 0.5 ? "5" : "4"} — the tax, and why`,
+    eyebrow: "the tax, and why",
     render: () => (
       <div>
         <h2 className="text-xl font-bold leading-snug">Set aside {money(totalTax)} for tax</h2>
@@ -331,6 +537,15 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             <div className="tabular text-sm font-bold text-tax">{moneyCompact(plan.tax.stateTax)}</div>
           </div>
         </div>
+        {federalZero && (
+          <p className="mt-3 rounded-xl bg-ss/5 px-3 py-2 text-[12px] leading-relaxed text-foreground/75">
+            <strong>Wait — why $0 federal?</strong> Most of your income this year is long-term capital gains and
+            qualified dividends. {plan.filingStatus === "single" ? "Filing single" : "Filing jointly"}, those get a
+            special <strong>0% federal rate</strong> as long as your taxable income stays under about{" "}
+            {money(zeroCeiling)} — and your ordinary income is covered by the standard deduction, so there&apos;s
+            nothing left for the IRS to tax. {isIL ? "Illinois has no 0% bracket, so it still taxes that investment income at its flat 4.95% — that's the " + money(plan.tax.stateTax) + "." : ""}
+          </p>
+        )}
         {conversion > 0.5 && (
           <p className="mt-3 rounded-xl bg-foreground/5 px-3 py-2 text-[12px] text-foreground/70">
             Of that, about <strong>{money(conversionTax)}</strong> is the tax on your rollover (best paid from cash, so the full{" "}
@@ -338,7 +553,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             {money(spendingTax)} covers your spending income.
           </p>
         )}
-        {isIL && (
+        {isIL && !federalZero && (
           <p className="mt-2 text-[12px] text-foreground/55">
             🟢 Illinois taxes only your investment income — your withdrawals, RMDs, rollover, pension, and Social Security are state-tax-free.
           </p>
@@ -349,7 +564,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
   steps.push({
     key: "ahead",
-    eyebrow: `Step ${conversion > 0.5 ? "6" : "5"} — looking ahead`,
+    eyebrow: "looking ahead",
     render: () => (
       <div>
         <h2 className="text-xl font-bold leading-snug">Your next few years, at a glance</h2>
@@ -446,6 +661,39 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         )}
       </div>
     </Card>
+  );
+}
+
+/** Tiny line showing account value left at the end vs. yearly spending, with a
+ *  dot at the current choice — makes the spend↔legacy tradeoff visceral. */
+function SpendSparkline({ sweep, current, endAge }: { sweep: SpendingSweep; current: number; endAge: number }) {
+  const w = 320;
+  const h = 64;
+  const padX = 4;
+  const padTop = 6;
+  const padBot = 4;
+  const pts = sweep.points;
+  if (pts.length < 2) return null;
+  const maxEst = Math.max(1, ...pts.map((p) => p.endingEstate));
+  const xAt = (spend: number) => padX + (spend / sweep.max) * (w - 2 * padX);
+  const yAt = (est: number) => padTop + (1 - est / maxEst) * (h - padTop - padBot);
+  const line = pts.map((p) => `${xAt(p.spend)},${yAt(p.endingEstate)}`).join(" L ");
+  const cur = sweep.at(current);
+  const cx = xAt(current);
+  const cy = yAt(cur.endingEstate);
+  return (
+    <div className="mt-3">
+      <div className="mb-1 text-[10px] uppercase tracking-wide text-foreground/45">Money left at {endAge} vs. yearly spending</div>
+      <svg viewBox={`0 0 ${w} ${h}`} className="w-full">
+        <path d={`M ${line}`} fill="none" stroke="var(--color-primary)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        <line x1={cx} y1={padTop} x2={cx} y2={h - padBot} stroke="var(--color-foreground)" strokeOpacity="0.2" strokeDasharray="3 3" />
+        <circle cx={cx} cy={cy} r="3.5" fill="var(--color-primary)" />
+      </svg>
+      <div className="flex justify-between text-[10px] text-foreground/45">
+        <span>spend $0</span>
+        <span>{moneyCompact(sweep.max)}+</span>
+      </div>
+    </div>
   );
 }
 
