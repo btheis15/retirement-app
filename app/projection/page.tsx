@@ -9,6 +9,7 @@ import { detectMilestones } from "@/lib/milestones";
 import { analyzeConversions } from "@/lib/rothConversion";
 import { runMonteCarlo } from "@/lib/monteCarlo";
 import { runStressTests } from "@/lib/stressTest";
+import { solveSafeSpending, SafeSpendResult } from "@/lib/spendingSolver";
 import { STRATEGY_META } from "@/lib/optimizer";
 import { returnModel } from "@/lib/returns";
 import { survivorFromSettings } from "@/lib/defaults";
@@ -21,6 +22,9 @@ import { SOURCES } from "@/lib/sources";
 export default function ProjectionPage() {
   const { ready, household, settings, updateSettings } = useStore();
   const [showAdv, setShowAdv] = useState(false);
+  const [safe, setSafe] = useState<SafeSpendResult[] | null>(null);
+  const [solving, setSolving] = useState(false);
+  const [solveProg, setSolveProg] = useState(0);
 
   const result = useMemo(() => {
     const base = {
@@ -128,6 +132,29 @@ export default function ProjectionPage() {
   // cut, not $0. Uses the full benefits as the eventual lifetime floor.
   const guaranteedAnnual = household.self.socialSecurityAnnual + household.spouse.socialSecurityAnnual + household.pensionAnnual;
   const guaranteedMonthly = guaranteedAnnual / 12;
+
+  const findSafeSpending = async () => {
+    setSolving(true);
+    setSafe(null);
+    setSolveProg(0);
+    const assumptions = {
+      strategy: settings.strategy,
+      bracketTarget: settings.bracketTarget,
+      returnRate: settings.returnRate,
+      inflationRate: settings.inflationRate,
+      endAge: settings.endAge,
+      convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
+      survivor: survivorFromSettings(settings),
+      heirTaxRate: settings.heirTaxRate,
+      spendingStrategy: settings.spendingStrategy,
+    } as const;
+    const res = await solveSafeSpending(household, assumptions, [0.9, 0.5], {
+      model: rm,
+      onProgress: (d, t) => setSolveProg(d / t),
+    });
+    setSafe(res);
+    setSolving(false);
+  };
 
   // Stacked-area series (sample is fine — rows are annual).
   const areaRows = rows.map((r) => ({ x: r.year }));
@@ -408,6 +435,55 @@ export default function ProjectionPage() {
             higher success rate is being willing to trim in down markets.
           </p>
         )}
+        {/* Sustainable-spending solver — "how much can I safely spend?" */}
+        <div className="mt-3 rounded-xl border border-border p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[13px] font-semibold">How much could you safely spend?</span>
+            <button
+              onClick={findSafeSpending}
+              disabled={solving}
+              className="press rounded-full bg-primary px-3 py-1 text-[12px] font-semibold text-white disabled:opacity-50"
+            >
+              {solving ? `Solving… ${Math.round(solveProg * 100)}%` : safe ? "Recompute" : "Find it →"}
+            </button>
+          </div>
+          {!safe && !solving && (
+            <p className="mt-1 text-[11px] leading-relaxed text-foreground/55">
+              Solves for the yearly spend that hits a target confidence level — the &ldquo;plan-with&rdquo; (90%) and
+              &ldquo;coin-flip&rdquo; (50%) numbers advisors quote. Runs a few hundred simulations; takes a few seconds.
+            </p>
+          )}
+          {solving && (
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
+              <div className="h-full bg-primary transition-all" style={{ width: `${Math.round(solveProg * 100)}%` }} />
+            </div>
+          )}
+          {safe && !solving && (
+            <div className="mt-2">
+              <div className="grid grid-cols-2 gap-2">
+                {safe.map((s) => (
+                  <div key={s.target} className="rounded-xl border border-border bg-background/60 p-2 text-center">
+                    <div className="text-[10px] uppercase tracking-wide text-foreground/50">
+                      {Math.round(s.target * 100)}% confidence {s.target >= 0.9 ? "(plan-with)" : "(coin-flip)"}
+                    </div>
+                    <div className="tabular text-base font-bold text-gain">{moneyCompact(s.spend)}/yr</div>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-foreground/55">
+                These are in today&apos;s dollars. You&apos;re currently planning{" "}
+                <strong>{moneyCompact(household.annualSpending)}/yr</strong>
+                {safe[0] && household.annualSpending <= safe[0].spend
+                  ? " — comfortably within the 90% level."
+                  : safe[0] && household.annualSpending > safe[0].spend && safe[1] && household.annualSpending <= safe[1].spend
+                    ? " — above the 90% level but under the coin-flip; doable if you can stay flexible."
+                    : " — above even the coin-flip level; consider trimming, working longer, or turning on guardrails."}
+                {" "}Aiming far above 90% mostly buys unspent legacy.
+              </p>
+            </div>
+          )}
+        </div>
+
         <Info q="Why percentiles instead of “average ± standard deviation”?" sources={[]}>
           <p className="mb-1.5">
             The randomness <em>input</em> is your portfolio&apos;s volatility — a standard deviation (~{percent(mc.volatility, 0)} a
