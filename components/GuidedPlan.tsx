@@ -23,7 +23,7 @@ import { projectLifetime, ProjectionAssumptions } from "@/lib/projection";
 import { recommendPlan, GOAL_META } from "@/lib/goals";
 import { runMonteCarlo } from "@/lib/monteCarlo";
 import { returnModel } from "@/lib/returns";
-import { buildActionPlan } from "@/lib/actionPlan";
+import { buildActionPlan, PlanYear, PlanAction } from "@/lib/actionPlan";
 import { GoalId, survivorFromSettings } from "@/lib/defaults";
 import { bucketOf } from "@/lib/accounts";
 import { money, moneyCompact, percent } from "@/lib/format";
@@ -699,17 +699,10 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       <div>
         <h2 className="text-xl font-bold leading-snug">Your next few years, at a glance</h2>
         <p className="mt-1 text-[13px] text-foreground/60">So you know what&apos;s coming and can plan around it.</p>
-        <div className="mt-4 space-y-2">
+        <p className="-mt-0.5 text-[11px] text-foreground/45">Tap any year to see everything it involves.</p>
+        <div className="mt-3 space-y-2">
           {lookAhead.map((y, i) => (
-            <div key={y.year} className="rise rounded-2xl border border-border p-3" style={{ ["--i" as string]: i } as React.CSSProperties}>
-              <div className="flex items-center justify-between">
-                <span className="font-semibold">
-                  {y.year} <span className="text-foreground/50">· age {y.selfAge}</span>
-                </span>
-                <span className="tabular text-[12px] text-foreground/55">tax {moneyCompact(y.tax)}</span>
-              </div>
-              <p className="mt-1 text-[12px] leading-snug text-foreground/70">{y.actions[0]?.text}{y.actions.length > 1 ? `, +${y.actions.length - 1} more` : ""}</p>
-            </div>
+            <AheadYearRow key={y.year} y={y} i={i} />
           ))}
         </div>
       </div>
@@ -791,6 +784,70 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         )}
       </div>
     </Card>
+  );
+}
+
+/** One year in the "Looking ahead" list. Collapsed it shows a one-line summary;
+ *  tapped, it reveals EVERY action for that year (RMD, conversion, brokerage
+ *  sale, Roth tap…), any life events that begin that year, and the spending it
+ *  funds — so "+1 more" is never a dead end. Self-contained open state. */
+const ACTION_DOT: Record<PlanAction["kind"], string> = {
+  rmd: "bg-deferred",
+  pretax: "bg-deferred",
+  convert: "bg-roth",
+  taxable: "bg-taxable",
+  roth: "bg-roth",
+  none: "bg-foreground/30",
+};
+function AheadYearRow({ y, i }: { y: PlanYear; i: number }) {
+  const [open, setOpen] = useState(false);
+  const summary = `${y.actions[0]?.text ?? ""}${y.actions.length > 1 ? `, +${y.actions.length - 1} more` : ""}`;
+  return (
+    <div className="rise rounded-2xl border border-border" style={{ ["--i" as string]: i } as React.CSSProperties}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="press flex w-full items-center justify-between gap-2 px-3 pt-3 text-left"
+      >
+        <span className="font-semibold">
+          {y.year} <span className="text-foreground/50">· age {y.selfAge}</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          <span className="tabular text-[12px] text-foreground/55">tax {moneyCompact(y.tax)}</span>
+          <span className={`text-foreground/40 transition-transform ${open ? "rotate-180" : ""}`}>⌄</span>
+        </span>
+      </button>
+      {!open ? (
+        <button onClick={() => setOpen(true)} className="block w-full px-3 pb-3 pt-1 text-left">
+          <span className="text-[12px] leading-snug text-foreground/70">{summary}</span>
+        </button>
+      ) : (
+        <div className="rise px-3 pb-3 pt-2">
+          {y.events.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {y.events.map((e) => (
+                <span key={e} className="rounded-full bg-ss/10 px-2 py-0.5 text-[11px] font-medium text-ss">
+                  📌 {e}
+                </span>
+              ))}
+            </div>
+          )}
+          <ul className="space-y-1.5">
+            {y.actions.map((a, idx) => (
+              <li key={idx} className="flex gap-2 text-[12px] leading-snug">
+                <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${ACTION_DOT[a.kind]}`} />
+                <span className="text-foreground/80">{a.text}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 border-t border-border/50 pt-2 text-[11px] leading-relaxed text-foreground/55">
+            {y.coveredByIncome
+              ? `Your guaranteed income covers your ${money(y.spendingTarget)} of spending this year — nothing forced from savings.`
+              : `This funds your ${money(y.spendingTarget)} of spending for the year, for about ${money(y.tax)} in total tax.`}
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
 
