@@ -12,7 +12,7 @@
 import { useMemo, useState, useEffect, useDeferredValue, useTransition, ReactNode } from "react";
 import Link from "next/link";
 import { useStore } from "@/components/HouseholdProvider";
-import { Card, Pill } from "@/components/ui";
+import { Card, Pill, Info, Callout } from "@/components/ui";
 import { StackedBar } from "@/components/ui";
 import { spendingSweep, SpendingSweep } from "@/lib/spendingSweep";
 import { AnimatedNumber } from "@/components/charts";
@@ -434,6 +434,73 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         const captured =
           aggrKeep > noneKeep + 1 ? Math.round(((smoothKeep - noneKeep) / (aggrKeep - noneKeep)) * 100) : 100;
         const aggrEdge = aggrKeep - smoothKeep;
+
+        // ---- Detailed, plain-English scenario explanations -------------------
+        // Drafted through 3 lenses and adversarially verified for accuracy across
+        // household types (wealthy / moderate / low-pre-tax). Every numeric claim
+        // is dynamic; phrasing flips so it stays TRUE whether aggressive helps,
+        // ties, or loses money. moneyCompact() keeps the sign of negatives, so all
+        // magnitude comparisons use Math.abs() + an explicit more/less/same word.
+        const pctBT = percent(settings.bracketTarget, 0);
+        const pctAggr = percent(compare.aggressive.peakMarginalRate, 0);
+        const pctFuture = percent(proj.futureRate, 0);
+        const pctNonePeak = percent(compare.none.peakMarginalRate, 0);
+        const moveThisYear = conversion < 1000 ? "little or no conversion" : `about ${money(conversion)}`;
+        const aggrVsSmooth =
+          aggrEdge > 1
+            ? `about ${moneyCompact(aggrEdge)} more than smoothing — a small edge in return for a much bigger tax bill now`
+            : aggrEdge < -1
+              ? `about ${moneyCompact(Math.abs(aggrEdge))} less than smoothing — because paying a higher rate now just to dodge a lower one later actually leaves you worse off`
+              : "about the same as smoothing — so there's no reason to take on the bigger, lumpier tax bill";
+        const RMD_DEF =
+          "RMD stands for Required Minimum Distribution. Starting at age 73 the IRS makes you take a minimum amount out of your pre-tax retirement accounts (a traditional IRA or a workplace 401(k) — money you set aside before paying tax, so the tax has never been paid on it) every year, whether you need it or not, and you pay income tax on it — the same way a paycheck or pension is taxed. The bigger that account grows, the bigger this forced withdrawal gets.";
+        const BRACKET_DEF =
+          "Income tax comes in steps. The first slice of your income is taxed at a low rate, the next slice a bit higher, and so on. A tax bracket is just the rate the next dollar you earn gets taxed at. Filling a low step up to its top means paying that gentle rate; any income above it is taxed at the next, higher rate.";
+        const ROTH_DEF =
+          "A Roth is a retirement account you've already paid the tax on. It grows tax-free, you owe nothing when you take money out, and you are never forced to withdraw from your own Roth — there are no RMDs on it during your life.";
+        const explain = [
+          {
+            q: "⬜ Do nothing — the IRS pulls the money out for you, on its schedule",
+            body: `In this path you never move a dollar on purpose. Your pre-tax retirement accounts — a traditional IRA or workplace 401(k), money you set aside before paying tax — just keep growing. The catch is that starting at age 73 the IRS makes you take a minimum amount out every year (that's an RMD, a required minimum distribution) and taxes it the same way a paycheck is taxed. Because the forced withdrawal is a share of an account that keeps growing, the dollar amount you're made to take out gets bigger over time — in your case the largest one reaches about ${moneyCompact(compare.none.peakRmd)}, and the top of your income in those years lands in the ${pctNonePeak} bracket. Nothing is wrong with the money — it's all still yours — but you don't get to pick the years you pay the tax; the IRS decides for you. And whatever pre-tax money is left when you pass still owes income tax: whoever inherits it pays it. That's why your family keeps about ${moneyCompact(compare.none.endingEstateAfterTax)} after every tax is paid — about ${moneyCompact(gainVsNothing)} less than the smoothing plan would leave.`,
+            upside: "Nothing to do and no tax you chose to trigger — your money keeps growing untouched until it's withdrawn or inherited.",
+            downside: `You don't control when the tax hits, the leftover pre-tax money still owes income tax for your heirs, and your family keeps about ${moneyCompact(gainVsNothing)} less than with smoothing.`,
+            catchFirst: false,
+          },
+          {
+            q: "🟩 Smooth (recommended) — move a little to your Roth each year, at a gentle rate",
+            body: `Here you take the IRS's required minimum withdrawal as usual, and then quietly move a modest extra amount from your pre-tax account into a Roth — an account where the money then grows tax-free and is never forced out again. The key is the size: each year you move only enough to fill your low ${pctBT} bracket up to its top and not a dollar more, so the tax stays small and predictable. It works best if you pay that tax from your regular savings or checking rather than from the retirement account, so the full amount keeps growing — and Illinois doesn't tax the move at all. This year's suggested move is ${moveThisYear}. The rule behind it is simple: never move a dollar at a higher tax rate than you'd pay on it later, so you're only ever paying tax you'd owe anyway, just sooner and at a known low rate. Doing this gently shrinks the pre-tax balance that drives those forced withdrawals, so your biggest RMD ever stays down around ${moneyCompact(compare.smooth.peakRmd)} instead of ${moneyCompact(compare.none.peakRmd)}. After every tax is paid your family keeps about ${moneyCompact(compare.smooth.endingEstateAfterTax)} — roughly ${moneyCompact(gainVsNothing)} more than leaving it alone.`,
+            upside: `A small, known tax now buys tax-free growth and far smaller forced withdrawals later — about ${moneyCompact(gainVsNothing)} more for your family than doing nothing, all inside your gentle ${pctBT} rate.`,
+            downside: "You do pay a little tax in each year you move money, and it takes a small, steady bit of attention rather than being fully hands-off.",
+            catchFirst: false,
+          },
+          {
+            q: "🟧 Convert aggressively — empty the pre-tax account fast",
+            body: `This is the same idea as smoothing, but with much bigger amounts each year: instead of filling only your gentle ${pctBT} bracket, you move so much that the last of it is taxed up at the ${pctAggr} rate. Over the conversion years you'd move a large total out of the pre-tax account. Because you clear it out fastest, your forced withdrawals later nearly disappear — your biggest RMD ever drops to about ${moneyCompact(compare.aggressive.peakRmd)}. Whether this is wise comes down to one comparison: the tax rate you'd likely pay later, once those forced withdrawals are large, is about ${pctFuture}, and you'd be paying ${pctAggr} now to avoid it. On your numbers this path leaves your family ${aggrVsSmooth}.`,
+            upside: `Your forced withdrawals later nearly disappear — your biggest RMD ever falls to about ${moneyCompact(compare.aggressive.peakRmd)}.`,
+            downside: `You pay a big tax bill now, up at the ${pctAggr} rate — and whenever the rate you'd have paid later would be lower, that's paying a high rate now just to dodge a lower one.`,
+            catchFirst: aggrEdge <= 0,
+          },
+        ];
+
+        // ---- Single, first-match recommendation -----------------------------
+        // Ordered so it NEVER praises aggressive when it loses/ties, and only says
+        // "little to do" when the whole decision barely moves the outcome (not just
+        // when this one year's conversion is $0 — the moderate household converts
+        // $0 THIS year yet the lifetime choice still swings ~$200k).
+        const worstKeep = Math.min(noneKeep, smoothKeep, aggrKeep);
+        const barelyMatters = mostKept - worstKeep < Math.max(40_000, mostKept * 0.02);
+        const aggrThreshold = Math.max(50_000, noneKeep * 0.005);
+        let takeaway: string;
+        if (barelyMatters) {
+          takeaway = `For your situation there's very little to do here, and that's good news. You don't have much pre-tax money driving future forced withdrawals, so your outcome stays about the same no matter which path you pick — all three land within a hair of each other (around ${moneyCompact(smoothKeep)} for your family). This year the plan suggests ${moveThisYear}. Converting harder wouldn't meaningfully change your outcome, so don't feel you need to act.`;
+        } else if (aggrEdge < 0) {
+          takeaway = `Smoothing is the clear winner for you, and converting aggressively would be a mistake. The tax rate you'd likely pay later on your forced withdrawals is only about ${pctFuture}, so paying up in the ${pctAggr} bracket now to clear the account faster actually leaves your family about ${moneyCompact(Math.abs(aggrEdge))} worse off than smoothing. Stick with the small, steady moves inside your ${pctBT} bracket — ${moveThisYear} this year — and keep the roughly ${moneyCompact(gainVsNothing)} you gain over doing nothing.`;
+        } else if (aggrEdge <= aggrThreshold) {
+          takeaway = `Go with smoothing. It captures about ${captured}% of the entire benefit — roughly ${moneyCompact(gainVsNothing)} more for your family than doing nothing — in small, low-rate steps that never leave your gentle ${pctBT} bracket. Converting aggressively would add only about ${moneyCompact(aggrEdge)} on top, and only by paying tax up in the higher ${pctAggr} bracket — not worth the bigger, lumpier tax bill. This year, move ${moveThisYear}.`;
+        } else {
+          takeaway = `Both active paths beat doing nothing handily. Smoothing alone already gets your family about ${moneyCompact(gainVsNothing)} more, gently and predictably. Because the rate you'd face later is genuinely high (about ${pctFuture}), converting aggressively could add a further ${moneyCompact(aggrEdge)} on top — but only by paying a much bigger tax bill now, up in the ${pctAggr} bracket. If you have the cash to cover that bill and want to wring out every dollar, aggressive edges ahead; if you'd rather keep it calm, smoothing is still an excellent choice. Either way, start with ${moveThisYear} this year.`;
+        }
+
         return (
           <div>
             <h2 className="text-xl font-bold leading-snug">Smooth your future tax bill</h2>
@@ -479,22 +546,52 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </div>
             <p className="mt-1.5 text-[10px] leading-relaxed text-foreground/45">
               &ldquo;Money you keep&rdquo; is your estate after all taxes — including the tax still owed on any pre-tax
-              left behind. &ldquo;Biggest RMD&rdquo; is the largest single forced withdrawal you&apos;d ever face.
+              left behind (figured at an assumed future rate of at least 22%). &ldquo;Biggest RMD&rdquo; is the largest
+              single forced withdrawal you&apos;d ever face.
             </p>
-            <p className="mt-2 text-[12px] leading-relaxed text-foreground/65">
-              Both rollover plans leave you better off than doing nothing and shrink your biggest forced RMD.{" "}
-              <strong>Smoothing</strong> gets you about <strong>{moneyCompact(gainVsNothing)}</strong> of that
-              {captured < 98 ? <> — roughly {captured}% of the best case</> : null} in small, low-bracket steps.
-              {aggrEdge > Math.max(50_000, noneKeep * 0.005) ? (
-                <>
-                  {" "}
-                  Converting aggressively squeezes out about {moneyCompact(aggrEdge)} more, but only by converting big and
-                  paying tax up in the {Math.round(compare.aggressive.peakMarginalRate * 100)}% bracket — your call.
-                </>
-              ) : (
-                " Going more aggressive wouldn't gain you enough to be worth the bigger tax bills."
-              )}
-            </p>
+
+            {/* Detailed, plain-English explanation of each choice — collapsed by
+                default so the page stays calm; tap any row to understand it fully. */}
+            <div className="mt-3">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-foreground/45">
+                What each choice means — tap to read
+              </div>
+              {explain.map((e) => (
+                <Info key={e.q} q={e.q}>
+                  <p>{e.body}</p>
+                  {e.catchFirst ? (
+                    <>
+                      <p className="mt-2 text-tax">
+                        <strong>The catch:</strong> {e.downside}
+                      </p>
+                      <p className="mt-1 text-gain">
+                        <strong>Good thing:</strong> {e.upside}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-2 text-gain">
+                        <strong>Good thing:</strong> {e.upside}
+                      </p>
+                      <p className="mt-1 text-tax">
+                        <strong>The catch:</strong> {e.downside}
+                      </p>
+                    </>
+                  )}
+                </Info>
+              ))}
+              <div className="mb-1 mt-2 text-[11px] font-semibold uppercase tracking-wide text-foreground/45">
+                New to these words? Tap any
+              </div>
+              <Info q="What's an RMD?">{RMD_DEF}</Info>
+              <Info q="What's a tax bracket?">{BRACKET_DEF}</Info>
+              <Info q="What's a Roth?">{ROTH_DEF}</Info>
+            </div>
+
+            {/* The single, honest recommendation for THIS household. */}
+            <Callout tone="good" icon="💡" title="Bottom line for you" className="mt-3">
+              {takeaway}
+            </Callout>
 
             {/* The decision, right here */}
             <div className="mt-4 rounded-2xl border border-border p-3">
