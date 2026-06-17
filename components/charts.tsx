@@ -217,7 +217,7 @@ export function FanChart({
   lineColor = "var(--color-primary)",
   yLabel,
 }: {
-  band: { year: number; p10: number; p50: number; p90: number }[];
+  band: { year: number; p10: number; p50: number; p90: number; p25?: number; p75?: number }[];
   height?: number;
   color?: string;
   lineColor?: string;
@@ -237,13 +237,19 @@ export function FanChart({
   const maxY = Math.max(1, ...band.map((b) => b.p90));
   const xAt = (i: number) => padL + (i / Math.max(1, n - 1)) * (width - padL - padR);
   const yAt = (v: number) => height - padB - (v / maxY) * (height - padB - 6);
-  const topPts = band.map((b, i) => `${xAt(i)},${yAt(b.p90)}`).join(" L ");
-  const botPts = band.map((b, i) => `${xAt(i)},${yAt(b.p10)}`).reverse().join(" L ");
-  const area = `M ${topPts} L ${botPts} Z`;
+  const areaBetween = (hi: (b: (typeof band)[number]) => number, lo: (b: (typeof band)[number]) => number) => {
+    const top = band.map((b, i) => `${xAt(i)},${yAt(hi(b))}`).join(" L ");
+    const bot = band.map((b, i) => `${xAt(i)},${yAt(lo(b))}`).reverse().join(" L ");
+    return `M ${top} L ${bot} Z`;
+  };
+  const outer = areaBetween((b) => b.p90, (b) => b.p10); // 10–90 full range
+  const hasInner = band.every((b) => b.p25 != null && b.p75 != null);
+  const inner = hasInner ? areaBetween((b) => b.p75!, (b) => b.p25!) : null; // 25–75 likely range
   const median = `M ${band.map((b, i) => `${xAt(i)},${yAt(b.p50)}`).join(" L ")}`;
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ opacity: shown ? 1 : 0, transition: "opacity 500ms ease" }}>
-      <path d={area} fill={color} fillOpacity={0.18} />
+      <path d={outer} fill={color} fillOpacity={0.13} />
+      {inner && <path d={inner} fill={color} fillOpacity={0.28} />}
       <path d={median} fill="none" stroke={lineColor} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
       {yLabel && (
         <text x={padL} y={12} fontSize="9" fill="var(--color-foreground)" opacity="0.4">

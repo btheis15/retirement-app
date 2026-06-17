@@ -118,7 +118,12 @@ export default function ProjectionPage() {
     .filter((_, i) => i % step === 0)
     .map((r) => ({ label: `'${String(r.year).slice(2)}`, value: r.rmd * defAt(r.year) }));
 
-  const mcBand = real ? mc.band.map((b) => ({ ...b, p10: b.p10 * defAt(b.year), p50: b.p50 * defAt(b.year), p90: b.p90 * defAt(b.year) })) : mc.band;
+  const mcBand = real
+    ? mc.band.map((b) => {
+        const d = defAt(b.year);
+        return { ...b, p10: b.p10 * d, p25: b.p25 * d, p50: b.p50 * d, p75: b.p75 * d, p90: b.p90 * d };
+      })
+    : mc.band;
 
   const savings = real ? conventional.lifetimeTaxReal - smart.lifetimeTaxReal : conventional.lifetimeTax - smart.lifetimeTax;
   const estateGain = real
@@ -303,20 +308,48 @@ export default function ProjectionPage() {
         </div>
         <div className="mt-4">
           <FanChart band={mcBand} yLabel={(n) => moneyCompact(n)} />
-          <p className="mt-1 text-[11px] text-foreground/45">
-            Shaded band = the 10th–90th percentile range of money left each year; line = the median outcome.
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-foreground/55">
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-block h-2 w-3 rounded-sm" style={{ background: HEX.gain, opacity: 0.28 }} /> 25th–75th (likely range)
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-block h-2 w-3 rounded-sm" style={{ background: HEX.gain, opacity: 0.13 }} /> 10th–90th (full range)
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-block h-0.5 w-3" style={{ background: HEX.primary }} /> median (50th)
+            </span>
+          </div>
+        </div>
+        <div className="mt-3 grid grid-cols-5 gap-1.5">
+          <MiniBox label="10th" value={moneyCompact(mc.endingWealth.p10 * endDef)} tone="tax" />
+          <MiniBox label="25th" value={moneyCompact(mc.endingWealth.p25 * endDef)} />
+          <MiniBox label="50th" value={moneyCompact(mc.endingWealth.p50 * endDef)} />
+          <MiniBox label="75th" value={moneyCompact(mc.endingWealth.p75 * endDef)} />
+          <MiniBox label="90th" value={moneyCompact(mc.endingWealth.p90 * endDef)} tone="gain" />
+        </div>
+        <p className="mt-2 text-[11px] text-foreground/55">
+          Ending wealth by percentile{real ? " (today’s dollars)" : ""}. Assumes a{" "}
+          <strong>{percent(mc.expectedReturn, 1)}</strong> expected return with{" "}
+          <strong>{percent(mc.volatility, 0)}</strong> volatility (one standard deviation) for your mix.
+        </p>
+        <Info q="Why percentiles instead of “average ± standard deviation”?" sources={[]}>
+          <p className="mb-1.5">
+            The randomness <em>input</em> is your portfolio&apos;s volatility — a standard deviation (~{percent(mc.volatility, 0)} a
+            year here) applied to a {percent(mc.expectedReturn, 1)} expected return, drawn lognormally so a year can&apos;t lose
+            more than 100%.
           </p>
-        </div>
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          <MiniBox label="Unlucky (10th)" value={moneyCompact(mc.endingWealth.p10 * endDef)} tone="tax" />
-          <MiniBox label="Median" value={moneyCompact(mc.endingWealth.p50 * endDef)} />
-          <MiniBox label="Lucky (90th)" value={moneyCompact(mc.endingWealth.p90 * endDef)} tone="gain" />
-        </div>
-        <Info q="How should I read this?" sources={[]}>
-          Returns are modeled as independent random draws around your portfolio&apos;s long-run average — they capture
-          sequence-of-returns risk (a bad early stretch hurts more) but not fat tails or crashes, so treat the percentage as
-          a directional confidence check, not a guarantee. A concentrated, single-stock portfolio is riskier than the
-          volatility shown. Lowering spending, delaying Social Security, or holding more bonds raises the number.
+          <p className="mb-1.5">
+            But the <em>outcome</em> — money left after decades of compounding and withdrawals — is heavily right-skewed, so a
+            plain &ldquo;mean ± SD&rdquo; would misstate it (it implies a symmetric bell curve and can even suggest negative
+            wealth). That&apos;s why professional planning tools report <strong>percentiles</strong>: the 50th is the median
+            outcome, the 25th–75th is the likely range, and the 10th–90th brackets the unlucky-to-lucky span — the same
+            cone-of-outcomes view you&apos;d see in eMoney or RightCapital.
+          </p>
+          <p>
+            It captures sequence-of-returns risk (a bad early stretch hurts more) but not fat tails or crashes, so treat the
+            percentage as a directional confidence check, not a guarantee. A concentrated single-stock portfolio is riskier
+            than the volatility shown. Lowering spending, delaying Social Security, or holding more bonds raises the number.
+          </p>
         </Info>
       </Card>
 

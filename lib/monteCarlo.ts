@@ -23,9 +23,12 @@ export interface MonteCarloResult {
   /** Fraction of simulations that funded full spending to endAge (never short). */
   successPct: number;
   /** Gross ending-wealth percentiles across simulations. */
-  endingWealth: { p10: number; p50: number; p90: number };
-  /** Per-year gross-balance percentiles, for a fan chart. */
-  band: { year: number; selfAge: number; p10: number; p50: number; p90: number }[];
+  endingWealth: { p10: number; p25: number; p50: number; p75: number; p90: number };
+  /** Per-year gross-balance percentiles, for a fan chart (10/25/50/75/90). */
+  band: { year: number; selfAge: number; p10: number; p25: number; p50: number; p75: number; p90: number }[];
+  /** Expected (arithmetic-mean) annual return assumed. */
+  expectedReturn: number;
+  /** Annual return volatility (1 standard deviation) assumed. */
   volatility: number;
 }
 
@@ -110,7 +113,9 @@ export function runMonteCarlo(
       year: det.rows[i]?.year ?? 0,
       selfAge: det.rows[i]?.selfAge ?? 0,
       p10: pct(col, 0.1),
+      p25: pct(col, 0.25),
       p50: pct(col, 0.5),
+      p75: pct(col, 0.75),
       p90: pct(col, 0.9),
     };
   });
@@ -118,8 +123,15 @@ export function runMonteCarlo(
   return {
     runs,
     successPct: runs > 0 ? successes / runs : 0,
-    endingWealth: { p10: pct(endings, 0.1), p50: pct(endings, 0.5), p90: pct(endings, 0.9) },
+    endingWealth: {
+      p10: pct(endings, 0.1),
+      p25: pct(endings, 0.25),
+      p50: pct(endings, 0.5),
+      p75: pct(endings, 0.75),
+      p90: pct(endings, 0.9),
+    },
     band,
+    expectedReturn: mu,
     volatility: sigma,
   };
 }
