@@ -79,8 +79,11 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // The demo household is read-only; editing while in demo mode silently forks
-  // your edits into "own" mode so the example stays pristine.
-  const household = mode === "demo" ? demoHousehold() : ownHousehold;
+  // your edits into "own" mode so the example stays pristine. Memoized so it keeps
+  // a STABLE reference across renders (demoHousehold() deep-copies on each call) —
+  // otherwise every settings change would hand consumers a brand-new household
+  // object and needlessly rerun the heavy engines (Monte Carlo, projections).
+  const household = useMemo(() => (mode === "demo" ? demoHousehold() : ownHousehold), [mode, ownHousehold]);
 
   const editApply = useCallback(
     (next: Household) => {

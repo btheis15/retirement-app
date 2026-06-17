@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, ReactNode } from "react";
+import { useMemo, useState, useEffect, ReactNode } from "react";
 import Link from "next/link";
 import { useStore } from "@/components/HouseholdProvider";
 import { Card, PageTitle, SectionTitle, Pill, Stat, Disclaimer, Callout, Explainer, Info, StackedBar, PageSkeleton } from "@/components/ui";
@@ -22,7 +22,7 @@ import {
 } from "@/lib/socialSecurity";
 import { ageInYear, Household } from "@/lib/accounts";
 import { GoalId, PlannerSettings, survivorFromSettings } from "@/lib/defaults";
-import { runMonteCarlo } from "@/lib/monteCarlo";
+import { runMonteCarlo, MonteCarloResult } from "@/lib/monteCarlo";
 import { returnModel } from "@/lib/returns";
 import { money, moneyCompact, percent } from "@/lib/format";
 import { HEX } from "@/lib/palette";
@@ -820,31 +820,51 @@ function GoalAndRecommendation() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [household, settings],
   );
-  // Monte-Carlo "plan confidence" for the recommended plan (stable, fixed seed).
-  const confidence = useMemo(
-    () => {
+  // Monte-Carlo "plan confidence" for the recommended plan. Run ASYNCHRONOUSLY
+  // (off the render path) so the ~1s, 600-run simulation never freezes the UI;
+  // keyed on only the inputs that change the math, so display-only toggles (e.g.
+  // today's-dollars) don't retrigger it.
+  const confKey = JSON.stringify({
+    st: rec.best.config.strategy,
+    bt: rec.best.config.bracketTarget,
+    uc: rec.best.config.useConversions,
+    cm: rec.best.config.convertMode,
+    rr: settings.returnRate,
+    ir: settings.inflationRate,
+    ea: settings.endAge,
+    cua: settings.convertUntilAge,
+    sm: settings.survivorModel,
+    fda: settings.firstDeathAge,
+    htr: settings.heirTaxRate,
+    sp: settings.spendingStrategy,
+  });
+  const [confidence, setConfidence] = useState<MonteCarloResult | null>(null);
+  useEffect(() => {
+    const id = setTimeout(() => {
       const rm = returnModel(household.accounts);
-      return runMonteCarlo(
-        household,
-        {
-          strategy: rec.best.config.strategy,
-          bracketTarget: rec.best.config.bracketTarget,
-          returnRate: settings.returnRate,
-          inflationRate: settings.inflationRate,
-          endAge: settings.endAge,
-          convert: rec.best.config.useConversions
-            ? { untilAge: settings.convertUntilAge, mode: rec.best.config.convertMode }
-            : null,
-          survivor: survivorFromSettings(settings),
-          heirTaxRate: settings.heirTaxRate,
-          spendingStrategy: settings.spendingStrategy,
-        },
-        { model: rm, runs: 600 },
+      setConfidence(
+        runMonteCarlo(
+          household,
+          {
+            strategy: rec.best.config.strategy,
+            bracketTarget: rec.best.config.bracketTarget,
+            returnRate: settings.returnRate,
+            inflationRate: settings.inflationRate,
+            endAge: settings.endAge,
+            convert: rec.best.config.useConversions
+              ? { untilAge: settings.convertUntilAge, mode: rec.best.config.convertMode }
+              : null,
+            survivor: survivorFromSettings(settings),
+            heirTaxRate: settings.heirTaxRate,
+            spendingStrategy: settings.spendingStrategy,
+          },
+          { model: rm, runs: 600 },
+        ),
       );
-    },
+    }, 0);
+    return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [household, settings, rec.best.label],
-  );
+  }, [household, confKey]);
   const matches = configMatches(
     {
       strategy: settings.strategy,
@@ -898,9 +918,13 @@ function GoalAndRecommendation() {
       <Callout tone="good" icon="🤖" title="Your recommended plan" className="mt-2">
         <div className="mb-1 flex flex-wrap items-center gap-2">
           <span className="font-medium text-foreground/85">{planGist(rec.best.config)}</span>
-          <Pill tone={confidence.successPct >= 0.8 ? "gain" : confidence.successPct >= 0.6 ? "ss" : "tax"}>
-            {Math.round(confidence.successPct * 100)}% confidence ({Math.round(confidence.successCI[0] * 100)}–{Math.round(confidence.successCI[1] * 100)}%)
-          </Pill>
+          {confidence ? (
+            <Pill tone={confidence.successPct >= 0.8 ? "gain" : confidence.successPct >= 0.6 ? "ss" : "tax"}>
+              {Math.round(confidence.successPct * 100)}% confidence ({Math.round(confidence.successCI[0] * 100)}–{Math.round(confidence.successCI[1] * 100)}%)
+            </Pill>
+          ) : (
+            <Pill tone="ss">calculating confidence…</Pill>
+          )}
         </div>
         <p className="-mt-0.5 mb-1 text-[11px] text-foreground/45">
           Technical version: {describePlan(rec.best.config, settings.convertUntilAge)}.
@@ -913,10 +937,16 @@ function GoalAndRecommendation() {
           <MiniStat label="Peak RMD" value={moneyCompact(rec.best.metrics.peakRmd)} tone="deferred" />
         </div>
         <Info q="What does “confidence” mean?">
-          In {confidence.runs} simulations of randomized market returns (about {percent(returnModel(household.accounts).volatility, 0)} volatility for your
-          mix), this plan funded your full spending to age {settings.endAge} in <strong>{Math.round(confidence.successPct * 100)}%</strong> of
-          them. Median money left: {moneyCompact(confidence.endingWealth.p50)}; an unlucky run (10th percentile) leaves{" "}
-          {moneyCompact(confidence.endingWealth.p10)}. Returns are modeled as independent draws — directional, not a guarantee.
+          {confidence ? (
+            <>
+              In {confidence.runs.toLocaleString()} simulations of randomized market returns (about {percent(returnModel(household.accounts).volatility, 0)} volatility for your
+              mix), this plan funded your full spending to age {settings.endAge} in <strong>{Math.round(confidence.successPct * 100)}%</strong> of
+              them. Median money left: {moneyCompact(confidence.endingWealth.p50)}; an unlucky run (10th percentile) leaves{" "}
+              {moneyCompact(confidence.endingWealth.p10)}. Returns are modeled as independent draws — directional, not a guarantee.
+            </>
+          ) : (
+            <>Running the market-risk simulation…</>
+          )}
         </Info>
         {matches ? (
           <p className="mt-3 text-[12px] font-medium text-gain">✓ This is your plan — active everywhere, automatically.</p>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useStore } from "@/components/HouseholdProvider";
 import { Card, PageTitle, SectionTitle, Stat, Pill, Disclaimer, Callout, Explainer, Info, PageSkeleton } from "@/components/ui";
 import { StackedArea, Bars, CompareBars, AnimatedNumber, FanChart } from "@/components/charts";
@@ -23,6 +23,9 @@ import { money, moneyCompact, percent } from "@/lib/format";
 import { HEX } from "@/lib/palette";
 import { SOURCES } from "@/lib/sources";
 
+/** Monte-Carlo run count for the headline confidence check. */
+const MC_RUNS = 1000;
+
 export default function ProjectionPage() {
   const { ready, household, settings, updateSettings } = useStore();
   const [showAdv, setShowAdv] = useState(false);
@@ -33,6 +36,25 @@ export default function ProjectionPage() {
   const [bootLoading, setBootLoading] = useState(false);
   const [regime, setRegime] = useState<MonteCarloResult | null>(null);
   const [regimeLoading, setRegimeLoading] = useState(false);
+
+  // A primitive key of ONLY the settings that change the math, so display-only
+  // toggles (today's-dollars, sex for longevity, the goal flag) never retrigger
+  // the heavy engines. household is referentially stable until accounts/people
+  // actually change, so it's safe as an object dep.
+  const computeKey = JSON.stringify({
+    st: settings.strategy,
+    bt: settings.bracketTarget,
+    rr: settings.returnRate,
+    ir: settings.inflationRate,
+    ea: settings.endAge,
+    uc: settings.useConversions,
+    cua: settings.convertUntilAge,
+    cm: settings.convertMode,
+    sm: settings.survivorModel,
+    fda: settings.firstDeathAge,
+    htr: settings.heirTaxRate,
+    sp: settings.spendingStrategy,
+  });
 
   const result = useMemo(() => {
     const base = {
@@ -64,13 +86,21 @@ export default function ProjectionPage() {
       heirTaxRate: settings.heirTaxRate,
     });
     return { chosen, smart, conventional, milestones, conv };
-  }, [household, settings]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [household, computeKey]);
 
   // Monte-Carlo "plan confidence" for the active plan (fixed seed → stable number).
-  const mc = useMemo(
-    () => {
+  // Run ASYNCHRONOUSLY off the render path: the 1,000-run simulation takes ~1–2s,
+  // so doing it in useMemo froze the UI on every change. Instead we paint a loading
+  // state first, then compute on the next tick; while recomputing we keep showing
+  // the previous result (stale-while-revalidate) so nothing flickers or freezes.
+  const [mc, setMc] = useState<MonteCarloResult | null>(null);
+  const [mcLoading, setMcLoading] = useState(true);
+  useEffect(() => {
+    setMcLoading(true);
+    const id = setTimeout(() => {
       const m = returnModel(household.accounts);
-      return runMonteCarlo(
+      const res = runMonteCarlo(
         household,
         {
           strategy: settings.strategy,
@@ -83,12 +113,14 @@ export default function ProjectionPage() {
           heirTaxRate: settings.heirTaxRate,
           spendingStrategy: settings.spendingStrategy,
         },
-        { model: m, runs: 1000 },
+        { model: m, runs: MC_RUNS },
       );
-    },
+      setMc(res);
+      setMcLoading(false);
+    }, 0);
+    return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [household, settings],
-  );
+  }, [household, computeKey]);
 
   // Deterministic sequence-of-returns stress tests (cheap, no randomness).
   const stress = useMemo(
@@ -104,7 +136,8 @@ export default function ProjectionPage() {
         heirTaxRate: settings.heirTaxRate,
         spendingStrategy: settings.spendingStrategy,
       }),
-    [household, settings],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [household, computeKey],
   );
 
   // Return scenarios derived from the actual holdings (the SpendingPowerCard
@@ -228,9 +261,6 @@ export default function ProjectionPage() {
   // Real-dollar MC outputs are deflated PER RUN by that run's own realized
   // inflation path (in the engine), not by a single average rate — correct in the
   // tails. So just pick the engine's real series when today's-dollars is on.
-  const mcBand = real ? mc.bandReal : mc.band;
-  const mcEnding = real ? mc.endingWealthReal : mc.endingWealth;
-  const mcCvar = real ? mc.cvarEndingWealthReal : mc.cvarEndingWealth;
 
   const savings = real ? conventional.lifetimeTaxReal - smart.lifetimeTaxReal : conventional.lifetimeTax - smart.lifetimeTax;
   const estateGain = real
@@ -408,9 +438,9 @@ export default function ProjectionPage() {
           />
           <Stat
             label="Plan confidence"
-            tone={mc.successPct >= 0.8 ? "gain" : mc.successPct >= 0.6 ? "default" : "tax"}
-            value={`${Math.round(mc.successPct * 100)}%`}
-            sub={`${Math.round(mc.successCI[0] * 100)}–${Math.round(mc.successCI[1] * 100)}% likely range`}
+            tone={!mc ? "default" : mc.successPct >= 0.8 ? "gain" : mc.successPct >= 0.6 ? "default" : "tax"}
+            value={mc ? `${Math.round(mc.successPct * 100)}%` : "···"}
+            sub={mc ? `${Math.round(mc.successCI[0] * 100)}–${Math.round(mc.successCI[1] * 100)}% likely range` : "calculating…"}
           />
         </div>
         {chosen.depleted && (
@@ -421,76 +451,28 @@ export default function ProjectionPage() {
       </Card>
 
       {/* ---------- Monte-Carlo: probability the money lasts ---------- */}
-      <SectionTitle hint={`${mc.runs} simulations`}>Will your money last? (market-risk check)</SectionTitle>
+      <SectionTitle hint={`${MC_RUNS.toLocaleString()} simulations`}>Will your money last? (market-risk check)</SectionTitle>
       <Explainer>
-        The forecast above uses one steady return. Real markets bounce around — here we re-run your plan {mc.runs} times.
+        The forecast above uses one steady return. Real markets bounce around — here we re-run your plan {MC_RUNS.toLocaleString()} times.
         Each year, stocks/bonds/cash are drawn <strong>together</strong> from their correlated, <strong>fat-tailed</strong>{" "}
         distributions (~{percent(rm.volatility, 0)} volatility), so crashes and down-years for both stocks and bonds can
         happen — the way professional engines model it.
       </Explainer>
       <Card>
-        <div className="text-center">
-          <div className="tabular text-3xl font-bold" style={{ color: mc.successPct >= 0.8 ? HEX.gain : mc.successPct >= 0.6 ? HEX.accent : HEX.tax }}>
-            {Math.round(mc.successPct * 100)}%
-          </div>
-          <div className="text-[13px] text-foreground/65">
-            of simulations funded your full spending to age {settings.endAge}
-          </div>
-          <div className="mt-0.5 text-[11px] text-foreground/45">
-            95% confidence interval: {Math.round(mc.successCI[0] * 100)}–{Math.round(mc.successCI[1] * 100)}% (±
-            {(((mc.successCI[1] - mc.successCI[0]) / 2) * 100).toFixed(1)} pts across {mc.runs} runs)
-          </div>
-        </div>
-        <div className="mt-4">
-          <FanChart band={mcBand} yLabel={(n) => moneyCompact(n)} />
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-foreground/55">
-            <span className="inline-flex items-center gap-1">
-              <span className="inline-block h-2 w-3 rounded-sm" style={{ background: HEX.gain, opacity: 0.28 }} /> 25th–75th (likely range)
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <span className="inline-block h-2 w-3 rounded-sm" style={{ background: HEX.gain, opacity: 0.13 }} /> 10th–90th (full range)
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <span className="inline-block h-0.5 w-3" style={{ background: HEX.primary }} /> median (50th)
-            </span>
-          </div>
-        </div>
-        <div className="mt-3 grid grid-cols-5 gap-1.5">
-          <MiniBox label="10th" value={moneyCompact(mcEnding.p10)} tone="tax" />
-          <MiniBox label="25th" value={moneyCompact(mcEnding.p25)} />
-          <MiniBox label="50th" value={moneyCompact(mcEnding.p50)} />
-          <MiniBox label="75th" value={moneyCompact(mcEnding.p75)} />
-          <MiniBox label="90th" value={moneyCompact(mcEnding.p90)} tone="gain" />
-        </div>
-        <p className="mt-2 text-[11px] text-foreground/55">
-          Ending wealth by percentile{real ? " (today’s dollars)" : ""}. Assumes a{" "}
-          <strong>{percent(mc.expectedReturn, 1)}</strong> expected return with{" "}
-          <strong>{percent(mc.volatility, 0)}</strong> volatility (one standard deviation) for your mix.
-        </p>
-        {/* Failure DEPTH — success % alone hides how bad the bad cases are. */}
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <MiniBox
-            label="Worst-10% outcome (CVaR)"
-            value={moneyCompact(mcCvar)}
-            tone="tax"
+        {mc ? (
+          <MonteCarloResults
+            mc={mc}
+            real={real}
+            endAge={settings.endAge}
+            hasPension={household.pensionAnnual > 0}
+            guaranteedMonthly={guaranteedMonthly}
+            spendingStrategy={settings.spendingStrategy}
           />
-          <MiniBox
-            label="If it falls short, money typically runs out at"
-            value={mc.medianShortfallAge > 0 ? `age ${Math.round(mc.medianShortfallAge)}` : "—"}
-          />
-        </div>
-        <p className="mt-1.5 text-[11px] leading-relaxed text-foreground/45">
-          Even a &ldquo;failure&rdquo; rarely means $0 — your guaranteed income (Social Security{household.pensionAnnual > 0 ? " + pension" : ""}) keeps
-          paying about <strong>{moneyCompact(guaranteedMonthly)}/mo</strong> no matter what; falling short means trimming
-          discretionary spending, not destitution.
-        </p>
-        {settings.spendingStrategy === "guardrails" && (
-          <p className="mt-2 rounded-xl bg-ss/[0.06] px-3 py-2 text-[12px] leading-relaxed text-foreground/65">
-            🛟 With <strong>guardrails</strong> on, that high success rate comes from <em>flexing spending</em>, not magic.
-            In a typical run your spending dips at most <strong>{percent(mc.spendCut.p50, 0)}</strong> below plan in a bad
-            stretch; in a rough run (90th pct), up to <strong>{percent(mc.spendCut.p90, 0)}</strong>. The trade-off for a
-            higher success rate is being willing to trim in down markets.
-          </p>
+        ) : (
+          <MCResultsLoading />
+        )}
+        {mc && mcLoading && (
+          <p className="mt-2 text-center text-[11px] text-foreground/45">↻ Updating with your latest numbers…</p>
         )}
         {/* Sustainable-spending solver — "how much can I safely spend?" */}
         <div className="mt-3 rounded-xl border border-border p-3">
@@ -547,7 +529,7 @@ export default function ProjectionPage() {
             <span className="text-[13px] font-semibold">Cross-check against real history</span>
             <button
               onClick={runBootstrap}
-              disabled={bootLoading}
+              disabled={bootLoading || !mc}
               className="press rounded-full border border-primary/40 bg-primary/5 px-3 py-1 text-[12px] font-semibold text-primary disabled:opacity-50"
             >
               {bootLoading ? "Running…" : boot ? "Rerun" : "Run →"}
@@ -561,7 +543,7 @@ export default function ProjectionPage() {
               Detrended to the same long-run averages, so only the <em>shape</em> differs.
             </p>
           )}
-          {boot && !bootLoading && (
+          {boot && mc && !bootLoading && (
             <p className="mt-2 text-[12px] leading-relaxed text-foreground/70">
               Historical: <strong className="text-foreground/90">{Math.round(boot.successPct * 100)}%</strong>{" "}
               ({Math.round(boot.successCI[0] * 100)}–{Math.round(boot.successCI[1] * 100)}%) vs.{" "}
@@ -581,7 +563,7 @@ export default function ProjectionPage() {
             <span className="text-[13px] font-semibold">Cross-check with regime-switching (actuarial standard)</span>
             <button
               onClick={runRegime}
-              disabled={regimeLoading}
+              disabled={regimeLoading || !mc}
               className="press rounded-full border border-primary/40 bg-primary/5 px-3 py-1 text-[12px] font-semibold text-primary disabled:opacity-50"
             >
               {regimeLoading ? "Running…" : regime ? "Rerun" : "Run →"}
@@ -597,7 +579,7 @@ export default function ProjectionPage() {
               Calibrated to 1928–2024 history.
             </p>
           )}
-          {regime && !regimeLoading && (
+          {regime && mc && !regimeLoading && (
             <p className="mt-2 text-[12px] leading-relaxed text-foreground/70">
               Regime-switching: <strong className="text-foreground/90">{Math.round(regime.successPct * 100)}%</strong>{" "}
               ({Math.round(regime.successCI[0] * 100)}–{Math.round(regime.successCI[1] * 100)}%) vs.{" "}
@@ -619,8 +601,8 @@ export default function ProjectionPage() {
 
         <Info q="Why percentiles instead of “average ± standard deviation”?" sources={[]}>
           <p className="mb-1.5">
-            The randomness <em>input</em> is your portfolio&apos;s volatility — a standard deviation (~{percent(mc.volatility, 0)} a
-            year here) applied to a {percent(mc.expectedReturn, 1)} expected return, drawn lognormally so a year can&apos;t lose
+            The randomness <em>input</em> is your portfolio&apos;s volatility — a standard deviation (~{percent(rm.volatility, 0)} a
+            year here) applied to a {percent(rm.expected, 1)} expected return, drawn lognormally so a year can&apos;t lose
             more than 100%.
           </p>
           <p className="mb-1.5">
@@ -930,6 +912,101 @@ function MiniBox({ label, value, tone }: { label: string; value: string; tone?: 
     <div className="rounded-xl border border-border bg-background/60 p-2 text-center">
       <div className="text-[10px] uppercase tracking-wide text-foreground/50">{label}</div>
       <div className={`tabular text-sm font-bold ${color}`}>{value}</div>
+    </div>
+  );
+}
+
+/** The Monte-Carlo results block — rendered only once `mc` has been computed
+ *  (receives a non-null result, so no null-guards needed inside). */
+function MonteCarloResults({
+  mc,
+  real,
+  endAge,
+  hasPension,
+  guaranteedMonthly,
+  spendingStrategy,
+}: {
+  mc: MonteCarloResult;
+  real: boolean;
+  endAge: number;
+  hasPension: boolean;
+  guaranteedMonthly: number;
+  spendingStrategy: "constant" | "guardrails";
+}) {
+  const band = real ? mc.bandReal : mc.band;
+  const ending = real ? mc.endingWealthReal : mc.endingWealth;
+  const cvar = real ? mc.cvarEndingWealthReal : mc.cvarEndingWealth;
+  return (
+    <>
+      <div className="text-center">
+        <div className="tabular text-3xl font-bold" style={{ color: mc.successPct >= 0.8 ? HEX.gain : mc.successPct >= 0.6 ? HEX.accent : HEX.tax }}>
+          {Math.round(mc.successPct * 100)}%
+        </div>
+        <div className="text-[13px] text-foreground/65">of simulations funded your full spending to age {endAge}</div>
+        <div className="mt-0.5 text-[11px] text-foreground/45">
+          95% confidence interval: {Math.round(mc.successCI[0] * 100)}–{Math.round(mc.successCI[1] * 100)}% (±
+          {(((mc.successCI[1] - mc.successCI[0]) / 2) * 100).toFixed(1)} pts across {mc.runs.toLocaleString()} runs)
+        </div>
+      </div>
+      <div className="mt-4">
+        <FanChart band={band} yLabel={(n) => moneyCompact(n)} />
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-foreground/55">
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-block h-2 w-3 rounded-sm" style={{ background: HEX.gain, opacity: 0.28 }} /> 25th–75th (likely range)
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-block h-2 w-3 rounded-sm" style={{ background: HEX.gain, opacity: 0.13 }} /> 10th–90th (full range)
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-block h-0.5 w-3" style={{ background: HEX.primary }} /> median (50th)
+          </span>
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-5 gap-1.5">
+        <MiniBox label="10th" value={moneyCompact(ending.p10)} tone="tax" />
+        <MiniBox label="25th" value={moneyCompact(ending.p25)} />
+        <MiniBox label="50th" value={moneyCompact(ending.p50)} />
+        <MiniBox label="75th" value={moneyCompact(ending.p75)} />
+        <MiniBox label="90th" value={moneyCompact(ending.p90)} tone="gain" />
+      </div>
+      <p className="mt-2 text-[11px] text-foreground/55">
+        Ending wealth by percentile{real ? " (today’s dollars)" : ""}. Assumes a{" "}
+        <strong>{percent(mc.expectedReturn, 1)}</strong> expected return with{" "}
+        <strong>{percent(mc.volatility, 0)}</strong> volatility (one standard deviation) for your mix.
+      </p>
+      {/* Failure DEPTH — success % alone hides how bad the bad cases are. */}
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <MiniBox label="Worst-10% outcome (CVaR)" value={moneyCompact(cvar)} tone="tax" />
+        <MiniBox
+          label="If it falls short, money typically runs out at"
+          value={mc.medianShortfallAge > 0 ? `age ${Math.round(mc.medianShortfallAge)}` : "—"}
+        />
+      </div>
+      <p className="mt-1.5 text-[11px] leading-relaxed text-foreground/45">
+        Even a &ldquo;failure&rdquo; rarely means $0 — your guaranteed income (Social Security{hasPension ? " + pension" : ""}) keeps
+        paying about <strong>{moneyCompact(guaranteedMonthly)}/mo</strong> no matter what; falling short means trimming
+        discretionary spending, not destitution.
+      </p>
+      {spendingStrategy === "guardrails" && (
+        <p className="mt-2 rounded-xl bg-ss/[0.06] px-3 py-2 text-[12px] leading-relaxed text-foreground/65">
+          🛟 With <strong>guardrails</strong> on, that high success rate comes from <em>flexing spending</em>, not magic.
+          In a typical run your spending dips at most <strong>{percent(mc.spendCut.p50, 0)}</strong> below plan in a bad
+          stretch; in a rough run (90th pct), up to <strong>{percent(mc.spendCut.p90, 0)}</strong>. The trade-off for a
+          higher success rate is being willing to trim in down markets.
+        </p>
+      )}
+    </>
+  );
+}
+
+/** Skeleton shown while the first Monte-Carlo run computes (keeps the UI from
+ *  freezing — the simulation runs off the render path). */
+function MCResultsLoading() {
+  return (
+    <div className="flex flex-col items-center justify-center py-10 text-center">
+      <div className="h-7 w-7 animate-spin rounded-full border-2 border-primary/25 border-t-primary" />
+      <div className="mt-3 text-[13px] font-medium text-foreground/60">Running {MC_RUNS.toLocaleString()} simulations…</div>
+      <div className="mt-0.5 text-[11px] text-foreground/40">Crunching market risk across your whole plan.</div>
     </div>
   );
 }
