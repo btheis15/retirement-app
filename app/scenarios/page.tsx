@@ -82,7 +82,7 @@ export default function ScenariosPage() {
   const RETURNS = useMemo(
     () => [
       { id: "cons", label: "Conservative", rate: rm.conservative },
-      { id: "mod", label: "Moderate", rate: rm.expected },
+      { id: "mod", label: "Moderate", rate: rm.expectedGeometric },
       { id: "opt", label: "Optimistic", rate: rm.optimistic },
     ],
     [rm],
@@ -91,9 +91,9 @@ export default function ScenariosPage() {
   useEffect(() => {
     if (!ready) return;
     const matches = RETURNS.some((s) => Math.abs(s.rate - settings.returnRate) < 0.0025);
-    if (!matches) updateSettings({ returnRate: rm.expected });
+    if (!matches) updateSettings({ returnRate: rm.expectedGeometric });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, rm.expected, rm.conservative, rm.optimistic]);
+  }, [ready, rm.expectedGeometric, rm.conservative, rm.optimistic]);
 
   const scn = useMemo(() => {
     const base = {

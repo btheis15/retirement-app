@@ -139,10 +139,10 @@ export function SpendingPowerCard() {
   // visited the Forecast/Compare toggles yet.
   useEffect(() => {
     if (!ready) return;
-    const cards = [rm.conservative, rm.expected, rm.optimistic];
-    if (!cards.some((c) => Math.abs(c - settings.returnRate) < 0.0025)) updateSettings({ returnRate: rm.expected });
+    const cards = [rm.conservative, rm.expectedGeometric, rm.optimistic];
+    if (!cards.some((c) => Math.abs(c - settings.returnRate) < 0.0025)) updateSettings({ returnRate: rm.expectedGeometric });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, rm.expected, rm.conservative, rm.optimistic]);
+  }, [ready, rm.expectedGeometric, rm.conservative, rm.optimistic]);
 
   const base: SpendBase = {
     strategy: settings.strategy,

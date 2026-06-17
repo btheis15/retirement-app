@@ -103,8 +103,15 @@ interface YearContext {
   irmaaMagi?: number;
 }
 
-/** Full tax + cash picture for a candidate set of withdrawals. */
-function evaluate(ctx: YearContext, draws: Draws): { tax: TaxResult; grossInflow: number; netCash: number } {
+/** Full tax + cash picture for a candidate set of withdrawals. `wantMarginal`
+ *  turns on the effective-marginal-rate finite difference — a 2nd tax pass we
+ *  only need on the FINAL committed plan, not on the ~40 bisection probes per
+ *  year, so the default skips it (a big Monte-Carlo speedup). */
+function evaluate(
+  ctx: YearContext,
+  draws: Draws,
+  wantMarginal = false,
+): { tax: TaxResult; grossInflow: number; netCash: number } {
   const longTermGains = draws.taxable * ctx.gainFraction;
   const tax = computeTaxes({
     otherOrdinaryIncome: ctx.pension,
@@ -121,6 +128,7 @@ function evaluate(ctx: YearContext, draws: Draws): { tax: TaxResult; grossInflow
     state: ctx.state,
     inflationFactor: ctx.inflationFactor,
     filingStatus: ctx.filingStatus,
+    _noMarginal: !wantMarginal,
   });
   // All of this is cash the household receives, reducing how much it must withdraw.
   const fixedIncome =
@@ -367,7 +375,7 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
     }
   }
 
-  const finalEval = evaluate(ctx, draws);
+  const finalEval = evaluate(ctx, draws, true); // committed plan → wants the effective marginal rate
   const shortfall = Math.max(0, target - finalEval.netCash);
   if (shortfall > 1) {
     notes.push(`⚠️ Assets can't fully cover spending this year — short by about ${money(shortfall)}.`);
@@ -423,7 +431,7 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
       const room = pretaxRoomToTarget(ctx, draws, targetOTI, remainingPretax);
       if (room > 1) {
         conversion = room;
-        const withConv = evaluate(ctx, { ...draws, pretax: draws.pretax + conversion });
+        const withConv = evaluate(ctx, { ...draws, pretax: draws.pretax + conversion }, true); // committed → wants marginal
         conversionTax = Math.max(0, withConv.tax.totalTax - finalEval.tax.totalTax);
         taxResult = withConv.tax; // the year's tax now reflects the conversion income
         notes.push(

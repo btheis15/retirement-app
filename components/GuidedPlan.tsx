@@ -100,7 +100,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   const dAssumptions = useDeferredValue(activeAssumptions);
   const confidence = useMemo(() => {
     const rm = returnModel(dHousehold.accounts);
-    return runMonteCarlo(dHousehold, dAssumptions, { expected: rm.expected, volatility: rm.volatility, runs: 150 });
+    return runMonteCarlo(dHousehold, dAssumptions, { model: rm, runs: 300 });
   }, [dHousehold, dAssumptions]);
   // Use the FRESH household (not the deferred one) so the bracket this flow picks
   // always matches what the full dashboard picks for the same goal — otherwise the
@@ -811,7 +811,9 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           <AnimatedNumber value={confidence.successPct * 100} format={(n) => `${Math.round(n)}%`} />
         </div>
         <p className="mt-1 text-[13px] text-foreground/65">
-          In {confidence.runs} simulations of random market returns, your money lasted to age {settings.endAge} this often.
+          In {confidence.runs} simulations of random market returns (correlated, fat-tailed), your money lasted to age{" "}
+          {settings.endAge} this often — a likely range of {Math.round(confidence.successCI[0] * 100)}–
+          {Math.round(confidence.successCI[1] * 100)}%.
         </p>
         <p className="mt-4 text-[13px] text-foreground/70">
           That&apos;s your plan. Come back and adjust your spending or income anytime — every step updates automatically.

@@ -8,6 +8,7 @@ import { projectLifetime } from "@/lib/projection";
 import { detectMilestones } from "@/lib/milestones";
 import { analyzeConversions } from "@/lib/rothConversion";
 import { runMonteCarlo } from "@/lib/monteCarlo";
+import { runStressTests } from "@/lib/stressTest";
 import { STRATEGY_META } from "@/lib/optimizer";
 import { returnModel } from "@/lib/returns";
 import { survivorFromSettings } from "@/lib/defaults";
@@ -66,11 +67,28 @@ export default function ProjectionPage() {
           endAge: settings.endAge,
           convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
           survivor: survivorFromSettings(settings),
+          heirTaxRate: settings.heirTaxRate,
         },
-        { expected: m.expected, volatility: m.volatility },
+        { model: m, runs: 1000 },
       );
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    [household, settings],
+  );
+
+  // Deterministic sequence-of-returns stress tests (cheap, no randomness).
+  const stress = useMemo(
+    () =>
+      runStressTests(household, {
+        strategy: settings.strategy,
+        bracketTarget: settings.bracketTarget,
+        returnRate: settings.returnRate,
+        inflationRate: settings.inflationRate,
+        endAge: settings.endAge,
+        convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
+        survivor: survivorFromSettings(settings),
+        heirTaxRate: settings.heirTaxRate,
+      }),
     [household, settings],
   );
 
@@ -80,7 +98,7 @@ export default function ProjectionPage() {
   const scenarios = useMemo(
     () => [
       { id: "cons", label: "Conservative", rate: rm.conservative },
-      { id: "mod", label: "Moderate", rate: rm.expected },
+      { id: "mod", label: "Moderate", rate: rm.expectedGeometric },
       { id: "opt", label: "Optimistic", rate: rm.optimistic },
     ],
     [rm],
@@ -103,6 +121,10 @@ export default function ProjectionPage() {
   const lifetimeTaxDisp = real ? chosen.lifetimeTaxReal : chosen.lifetimeTax;
   const endingAfterTaxDisp = real ? chosen.endingEstateAfterTaxReal : chosen.endingEstateAfterTax;
   const endingGrossDisp = real ? chosen.endingEstateReal : chosen.endingEstate;
+  // Guaranteed-income floor (SS + pension): contextualizes "failure" as a spending
+  // cut, not $0. Uses the full benefits as the eventual lifetime floor.
+  const guaranteedAnnual = household.self.socialSecurityAnnual + household.spouse.socialSecurityAnnual + household.pensionAnnual;
+  const guaranteedMonthly = guaranteedAnnual / 12;
 
   // Stacked-area series (sample is fine — rows are annual).
   const areaRows = rows.map((r) => ({ x: r.year }));
@@ -281,7 +303,7 @@ export default function ProjectionPage() {
             label="Plan confidence"
             tone={mc.successPct >= 0.8 ? "gain" : mc.successPct >= 0.6 ? "default" : "tax"}
             value={`${Math.round(mc.successPct * 100)}%`}
-            sub={`money lasts to ${settings.endAge}`}
+            sub={`${Math.round(mc.successCI[0] * 100)}–${Math.round(mc.successCI[1] * 100)}% likely range`}
           />
         </div>
         {chosen.depleted && (
@@ -294,8 +316,10 @@ export default function ProjectionPage() {
       {/* ---------- Monte-Carlo: probability the money lasts ---------- */}
       <SectionTitle hint={`${mc.runs} simulations`}>Will your money last? (market-risk check)</SectionTitle>
       <Explainer>
-        The forecast above uses one steady return. Real markets bounce around — here we re-run your plan {mc.runs} times with
-        random yearly returns (~{percent(rm.volatility, 0)} volatility for your mix) to see how often it funds your full spending.
+        The forecast above uses one steady return. Real markets bounce around — here we re-run your plan {mc.runs} times.
+        Each year, stocks/bonds/cash are drawn <strong>together</strong> from their correlated, <strong>fat-tailed</strong>{" "}
+        distributions (~{percent(rm.volatility, 0)} volatility), so crashes and down-years for both stocks and bonds can
+        happen — the way professional engines model it.
       </Explainer>
       <Card>
         <div className="text-center">
@@ -304,6 +328,10 @@ export default function ProjectionPage() {
           </div>
           <div className="text-[13px] text-foreground/65">
             of simulations funded your full spending to age {settings.endAge}
+          </div>
+          <div className="mt-0.5 text-[11px] text-foreground/45">
+            95% confidence interval: {Math.round(mc.successCI[0] * 100)}–{Math.round(mc.successCI[1] * 100)}% (±
+            {(((mc.successCI[1] - mc.successCI[0]) / 2) * 100).toFixed(1)} pts across {mc.runs} runs)
           </div>
         </div>
         <div className="mt-4">
@@ -332,6 +360,23 @@ export default function ProjectionPage() {
           <strong>{percent(mc.expectedReturn, 1)}</strong> expected return with{" "}
           <strong>{percent(mc.volatility, 0)}</strong> volatility (one standard deviation) for your mix.
         </p>
+        {/* Failure DEPTH — success % alone hides how bad the bad cases are. */}
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <MiniBox
+            label="Worst-10% outcome (CVaR)"
+            value={moneyCompact(mc.cvarEndingWealth * endDef)}
+            tone="tax"
+          />
+          <MiniBox
+            label="If it falls short, money typically runs out at"
+            value={mc.medianShortfallAge > 0 ? `age ${Math.round(mc.medianShortfallAge)}` : "—"}
+          />
+        </div>
+        <p className="mt-1.5 text-[11px] leading-relaxed text-foreground/45">
+          Even a &ldquo;failure&rdquo; rarely means $0 — your guaranteed income (Social Security{household.pensionAnnual > 0 ? " + pension" : ""}) keeps
+          paying about <strong>{moneyCompact(guaranteedMonthly)}/mo</strong> no matter what; falling short means trimming
+          discretionary spending, not destitution.
+        </p>
         <Info q="Why percentiles instead of “average ± standard deviation”?" sources={[]}>
           <p className="mb-1.5">
             The randomness <em>input</em> is your portfolio&apos;s volatility — a standard deviation (~{percent(mc.volatility, 0)} a
@@ -346,12 +391,36 @@ export default function ProjectionPage() {
             cone-of-outcomes view you&apos;d see in eMoney or RightCapital.
           </p>
           <p>
-            It captures sequence-of-returns risk (a bad early stretch hurts more) but not fat tails or crashes, so treat the
-            percentage as a directional confidence check, not a guarantee. A concentrated single-stock portfolio is riskier
-            than the volatility shown. Lowering spending, delaying Social Security, or holding more bonds raises the number.
+            It captures sequence-of-returns risk (a bad early stretch hurts more), fat tails (crash-sized years), and
+            stocks &amp; bonds falling together — but not serial correlation or regime shifts, so treat the percentage as a
+            directional confidence check, not a guarantee. A concentrated single-stock portfolio is riskier than the
+            volatility shown. Lowering spending, delaying Social Security, or holding more bonds raises the number.
           </p>
         </Info>
       </Card>
+
+      {/* ---------- Stress tests: sequence-of-returns "what ifs" ---------- */}
+      <SectionTitle hint="sequence-of-returns">Stress tests — what if it goes wrong early?</SectionTitle>
+      <Explainer>
+        Monte Carlo asks &ldquo;how often does it work?&rdquo; These ask the opposite: what if a crash or a lost decade hits
+        right as you retire — the worst possible timing? Each runs your exact plan through a fixed bad sequence.
+      </Explainer>
+      <div className="space-y-2">
+        {stress.map((s) => (
+          <Card as="div" key={s.scenario.id} className={`border-l-4 ${s.depleted ? "border-l-tax" : "border-l-gain"}`}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold">{s.scenario.name}</span>
+              <span className={`tabular text-[12px] font-semibold ${s.depleted ? "text-tax" : "text-gain"}`}>
+                {s.depleted ? `runs short at age ${s.depletionAge}` : `survives · ${moneyCompact(real ? s.endingEstateAfterTax / Math.pow(1 + infl, rows.length) : s.endingEstateAfterTax)} left`}
+              </span>
+            </div>
+            <p className="mt-1 text-[12px] leading-snug text-foreground/65">{s.scenario.description}</p>
+            <p className="mt-1 text-[11px] text-foreground/45">
+              Low point: {moneyCompact(real ? s.minBalance / Math.pow(1 + infl, Math.max(0, s.minBalanceAge - rows[0].selfAge)) : s.minBalance)} around age {s.minBalanceAge}.
+            </p>
+          </Card>
+        ))}
+      </div>
 
       {chosen.survivorYear > 0 && (
         <Callout tone="warn" icon="🕊️" title={`Survivor years modeled from ${chosen.survivorYear}`} className="mt-2">

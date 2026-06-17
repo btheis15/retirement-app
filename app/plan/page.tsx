@@ -835,8 +835,9 @@ function GoalAndRecommendation() {
             ? { untilAge: settings.convertUntilAge, mode: rec.best.config.convertMode }
             : null,
           survivor: survivorFromSettings(settings),
+          heirTaxRate: settings.heirTaxRate,
         },
-        { expected: rm.expected, volatility: rm.volatility },
+        { model: rm, runs: 600 },
       );
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -896,7 +897,7 @@ function GoalAndRecommendation() {
         <div className="mb-1 flex flex-wrap items-center gap-2">
           <span className="font-medium text-foreground/85">{planGist(rec.best.config)}</span>
           <Pill tone={confidence.successPct >= 0.8 ? "gain" : confidence.successPct >= 0.6 ? "ss" : "tax"}>
-            {Math.round(confidence.successPct * 100)}% confidence
+            {Math.round(confidence.successPct * 100)}% confidence ({Math.round(confidence.successCI[0] * 100)}–{Math.round(confidence.successCI[1] * 100)}%)
           </Pill>
         </div>
         <p className="-mt-0.5 mb-1 text-[11px] text-foreground/45">
