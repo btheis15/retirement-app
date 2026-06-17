@@ -21,7 +21,8 @@ import { ltcgZeroCeiling } from "@/lib/tax/engine";
 import { FILING_CONSTANTS, FilingStatus } from "@/lib/tax/constants";
 import { projectLifetime, ProjectionAssumptions } from "@/lib/projection";
 import { recommendPlan, planGist, configMatches, GOAL_META } from "@/lib/goals";
-import { runMonteCarlo } from "@/lib/monteCarlo";
+import { MonteCarloResult } from "@/lib/monteCarlo";
+import { computeMonteCarlo } from "@/lib/mcClient";
 import { returnModel } from "@/lib/returns";
 import { buildActionPlan, PlanYear, PlanAction } from "@/lib/actionPlan";
 import { GoalId, survivorFromSettings } from "@/lib/defaults";
@@ -99,9 +100,24 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   // a drag/goal change without ever blocking the slider, buttons, or animations.
   const dHousehold = useDeferredValue(household);
   const dAssumptions = useDeferredValue(activeAssumptions);
-  const confidence = useMemo(() => {
-    const rm = returnModel(dHousehold.accounts);
-    return runMonteCarlo(dHousehold, dAssumptions, { model: rm, runs: 300 });
+  // Run the 300-sim confidence on the Web Worker so it never blocks the walkthrough
+  // (this is the primary phone surface). Keyed on the deferred values so it lags
+  // smoothly behind a drag/goal change rather than firing on every keystroke.
+  const [confidence, setConfidence] = useState<MonteCarloResult | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    computeMonteCarlo({
+      kind: "mc",
+      household: dHousehold,
+      assumptions: dAssumptions,
+      model: returnModel(dHousehold.accounts),
+      runs: 300,
+    }).then((res) => {
+      if (!cancelled) setConfidence(res);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [dHousehold, dAssumptions]);
   // Use the FRESH household (not the deferred one) so the bracket this flow picks
   // always matches what the full dashboard picks for the same goal — otherwise the
@@ -806,16 +822,26 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     eyebrow: "You're set",
     render: () => (
       <div className="text-center">
-        <div className="emoji-bounce text-4xl">{confidence.successPct >= 0.8 ? "🎉" : confidence.successPct >= 0.6 ? "👍" : "⚠️"}</div>
-        <h2 className="mt-2 text-xl font-bold leading-snug">How solid is this plan?</h2>
-        <div className="pop mt-3 tabular text-5xl font-bold" style={{ color: confidence.successPct >= 0.8 ? "var(--color-gain)" : confidence.successPct >= 0.6 ? "var(--color-accent)" : "var(--color-tax)" }}>
-          <AnimatedNumber value={confidence.successPct * 100} format={(n) => `${Math.round(n)}%`} />
-        </div>
-        <p className="mt-1 text-[13px] text-foreground/65">
-          In {confidence.runs} simulations of random market returns (correlated, fat-tailed), your money lasted to age{" "}
-          {settings.endAge} this often — a likely range of {Math.round(confidence.successCI[0] * 100)}–
-          {Math.round(confidence.successCI[1] * 100)}%.
-        </p>
+        {confidence ? (
+          <>
+            <div className="emoji-bounce text-4xl">{confidence.successPct >= 0.8 ? "🎉" : confidence.successPct >= 0.6 ? "👍" : "⚠️"}</div>
+            <h2 className="mt-2 text-xl font-bold leading-snug">How solid is this plan?</h2>
+            <div className="pop mt-3 tabular text-5xl font-bold" style={{ color: confidence.successPct >= 0.8 ? "var(--color-gain)" : confidence.successPct >= 0.6 ? "var(--color-accent)" : "var(--color-tax)" }}>
+              <AnimatedNumber value={confidence.successPct * 100} format={(n) => `${Math.round(n)}%`} />
+            </div>
+            <p className="mt-1 text-[13px] text-foreground/65">
+              In {confidence.runs.toLocaleString()} simulations of random market returns (correlated, fat-tailed), your money lasted to age{" "}
+              {settings.endAge} this often — a likely range of {Math.round(confidence.successCI[0] * 100)}–
+              {Math.round(confidence.successCI[1] * 100)}%.
+            </p>
+          </>
+        ) : (
+          <div className="py-8">
+            <div className="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-primary/25 border-t-primary" />
+            <h2 className="mt-3 text-xl font-bold leading-snug">How solid is this plan?</h2>
+            <p className="mt-1 text-[13px] text-foreground/55">Running the market-risk simulation…</p>
+          </div>
+        )}
         <p className="mt-4 text-[13px] text-foreground/70">
           That&apos;s your plan. Come back and adjust your spending or income anytime — every step updates automatically.
         </p>

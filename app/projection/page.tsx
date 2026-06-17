@@ -97,6 +97,10 @@ export default function ProjectionPage() {
   const [mcLoading, setMcLoading] = useState(true);
   useEffect(() => {
     setMcLoading(true);
+    // Inputs changed → any prior cross-check is now stale; reset to "Run →" so a
+    // stale second opinion can never sit next to a freshly recomputed main number.
+    setBoot(null);
+    setRegime(null);
     let cancelled = false;
     computeMonteCarlo({
       kind: "mc",

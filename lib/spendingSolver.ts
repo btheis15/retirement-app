@@ -5,16 +5,17 @@
  * spending rises). Reports the "plan-with" (~90%) and "best-guess" (~50%) levels
  * the way MoneyGuidePro/eMoney do.
  *
- * Runs async, yielding between bisection steps, so the UI stays responsive and can
- * show progress instead of freezing. A FIXED seed is shared across every
- * evaluation so success(spend) is a smooth, monotone function for the bisection.
+ * Each Monte-Carlo evaluation runs on the Web Worker (off the main thread), so the
+ * UI stays fully responsive and can animate progress instead of stuttering through
+ * ~18 bursts. A FIXED seed is shared across every evaluation so success(spend) is a
+ * smooth, monotone function for the bisection.
  *
  * ⚠️ Educational estimates only.
  */
 
 import { Household } from "./accounts";
 import { ProjectionAssumptions } from "./projection";
-import { runMonteCarlo } from "./monteCarlo";
+import { computeMonteCarlo } from "./mcClient";
 import { ReturnModel } from "./returns";
 
 export interface SafeSpendResult {
@@ -47,8 +48,17 @@ export async function solveSafeSpending(
   const totalSteps = targets.length * (iterations + 1);
   let done = 0;
 
-  const evalSpend = (spend: number): number =>
-    runMonteCarlo({ ...household, annualSpending: spend }, assumptions, { model: opts.model, runs, seed }).successPct;
+  const evalSpend = async (spend: number): Promise<number> =>
+    (
+      await computeMonteCarlo({
+        kind: "mc",
+        household: { ...household, annualSpending: spend },
+        assumptions,
+        model: opts.model,
+        runs,
+        seed,
+      })
+    ).successPct;
 
   const results: SafeSpendResult[] = [];
   for (const target of targets) {
@@ -57,15 +67,13 @@ export async function solveSafeSpending(
     let lo = 0;
     let hi = Math.max(total * 0.15, household.annualSpending * 1.5, 1);
     for (let i = 0; i < iterations; i++) {
-      await new Promise((r) => setTimeout(r, 0)); // yield to the event loop
       const mid = (lo + hi) / 2;
-      const s = evalSpend(mid);
+      const s = await evalSpend(mid); // worker round-trip yields to the event loop
       if (s >= target) lo = mid;
       else hi = mid;
       opts.onProgress?.(++done, totalSteps);
     }
-    await new Promise((r) => setTimeout(r, 0));
-    const success = evalSpend(lo);
+    const success = await evalSpend(lo);
     opts.onProgress?.(++done, totalSteps);
     results.push({ target, spend: lo, success });
   }

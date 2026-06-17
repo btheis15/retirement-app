@@ -40,7 +40,7 @@ export const SOURCES = {
   aca: { label: "HealthCare.gov — Premium tax credit (income-based ACA subsidy)", url: "https://www.healthcare.gov/lower-costs/save-on-monthly-premiums/" },
   realEstate: { label: "IRS — Depreciation & §1031 like-kind exchanges (Pub. 527 / Topic 409)", url: "https://www.irs.gov/publications/p527" },
   fees: { label: "SEC Investor.gov — How fees & expenses eat into returns", url: "https://www.investor.gov/financial-tools-calculators/calculators/compound-interest-calculator" },
-  fiduciary: { label: "SEC Investor.gov — Working with an investment professional (fiduciary, how they're paid)", url: "https://www.investor.gov/protect-your-investments/working-investment-professional" },
+  fiduciary: { label: "SEC Investor.gov — Working with an investment professional (fiduciary, how they're paid)", url: "https://www.investor.gov/introduction-investing/getting-started/working-investment-professional" },
   annuitiesSEC: { label: "SEC Investor.gov — Annuities (types, fees, surrender charges)", url: "https://www.investor.gov/introduction-investing/investing-basics/investment-products/insurance-products/annuities" },
   ilRetirement: {
     label: "IL Dept. of Revenue Pub-120 — retirement income subtraction (incl. Roth conversions)",
