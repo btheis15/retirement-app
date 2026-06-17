@@ -12,7 +12,6 @@
 
 import { Account, Household, bucketOf } from "./accounts";
 import { planYear, StrategyId, BracketTarget, YearPlan } from "./optimizer";
-import { STATE_TAX } from "./tax/state";
 import { adjustedAnnualBenefit, fullRetirementAge } from "./socialSecurity";
 
 export interface ProjectionAssumptions {
@@ -59,6 +58,11 @@ export interface ProjectionRow {
   tax: number;
   taxableSS: number;
   marginalRate: number;
+  /** TRUE marginal cost of the next ordinary dollar (incl. SS torpedo / NIIT) —
+   *  used to size rate-arbitrage conversions against the real future cost. */
+  effMarginalRate: number;
+  /** MAGI this year — kept so a later year's IRMAA can look back 2 years. */
+  magi: number;
   /** Annual household Medicare IRMAA surcharge triggered by this year's income. */
   irmaa: number;
   netCash: number;
@@ -71,6 +75,9 @@ export interface ProjectionRow {
 export interface ProjectionResult {
   rows: ProjectionRow[];
   lifetimeTax: number;
+  /** Cumulative Medicare IRMAA surcharges paid over the projection (a cash cost
+   *  driven up by conversions/RMDs that lift MAGI into higher tiers). */
+  lifetimeIrmaa: number;
   endingEstate: number; // GROSS total balance left at the end
   /** After-tax estate: pre-tax discounted by an assumed heir rate, taxable
    *  gains by 15%. A fair apples-to-apples comparison between strategies, since
@@ -217,9 +224,14 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
   let lifetimeTax = 0;
   let depleted = false;
   let totalConverted = 0;
+  let lifetimeIrmaa = 0; // cumulative Medicare IRMAA surcharges — a real cash drag
   let peakRmd = 0;
   let peakRmdMarginal = 0; // highest marginal rate seen in an RMD year (the bomb's real rate)
   let peakMarginalRate = 0; // highest ordinary bracket touched in ANY year (incl. conversions)
+  // IRMAA for premium year T is set by MAGI from year T−2 (statutory lookback).
+  // Record each year's MAGI so a later year can look it up. The first two years
+  // have no in-projection lookback, so the engine falls back to same-year MAGI.
+  const magiByYear = new Map<number, number>();
 
   // For recommended-mode conversions, derive the marginal rate this household
   // would face in its worst future RMD year if it did NOTHING extra. We use a
@@ -239,7 +251,7 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
         convert: null,
         returnFor: null,
       });
-      futureRate = baseline.rows.reduce((m, r) => (r.rmd > 0 ? Math.max(m, r.marginalRate) : m), 0);
+      futureRate = baseline.rows.reduce((m, r) => (r.rmd > 0 ? Math.max(m, r.effMarginalRate) : m), 0);
     }
   }
 
@@ -324,7 +336,9 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
       conversion: conversionParam,
       inflationFactor,
       filingStatus,
+      irmaaMagi: magiByYear.get(year - 2), // IRMAA's 2-year MAGI lookback
     });
+    magiByYear.set(year, plan.tax.magi);
 
     // Apply withdrawals. pretax draw includes the RMD.
     drawFromBucket(h.accounts, "pretax", plan.withdrawals.pretax);
@@ -342,6 +356,7 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
     if (surplus > 0) reinvestSurplus(h.accounts, surplus);
 
     lifetimeTax += plan.tax.totalTax;
+    lifetimeIrmaa += plan.tax.irmaa.householdAnnual;
     peakRmd = Math.max(peakRmd, plan.rmd);
     if (plan.rmd > 0) peakRmdMarginal = Math.max(peakRmdMarginal, plan.tax.marginalOrdinaryRate);
     peakMarginalRate = Math.max(peakMarginalRate, plan.tax.marginalOrdinaryRate);
@@ -370,6 +385,8 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
       tax: plan.tax.totalTax,
       taxableSS: plan.tax.taxableSocialSecurity,
       marginalRate: plan.tax.marginalOrdinaryRate,
+      effMarginalRate: plan.tax.effectiveMarginalRate,
+      magi: plan.tax.magi,
       irmaa: plan.tax.irmaa.householdAnnual,
       netCash: plan.netCash,
       spendingTarget: plan.spendingTarget,
@@ -395,20 +412,25 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
     .reduce((s, a) => s + Math.max(0, a.balance - (a.costBasis ?? a.balance)), 0);
 
   const endingEstate = endPretax + endRoth + endTaxable;
-  // Leftover pre-tax is a deferred tax bill. Discount it at the rate it would
-  // ACTUALLY be withdrawn at — this plan's worst RMD-era marginal rate — not a
-  // flat assumption. A plan that leaves a big RMD bomb is correctly valued lower;
-  // a plan that converted the bomb away has little pre-tax left, so the rate
-  // barely matters. Floor at the baseline assumption so we never under-tax it.
+  // Leftover pre-tax is a deferred tax bill (income in respect of a decedent — it
+  // does NOT get a step-up). Discount it at the rate it would ACTUALLY be
+  // withdrawn at — this plan's worst RMD-era marginal rate — floored at the
+  // baseline assumption. A plan that leaves a big RMD bomb is valued lower; one
+  // that converted it away has little pre-tax left, so the rate barely matters.
   const liquidationRate = Math.max(ASSUMED_LIQUIDATION_RATE, peakRmdMarginal);
-  // Leftover unrealized gains owe federal LTCG (~15%) AND state tax (IL 4.95%).
-  const stateLtcgRate = STATE_TAX[household.state ?? "IL"].rate;
-  const endingEstateAfterTax =
-    endPretax * (1 - liquidationRate) + endRoth + (endTaxable - endTaxableGain * (0.15 + stateLtcgRate));
+  // Brokerage assets get a STEP-UP IN BASIS at death (IRC §1014): the embedded
+  // unrealized gain is forgiven, so heirs inherit at full value and owe $0 income
+  // tax on it. Roth is already tax-free. (Heirs selling later realize only
+  // post-death gains, ~$0 at the moment of death.)
+  // Subtract the lifetime Medicare IRMAA surcharges — a real out-of-pocket cost
+  // that aggressive conversions (higher MAGI → higher tiers, 2 years later) drive
+  // up, so "money you keep" honestly reflects the IRMAA cost of converting.
+  const endingEstateAfterTax = endPretax * (1 - liquidationRate) + endRoth + endTaxable - lifetimeIrmaa;
 
   return {
     rows,
     lifetimeTax,
+    lifetimeIrmaa,
     endingEstate,
     endingEstateAfterTax,
     endingBuckets: { pretax: endPretax, roth: endRoth, taxable: endTaxable, taxableGain: endTaxableGain },

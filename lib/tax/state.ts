@@ -67,8 +67,8 @@ interface StateConfig {
   note: string;
 }
 
-const IL_PERSONAL_EXEMPTION = 2_850; // per person, 2025 (indexed)
-const IL_SENIOR_EXEMPTION = 1_000; // extra, per person age 65+
+const IL_PERSONAL_EXEMPTION = 2_925; // per person, 2026 (cost-of-living indexed by IL DoR)
+const IL_SENIOR_EXEMPTION = 1_000; // extra, per person age 65+ — a FIXED $1,000 (not indexed)
 const IL_EXEMPTION_PHASEOUT_AGI_MFJ = 500_000; // exemption -> $0 above this AGI (MFJ)
 const IL_EXEMPTION_PHASEOUT_AGI_SINGLE = 250_000; // exemption -> $0 above this AGI (Single)
 
@@ -86,7 +86,9 @@ export const STATE_TAX: Record<StateCode, StateConfig> = {
       if (i.agi > phaseout) return 0;
       const f = i.inflationFactor ?? 1;
       const personalCount = single ? 1 : 2;
-      return (personalCount * IL_PERSONAL_EXEMPTION + IL_SENIOR_EXEMPTION * i.num65Plus) * f;
+      // Only the personal exemption is cost-of-living indexed; the $1,000 senior
+      // exemption is a fixed statutory amount.
+      return personalCount * IL_PERSONAL_EXEMPTION * f + IL_SENIOR_EXEMPTION * i.num65Plus;
     },
     note: "Illinois doesn't tax retirement income — IRA/401(k) withdrawals, RMDs, Roth conversions, pensions, and Social Security are all exempt. Only investment income (interest, dividends, capital gains) is taxed at the flat 4.95%.",
   },

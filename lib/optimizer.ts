@@ -99,6 +99,8 @@ interface YearContext {
   state: StateCode;
   inflationFactor: number;
   filingStatus: FilingStatus;
+  /** MAGI from 2 years prior, for the IRMAA lookback (undefined → same-year). */
+  irmaaMagi?: number;
 }
 
 /** Full tax + cash picture for a candidate set of withdrawals. */
@@ -114,6 +116,8 @@ function evaluate(ctx: YearContext, draws: Draws): { tax: TaxResult; grossInflow
     ordinaryDividends: ctx.ordinaryDividends,
     taxExemptInterest: ctx.taxExemptInterest,
     num65Plus: ctx.num65Plus,
+    year: ctx.year,
+    irmaaMagi: ctx.irmaaMagi,
     state: ctx.state,
     inflationFactor: ctx.inflationFactor,
     filingStatus: ctx.filingStatus,
@@ -230,6 +234,9 @@ export interface PlanParams {
   inflationFactor?: number;
   /** Filing status this year — "single" once a surviving spouse files alone. Default "mfj". */
   filingStatus?: FilingStatus;
+  /** MAGI from 2 years prior, for the IRMAA lookback (a projection supplies it;
+   *  the single-year planner omits it and IRMAA falls back to this year's MAGI). */
+  irmaaMagi?: number;
 }
 
 export type ConversionParam =
@@ -289,6 +296,7 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
     state: household.state ?? "IL",
     inflationFactor: params.inflationFactor ?? 1,
     filingStatus,
+    irmaaMagi: params.irmaaMagi,
   };
 
   const { total: rmd, details: rmdDetails } = computeRmd(household, year);
@@ -393,7 +401,11 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
       //   • the top of the comfort bracket (the "stay smooth" cap).
       // Pushing higher than the comfort bracket is the advanced fill-the-bracket
       // option, which the user opts into deliberately.
-      const rNow = finalEval.tax.marginalOrdinaryRate;
+      // Compare TRUE marginal cost now vs. later — the effective marginal rate
+      // folds in the Social Security tax torpedo, NIIT, and the senior-bonus
+      // phaseout, so we never convert a dollar whose real cost today exceeds the
+      // future rate we're avoiding (futureRate is likewise an effective rate).
+      const rNow = finalEval.tax.effectiveMarginalRate;
       if (conv.futureRate > 0 && rNow < conv.futureRate - 1e-9) {
         const arbCeiling = ordinaryBracketFloor(conv.futureRate, ctx.filingStatus);
         const comfortCeiling = ordinaryBracketCeiling(bracketTarget, ctx.filingStatus);

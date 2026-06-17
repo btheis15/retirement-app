@@ -39,12 +39,22 @@ export interface TaxInput {
   /** Tax-exempt (municipal) interest — not taxed, but raises MAGI (IRMAA, NIIT
    *  threshold, senior-deduction phaseout) and the SS provisional-income test. */
   taxExemptInterest?: number;
-  /** Number of spouses age 65+ (0, 1, or 2) — drives the extra deductions. */
+  /** Number of spouses age 65+ (0, 1, or 2) — drives the extra deductions AND,
+   *  since Medicare eligibility is age 65, the number of people who pay IRMAA. */
   num65Plus: number;
+  /** Calendar/tax year. Gates the OBBBA senior bonus (2025–2028 only). Default 2026. */
+  year?: number;
+  /** MAGI to use for the IRMAA lookup. IRMAA for premium year T is statutorily set
+   *  by MAGI from year T−2, so a projection passes the 2-years-prior MAGI here.
+   *  Omitted → uses this year's MAGI (the single-year planner's awareness estimate). */
+  irmaaMagi?: number;
   /** State of residence for state income tax. Defaults to Illinois. */
   state?: StateCode;
   /** Filing status — "single" models a surviving spouse. Defaults to "mfj". */
   filingStatus?: FilingStatus;
+  /** Internal: skip the effective-marginal-rate finite difference (prevents the
+   *  one-level recursion from recursing further). */
+  _noMarginal?: boolean;
   /**
    * Inflation index for THIS year relative to the base year, e.g. 1.28 for ~10
    * years at 2.5%. Brackets, deductions, IRMAA tiers, and the senior-bonus
@@ -87,6 +97,11 @@ export interface TaxResult {
   capitalGainsRate: number;
   /** Overall effective rate = totalTax / (AGI + nontaxable SS), guarded. */
   effectiveRate: number;
+  /** TRUE marginal cost of the next dollar of ordinary income (federal + state),
+   *  by finite difference — captures the Social Security "tax torpedo," NIIT, and
+   *  the senior-bonus phaseout, which the statutory bracket rate alone misses.
+   *  This is what rate-arbitrage conversion decisions should compare. */
+  effectiveMarginalRate: number;
   irmaa: { perPerson: number; householdAnnual: number; label: string };
 }
 
@@ -137,12 +152,17 @@ export function taxableSocialSecurity(ssBenefits: number, otherIncome: number, s
   return Math.min(taxable, 0.85 * ssBenefits);
 }
 
-function seniorBonusDeduction(num65Plus: number, magi: number, factor: number, phaseoutStart: number): number {
+function seniorBonusDeduction(num65Plus: number, magi: number, phaseoutStart: number, year: number): number {
   if (num65Plus <= 0) return 0;
-  // The OBBBA senior bonus phases out PER FILER: each eligible person's $6,000 is
-  // reduced by 6% of MAGI over the threshold ($150k MFJ / $75k single).
-  const over = Math.max(0, magi - phaseoutStart * factor);
-  const perFiler = Math.max(0, SENIOR_BONUS_DEDUCTION * factor - over * SENIOR_BONUS_PHASEOUT_RATE);
+  // OBBBA section 70103: the $6,000-per-filer senior bonus exists ONLY for tax
+  // years 2025–2028. After that it disappears entirely (only the permanent
+  // age-65 additional standard deduction remains).
+  if (year > 2028) return 0;
+  // The $6,000 amount and the $150k MFJ / $75k single phaseout thresholds are
+  // STATUTORY FIXED dollars — they are NOT inflation-indexed. Phaseout: each
+  // eligible filer's $6,000 is reduced by 6% of MAGI over the threshold.
+  const over = Math.max(0, magi - phaseoutStart);
+  const perFiler = Math.max(0, SENIOR_BONUS_DEDUCTION - over * SENIOR_BONUS_PHASEOUT_RATE);
   return perFiler * num65Plus;
 }
 
@@ -150,19 +170,20 @@ function irmaaFor(
   magi: number,
   factor: number,
   tiers: { upTo: number; monthlyPerPerson: number; label: string }[],
-  people: number,
+  enrollees: number, // people age 65+ on Medicare this year (pre-65 → 0 → no IRMAA)
 ) {
+  if (enrollees <= 0) return { perPerson: 0, householdAnnual: 0, label: "Not yet on Medicare" };
   for (const tier of tiers) {
     if (magi <= tier.upTo * factor) {
       return {
         perPerson: tier.monthlyPerPerson,
-        householdAnnual: tier.monthlyPerPerson * 12 * people,
+        householdAnnual: tier.monthlyPerPerson * 12 * enrollees,
         label: tier.label,
       };
     }
   }
   const last = tiers[tiers.length - 1];
-  return { perPerson: last.monthlyPerPerson, householdAnnual: last.monthlyPerPerson * 12 * people, label: last.label };
+  return { perPerson: last.monthlyPerPerson, householdAnnual: last.monthlyPerPerson * 12 * enrollees, label: last.label };
 }
 
 export function computeTaxes(input: TaxInput): TaxResult {
@@ -188,11 +209,13 @@ export function computeTaxes(input: TaxInput): TaxResult {
   // Muni interest isn't taxed but counts in MAGI for IRMAA / NIIT / senior phaseout.
   const magi = agi + taxExemptInterest;
 
-  // Deductions: base standard + extra-for-65 (per spouse) + senior bonus (all indexed).
+  // Deductions: base standard + extra-for-65 (per spouse, both indexed) + the
+  // temporary OBBBA senior bonus (fixed dollars, 2025–2028 only).
+  const year = input.year ?? 2026;
   const deductions =
     c.stdDeduction * f +
     c.addlStd65 * f * input.num65Plus +
-    seniorBonusDeduction(input.num65Plus, magi, f, c.seniorBonusStart);
+    seniorBonusDeduction(input.num65Plus, magi, c.seniorBonusStart, year);
 
   const taxableIncome = Math.max(0, agi - deductions);
 
@@ -247,6 +270,19 @@ export function computeTaxes(input: TaxInput): TaxResult {
   const grossIncomeForEffective = agi + (input.socialSecurity - taxableSS);
   const effectiveRate = grossIncomeForEffective > 0 ? totalTax / grossIncomeForEffective : 0;
 
+  // TRUE marginal cost of the next ordinary dollar (e.g. a Roth conversion):
+  // finite-difference the total tax for a $1,000 bump. This automatically folds
+  // in the Social Security tax torpedo, NIIT, and the senior-bonus phaseout —
+  // none of which the statutory bracket rate captures. (Illinois doesn't tax the
+  // conversion, so its state component is ~0, which is correct.) IRMAA is handled
+  // separately (it isn't an income tax and uses a 2-year MAGI lag).
+  let effectiveMarginalRate = ordinaryMarginalRate(ordinaryTaxableIncome, ordBrackets);
+  if (!input._noMarginal) {
+    const dx = 1_000;
+    const bumped = computeTaxes({ ...input, preTaxWithdrawals: input.preTaxWithdrawals + dx, _noMarginal: true });
+    effectiveMarginalRate = Math.max(0, (bumped.totalTax - totalTax) / dx);
+  }
+
   return {
     taxableSocialSecurity: taxableSS,
     agi,
@@ -265,7 +301,11 @@ export function computeTaxes(input: TaxInput): TaxResult {
     marginalOrdinaryRate: ordinaryMarginalRate(ordinaryTaxableIncome, ordBrackets),
     capitalGainsRate,
     effectiveRate,
-    irmaa: irmaaFor(magi, f, c.irmaaTiers, c.people),
+    effectiveMarginalRate,
+    // IRMAA: charged only to Medicare enrollees (age 65+), so scale by num65Plus
+    // (a 63/61 couple owes $0), and look it up against the 2-years-prior MAGI when
+    // the caller supplies it (premium year T uses year T−2 income).
+    irmaa: irmaaFor(input.irmaaMagi ?? magi, f, c.irmaaTiers, input.num65Plus),
   };
 }
 

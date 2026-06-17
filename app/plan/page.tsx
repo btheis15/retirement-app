@@ -901,9 +901,10 @@ function GoalAndRecommendation() {
           Technical version: {describePlan(rec.best.config, settings.convertUntilAge)}.
         </p>
         <p className="mt-1">{rec.rationale}</p>
-        <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="mt-3 grid grid-cols-2 gap-2">
           <MiniStat label="After-tax wealth" value={moneyCompact(rec.best.metrics.netWealth)} tone="gain" />
           <MiniStat label="Lifetime tax" value={moneyCompact(rec.best.metrics.lifetimeTax)} tone="tax" />
+          <MiniStat label="Lifetime Medicare (IRMAA)" value={moneyCompact(rec.best.metrics.lifetimeIrmaa)} tone="tax" />
           <MiniStat label="Peak RMD" value={moneyCompact(rec.best.metrics.peakRmd)} tone="deferred" />
         </div>
         <Info q="What does “confidence” mean?">

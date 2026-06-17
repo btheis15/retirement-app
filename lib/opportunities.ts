@@ -118,7 +118,7 @@ export function detectOpportunities(
       id: "qcd",
       icon: "❤️",
       title: "Give to charity straight from the IRA (QCD)",
-      detail: `From age 70½ you can send up to about $108,000 per person (2025, indexed) directly from a Traditional IRA to charity. It never hits your taxable income — lowering AGI, reducing how much Social Security is taxed, and helping keep you under an IRMAA tier${plan.rmd > 0 ? ", and it counts toward your required minimum distribution" : " (you don't have to wait for RMDs to start)"}.`,
+      detail: `From age 70½ you can send up to about $111,000 per person (2026, indexed) directly from a Traditional IRA to charity. It never hits your taxable income — lowering AGI, reducing how much Social Security is taxed, and helping keep you under an IRMAA tier${plan.rmd > 0 ? ", and it counts toward your required minimum distribution" : " (you don't have to wait for RMDs to start)"}.`,
       impact: "RMD dollars given this way are 100% tax-free",
       tone: "info",
       sources: [SOURCES.qcd, SOURCES.rmd],

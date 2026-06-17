@@ -216,12 +216,12 @@ export function Info({
   );
 }
 
-export function Disclaimer({ className = "" }: { className?: string }) {
+export function Disclaimer({ className = "", state = "Illinois" }: { className?: string; state?: string }) {
   return (
     <p className={`text-[11px] leading-relaxed text-foreground/45 ${className}`}>
-      Educational estimates only — not tax, legal, or investment advice. Federal tax only (no state
-      tax). Uses 2026 figures and reasonable assumptions; verify with a qualified tax professional
-      before acting.
+      Educational estimates only — not tax, legal, or investment advice. Models 2026 federal tax and{" "}
+      {state} state tax (other states aren&apos;t modeled). Uses reasonable assumptions; figures and
+      future projections are estimates — verify with a qualified tax professional before acting.
     </p>
   );
 }

@@ -624,10 +624,20 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               ))}
             </div>
             <p className="mt-1.5 text-[10px] leading-relaxed text-foreground/45">
-              &ldquo;Money you keep&rdquo; is your estate after all taxes — including the tax still owed on any pre-tax
-              left behind (figured at an assumed future rate of at least 22%). &ldquo;Biggest RMD&rdquo; is the largest
-              single forced withdrawal you&apos;d ever face.
+              &ldquo;Money you keep&rdquo; is your estate after all taxes — the tax still owed on any pre-tax left behind
+              (at your projected future rate) <em>and</em> the lifetime Medicare (IRMAA) premium surcharges your income
+              triggers. A taxable brokerage left to heirs gets a step-up in basis, so its gains pass tax-free.
+              &ldquo;Biggest RMD&rdquo; is the largest single forced withdrawal you&apos;d ever face.
             </p>
+            {compare.aggressive.lifetimeIrmaa > compare.smooth.lifetimeIrmaa + 5_000 && (
+              <p className="mt-1.5 rounded-xl bg-ss/[0.06] px-3 py-2 text-[11px] leading-relaxed text-foreground/65">
+                🩺 Converting aggressively pushes your income into higher Medicare (IRMAA) tiers — about{" "}
+                <strong>{moneyCompact(compare.aggressive.lifetimeIrmaa)}</strong> in lifetime Part B/D surcharges vs.{" "}
+                <strong>{moneyCompact(compare.smooth.lifetimeIrmaa)}</strong> with smoothing. That extra premium cost is
+                already counted in &ldquo;money you keep&rdquo; above — it&apos;s part of why bigger isn&apos;t always
+                better.
+              </p>
+            )}
 
             {/* Detailed, plain-English explanation of each choice — collapsed by
                 default so the page stays calm; tap any row to understand it fully. */}

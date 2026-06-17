@@ -66,11 +66,11 @@ export const NIIT_THRESHOLD_MFJ = 250_000;
  */
 export const IRMAA_TIERS_MFJ: { upTo: number; monthlyPerPerson: number; label: string }[] = [
   { upTo: 218_000, monthlyPerPerson: 0, label: "Standard premium" },
-  { upTo: 272_000, monthlyPerPerson: 86, label: "Tier 1 surcharge" },
-  { upTo: 340_000, monthlyPerPerson: 215, label: "Tier 2 surcharge" },
-  { upTo: 408_000, monthlyPerPerson: 344, label: "Tier 3 surcharge" },
-  { upTo: 750_000, monthlyPerPerson: 473, label: "Tier 4 surcharge" },
-  { upTo: Infinity, monthlyPerPerson: 516, label: "Top tier surcharge" },
+  { upTo: 274_000, monthlyPerPerson: 96, label: "Tier 1 surcharge" },
+  { upTo: 342_000, monthlyPerPerson: 240, label: "Tier 2 surcharge" },
+  { upTo: 410_000, monthlyPerPerson: 385, label: "Tier 3 surcharge" },
+  { upTo: 750_000, monthlyPerPerson: 530, label: "Tier 4 surcharge" },
+  { upTo: Infinity, monthlyPerPerson: 578, label: "Top tier surcharge" },
 ];
 
 // ─── SINGLE-filer 2026 figures (for the surviving-spouse "widow's penalty") ───
@@ -109,11 +109,11 @@ export const NIIT_THRESHOLD_SINGLE = 200_000;
 /** IRMAA tiers for Single — same per-person surcharge dollars as MFJ, lower MAGI bounds. */
 export const IRMAA_TIERS_SINGLE: { upTo: number; monthlyPerPerson: number; label: string }[] = [
   { upTo: 109_000, monthlyPerPerson: 0, label: "Standard premium" },
-  { upTo: 137_000, monthlyPerPerson: 86, label: "Tier 1 surcharge" },
-  { upTo: 171_000, monthlyPerPerson: 215, label: "Tier 2 surcharge" },
-  { upTo: 205_000, monthlyPerPerson: 344, label: "Tier 3 surcharge" },
-  { upTo: 500_000, monthlyPerPerson: 473, label: "Tier 4 surcharge" },
-  { upTo: Infinity, monthlyPerPerson: 516, label: "Top tier surcharge" },
+  { upTo: 137_000, monthlyPerPerson: 96, label: "Tier 1 surcharge" },
+  { upTo: 171_000, monthlyPerPerson: 240, label: "Tier 2 surcharge" },
+  { upTo: 205_000, monthlyPerPerson: 385, label: "Tier 3 surcharge" },
+  { upTo: 500_000, monthlyPerPerson: 530, label: "Tier 4 surcharge" },
+  { upTo: Infinity, monthlyPerPerson: 578, label: "Top tier surcharge" },
 ];
 
 export type FilingStatus = "mfj" | "single";
