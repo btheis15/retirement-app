@@ -73,6 +73,7 @@ export default function PlanPage() {
         endAge: settings.endAge,
         convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
         survivor: survivorFromSettings(settings),
+        heirTaxRate: settings.heirTaxRate,
       }),
     [household, settings],
   );
@@ -811,6 +812,7 @@ function GoalAndRecommendation() {
     endAge: settings.endAge,
     convertUntilAge: settings.convertUntilAge,
     survivor: survivorFromSettings(settings),
+    heirTaxRate: settings.heirTaxRate,
   };
   const rec = useMemo(
     () => recommendPlan(household, inputs, settings.goal),

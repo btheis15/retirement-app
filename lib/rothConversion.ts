@@ -29,6 +29,8 @@ export interface ConversionInputs {
   mode?: "recommended" | "fillBracket";
   /** Survivor (widow's-penalty) assumption, or null to disable. */
   survivor?: { firstDeathAge: number; spendingFactor: number } | null;
+  /** Heir's assumed marginal rate on inherited pre-tax (10-year rule). Default 0.24. */
+  heirTaxRate?: number;
 }
 
 export interface ConversionAnalysis {
@@ -66,6 +68,7 @@ export function analyzeConversions(household: Household, inputs: ConversionInput
     returnRate: inputs.returnRate,
     inflationRate: inputs.inflationRate,
     endAge: inputs.endAge,
+    heirTaxRate: inputs.heirTaxRate,
   };
 
   const survivor = inputs.survivor ?? null;

@@ -101,6 +101,7 @@ export default function ScenariosPage() {
       inflationRate: settings.inflationRate,
       endAge: settings.endAge,
       survivor: survivorFromSettings(settings),
+      heirTaxRate: settings.heirTaxRate,
     };
     return PLANS.map((p) => {
       const r = projectLifetime(household, {

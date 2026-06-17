@@ -41,6 +41,12 @@ export interface PlannerSettings {
   survivorModel: boolean;
   /** Age of the OLDER spouse at the (assumed) first death. */
   firstDeathAge: number;
+  /** Show all future figures in today's (inflation-adjusted) dollars instead of
+   *  nominal future dollars. Advanced display option; default nominal. */
+  realDollars: boolean;
+  /** Assumed marginal tax rate a non-spouse heir pays on the inherited pre-tax,
+   *  spread over the SECURE Act 10-year window. Advanced; default 24%. */
+  heirTaxRate: number;
   /** True once the user has manually adjusted the rollover (turned conversions
    *  on/off or switched smooth↔fill) away from the goal's recommendation. While
    *  false, the goal's recommended plan auto-applies — so the user never has to
@@ -69,5 +75,7 @@ export const DEFAULT_SETTINGS: PlannerSettings = {
   convertUntilAge: 75,
   survivorModel: true,
   firstDeathAge: 85,
+  realDollars: false,
+  heirTaxRate: 0.24,
   planCustomized: false,
 };

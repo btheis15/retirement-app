@@ -43,6 +43,9 @@ export interface ProjectionAssumptions {
   /** Skip the inner conventional baseline and use this as the recommended-mode
    *  future RMD rate (set by Monte Carlo so conversions don't chase noisy returns). */
   futureRateOverride?: number | null;
+  /** Marginal rate a non-spouse heir pays on inherited pre-tax, spread over the
+   *  SECURE 10-year window. Drives the after-tax estate. Default 0.24. */
+  heirTaxRate?: number;
 }
 
 export interface ProjectionRow {
@@ -75,10 +78,18 @@ export interface ProjectionRow {
 export interface ProjectionResult {
   rows: ProjectionRow[];
   lifetimeTax: number;
+  /** lifetimeTax in today's (start-year) dollars. */
+  lifetimeTaxReal: number;
   /** Cumulative Medicare IRMAA surcharges paid over the projection (a cash cost
    *  driven up by conversions/RMDs that lift MAGI into higher tiers). */
   lifetimeIrmaa: number;
+  /** lifetimeIrmaa in today's dollars. */
+  lifetimeIrmaaReal: number;
   endingEstate: number; // GROSS total balance left at the end
+  /** endingEstate in today's dollars. */
+  endingEstateReal: number;
+  /** endingEstateAfterTax in today's dollars. */
+  endingEstateAfterTaxReal: number;
   /** After-tax estate: pre-tax discounted by an assumed heir rate, taxable
    *  gains by 15%. A fair apples-to-apples comparison between strategies, since
    *  a pre-tax dollar still owes income tax when withdrawn. */
@@ -218,13 +229,16 @@ function growAll(accounts: Account[], rate: number) {
 export function projectLifetime(household: Household, assumptions: ProjectionResultInput): ProjectionResult {
   const { strategy, bracketTarget, returnRate, inflationRate, endAge, convert, survivor, returnFor, futureRateOverride } =
     assumptions;
+  const heirTaxRate = assumptions.heirTaxRate ?? ASSUMED_LIQUIDATION_RATE;
   const h = cloneHousehold(household);
   const startYear = new Date().getFullYear();
   const rows: ProjectionRow[] = [];
   let lifetimeTax = 0;
+  let lifetimeTaxReal = 0; // same, in today's (start-year) dollars
   let depleted = false;
   let totalConverted = 0;
   let lifetimeIrmaa = 0; // cumulative Medicare IRMAA surcharges — a real cash drag
+  let lifetimeIrmaaReal = 0;
   let peakRmd = 0;
   let peakRmdMarginal = 0; // highest marginal rate seen in an RMD year (the bomb's real rate)
   let peakMarginalRate = 0; // highest ordinary bracket touched in ANY year (incl. conversions)
@@ -357,6 +371,10 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
 
     lifetimeTax += plan.tax.totalTax;
     lifetimeIrmaa += plan.tax.irmaa.householdAnnual;
+    // Deflate to today's dollars: a tax paid in year T is worth less in real terms.
+    const realFactor = Math.pow(1 + inflationRate, year - startYear);
+    lifetimeTaxReal += plan.tax.totalTax / realFactor;
+    lifetimeIrmaaReal += plan.tax.irmaa.householdAnnual / realFactor;
     peakRmd = Math.max(peakRmd, plan.rmd);
     if (plan.rmd > 0) peakRmdMarginal = Math.max(peakRmdMarginal, plan.tax.marginalOrdinaryRate);
     peakMarginalRate = Math.max(peakMarginalRate, plan.tax.marginalOrdinaryRate);
@@ -413,11 +431,10 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
 
   const endingEstate = endPretax + endRoth + endTaxable;
   // Leftover pre-tax is a deferred tax bill (income in respect of a decedent — it
-  // does NOT get a step-up). Discount it at the rate it would ACTUALLY be
-  // withdrawn at — this plan's worst RMD-era marginal rate — floored at the
-  // baseline assumption. A plan that leaves a big RMD bomb is valued lower; one
-  // that converted it away has little pre-tax left, so the rate barely matters.
-  const liquidationRate = Math.max(ASSUMED_LIQUIDATION_RATE, peakRmdMarginal);
+  // does NOT get a step-up). A non-spouse heir must drain it within 10 years
+  // (SECURE Act), so we value it at the HEIR's assumed marginal bracket spread
+  // over that window (default 24%), not the original owner's RMD rate.
+  const liquidationRate = heirTaxRate;
   // Brokerage assets get a STEP-UP IN BASIS at death (IRC §1014): the embedded
   // unrealized gain is forgiven, so heirs inherit at full value and owe $0 income
   // tax on it. Roth is already tax-free. (Heirs selling later realize only
@@ -427,12 +444,22 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
   // up, so "money you keep" honestly reflects the IRMAA cost of converting.
   const endingEstateAfterTax = endPretax * (1 - liquidationRate) + endRoth + endTaxable - lifetimeIrmaa;
 
+  // Today's-dollars versions: the ending estate sits at the final modeled year, so
+  // deflate it by that many years of inflation.
+  const endDeflator = Math.pow(1 + inflationRate, rows.length);
+  const endingEstateReal = endingEstate / endDeflator;
+  const endingEstateAfterTaxReal = endingEstateAfterTax / endDeflator;
+
   return {
     rows,
     lifetimeTax,
+    lifetimeTaxReal,
     lifetimeIrmaa,
+    lifetimeIrmaaReal,
     endingEstate,
+    endingEstateReal,
     endingEstateAfterTax,
+    endingEstateAfterTaxReal,
     endingBuckets: { pretax: endPretax, roth: endRoth, taxable: endTaxable, taxableGain: endTaxableGain },
     yearsModeled: rows.length,
     depleted,

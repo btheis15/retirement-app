@@ -62,6 +62,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     endAge: settings.endAge,
     convertUntilAge: settings.convertUntilAge,
     survivor: survivorFromSettings(settings),
+    heirTaxRate: settings.heirTaxRate,
   };
   const activeAssumptions = useMemo(
     () => ({
@@ -72,6 +73,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       endAge: settings.endAge,
       convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
       survivor: survivorFromSettings(settings),
+      heirTaxRate: settings.heirTaxRate,
     }),
     [settings],
   );

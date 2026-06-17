@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useStore } from "@/components/HouseholdProvider";
 import { Card, PageTitle, SectionTitle, Stat, Pill, Disclaimer, Callout, Explainer, Info, PageSkeleton } from "@/components/ui";
 import { StackedArea, Bars, CompareBars, AnimatedNumber, FanChart } from "@/components/charts";
@@ -19,6 +19,7 @@ import { SOURCES } from "@/lib/sources";
 
 export default function ProjectionPage() {
   const { ready, household, settings, updateSettings } = useStore();
+  const [showAdv, setShowAdv] = useState(false);
 
   const result = useMemo(() => {
     const base = {
@@ -27,6 +28,7 @@ export default function ProjectionPage() {
       inflationRate: settings.inflationRate,
       endAge: settings.endAge,
       survivor: survivorFromSettings(settings),
+      heirTaxRate: settings.heirTaxRate,
     };
     const chosen = projectLifetime(household, {
       ...base,
@@ -45,6 +47,7 @@ export default function ProjectionPage() {
       convertUntilAge: settings.convertUntilAge,
       mode: settings.convertMode,
       survivor: survivorFromSettings(settings),
+      heirTaxRate: settings.heirTaxRate,
     });
     return { chosen, smart, conventional, milestones, conv };
   }, [household, settings]);
@@ -88,20 +91,39 @@ export default function ProjectionPage() {
   const { chosen, smart, conventional, milestones, conv } = result;
   const rows = chosen.rows;
 
+  // Today's-dollars toggle: deflate every future figure by inflation so the user
+  // sees real purchasing power instead of big nominal numbers. Point-in-time
+  // values deflate by their own year; the projection already supplies real
+  // versions of the lifetime aggregates.
+  const real = settings.realDollars;
+  const infl = settings.inflationRate;
+  const startYr = rows[0]?.year ?? new Date().getFullYear();
+  const defAt = (year: number) => (real ? 1 / Math.pow(1 + infl, year - startYr) : 1);
+  const endDef = real ? 1 / Math.pow(1 + infl, rows.length) : 1;
+  const lifetimeTaxDisp = real ? chosen.lifetimeTaxReal : chosen.lifetimeTax;
+  const endingAfterTaxDisp = real ? chosen.endingEstateAfterTaxReal : chosen.endingEstateAfterTax;
+  const endingGrossDisp = real ? chosen.endingEstateReal : chosen.endingEstate;
+
   // Stacked-area series (sample is fine — rows are annual).
   const areaRows = rows.map((r) => ({ x: r.year }));
   const series = [
-    { key: "pretax", color: HEX.deferred, values: rows.map((r) => r.startBalances.pretax) },
-    { key: "taxable", color: HEX.taxable, values: rows.map((r) => r.startBalances.taxable) },
-    { key: "roth", color: HEX.roth, values: rows.map((r) => r.startBalances.roth) },
+    { key: "pretax", color: HEX.deferred, values: rows.map((r) => r.startBalances.pretax * defAt(r.year)) },
+    { key: "taxable", color: HEX.taxable, values: rows.map((r) => r.startBalances.taxable * defAt(r.year)) },
+    { key: "roth", color: HEX.roth, values: rows.map((r) => r.startBalances.roth * defAt(r.year)) },
   ];
 
   // RMD bars — sample down to ~10 columns.
   const step = Math.max(1, Math.round(rows.length / 10));
-  const rmdBars = rows.filter((_, i) => i % step === 0).map((r) => ({ label: `'${String(r.year).slice(2)}`, value: r.rmd }));
+  const rmdBars = rows
+    .filter((_, i) => i % step === 0)
+    .map((r) => ({ label: `'${String(r.year).slice(2)}`, value: r.rmd * defAt(r.year) }));
 
-  const savings = conventional.lifetimeTax - smart.lifetimeTax;
-  const estateGain = smart.endingEstateAfterTax - conventional.endingEstateAfterTax;
+  const mcBand = real ? mc.band.map((b) => ({ ...b, p10: b.p10 * defAt(b.year), p50: b.p50 * defAt(b.year), p90: b.p90 * defAt(b.year) })) : mc.band;
+
+  const savings = real ? conventional.lifetimeTaxReal - smart.lifetimeTaxReal : conventional.lifetimeTax - smart.lifetimeTax;
+  const estateGain = real
+    ? smart.endingEstateAfterTaxReal - conventional.endingEstateAfterTaxReal
+    : smart.endingEstateAfterTax - conventional.endingEstateAfterTax;
 
   // RMD summary: when they begin, the first amount, and the peak.
   const firstRmd = rows.find((r) => r.rmd > 0);
@@ -161,16 +183,94 @@ export default function ProjectionPage() {
         </label>
       </div>
 
+      {/* Advanced assumptions — kept collapsed so the page stays approachable. */}
+      <button
+        onClick={() => setShowAdv((v) => !v)}
+        aria-expanded={showAdv}
+        className="press mt-3 flex w-full items-center justify-between rounded-xl border border-border bg-card px-4 py-2.5 text-[13px] font-semibold text-foreground/70"
+      >
+        <span>⚙️ Advanced assumptions{real ? " · showing today’s dollars" : ""}</span>
+        <span className={`transition-transform ${showAdv ? "rotate-180" : ""}`}>⌄</span>
+      </button>
+      {showAdv && (
+        <Card className="mt-2 space-y-1">
+          <label className="flex items-center justify-between gap-3 py-1">
+            <span className="text-[13px]">
+              <span className="font-medium">Show in today’s dollars</span>
+              <span className="mt-0.5 block text-[11px] leading-snug text-foreground/55">
+                Adjust every future figure for inflation, so amounts reflect real purchasing power instead of big
+                nominal numbers.
+              </span>
+            </span>
+            <button
+              onClick={() => updateSettings({ realDollars: !settings.realDollars })}
+              className={`press shrink-0 rounded-full px-3 py-1 text-[12px] font-semibold ${real ? "bg-gain/15 text-gain" : "bg-foreground/10 text-foreground/60"}`}
+            >
+              {real ? "✓ On" : "Off"}
+            </button>
+          </label>
+
+          <div className="border-t border-border/50 pt-2">
+            <label className="flex items-center justify-between gap-3 py-1">
+              <span className="text-[13px]">
+                <span className="font-medium">Model the survivor years</span>
+                <span className="mt-0.5 block text-[11px] leading-snug text-foreground/55">
+                  The &quot;widow&apos;s penalty&quot;: after the first spouse passes, the survivor files Single — harder
+                  brackets and a smaller deduction.
+                </span>
+              </span>
+              <button
+                onClick={() => updateSettings({ survivorModel: !settings.survivorModel })}
+                className={`press shrink-0 rounded-full px-3 py-1 text-[12px] font-semibold ${settings.survivorModel ? "bg-gain/15 text-gain" : "bg-foreground/10 text-foreground/60"}`}
+              >
+                {settings.survivorModel ? "✓ On" : "Off"}
+              </button>
+            </label>
+            {settings.survivorModel && (
+              <label className="flex items-center justify-between gap-3 py-1">
+                <span className="text-[12px] text-foreground/60">First spouse passes at age</span>
+                <select
+                  className="rounded-xl border border-border bg-background/60 px-3 py-1.5 text-sm"
+                  value={settings.firstDeathAge}
+                  onChange={(e) => updateSettings({ firstDeathAge: Number(e.target.value) })}
+                >
+                  {[80, 82, 85, 88, 90, 92].map((v) => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+
+          <label className="block border-t border-border/50 pt-2">
+            <span className="text-[13px] font-medium">Heir&apos;s tax rate on inherited pre-tax</span>
+            <span className="mt-0.5 block text-[11px] leading-snug text-foreground/55">
+              A non-spouse heir must drain an inherited IRA within 10 years (SECURE Act), taxed at their own bracket.
+              Drives the &quot;after-tax estate.&quot; Default 24%.
+            </span>
+            <select
+              className="mt-1.5 w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm"
+              value={settings.heirTaxRate}
+              onChange={(e) => updateSettings({ heirTaxRate: Number(e.target.value) })}
+            >
+              {[0.12, 0.22, 0.24, 0.32].map((v) => (
+                <option key={v} value={v}>{percent(v, 0)}</option>
+              ))}
+            </select>
+          </label>
+        </Card>
+      )}
+
       {/* Headline */}
       <SectionTitle hint={STRATEGY_META[settings.strategy].label}>If you follow this plan</SectionTitle>
       <Card>
         <div className="grid grid-cols-3 gap-y-4">
-          <Stat label="Lifetime tax (fed + IL)" tone="tax" value={<AnimatedNumber value={chosen.lifetimeTax} format={moneyCompact} />} />
+          <Stat label="Lifetime tax (fed + IL)" tone="tax" value={<AnimatedNumber value={lifetimeTaxDisp} format={moneyCompact} />} />
           <Stat
             label={`After-tax estate at ${settings.endAge}`}
             tone="gain"
-            value={<AnimatedNumber value={chosen.endingEstateAfterTax} format={moneyCompact} />}
-            sub={`${moneyCompact(chosen.endingEstate)} before deferred tax`}
+            value={<AnimatedNumber value={endingAfterTaxDisp} format={moneyCompact} />}
+            sub={`${moneyCompact(endingGrossDisp)} before deferred tax`}
           />
           <Stat
             label="Plan confidence"
@@ -202,15 +302,15 @@ export default function ProjectionPage() {
           </div>
         </div>
         <div className="mt-4">
-          <FanChart band={mc.band} yLabel={(n) => moneyCompact(n)} />
+          <FanChart band={mcBand} yLabel={(n) => moneyCompact(n)} />
           <p className="mt-1 text-[11px] text-foreground/45">
             Shaded band = the 10th–90th percentile range of money left each year; line = the median outcome.
           </p>
         </div>
         <div className="mt-3 grid grid-cols-3 gap-2">
-          <MiniBox label="Unlucky (10th)" value={moneyCompact(mc.endingWealth.p10)} tone="tax" />
-          <MiniBox label="Median" value={moneyCompact(mc.endingWealth.p50)} />
-          <MiniBox label="Lucky (90th)" value={moneyCompact(mc.endingWealth.p90)} tone="gain" />
+          <MiniBox label="Unlucky (10th)" value={moneyCompact(mc.endingWealth.p10 * endDef)} tone="tax" />
+          <MiniBox label="Median" value={moneyCompact(mc.endingWealth.p50 * endDef)} />
+          <MiniBox label="Lucky (90th)" value={moneyCompact(mc.endingWealth.p90 * endDef)} tone="gain" />
         </div>
         <Info q="How should I read this?" sources={[]}>
           Returns are modeled as independent random draws around your portfolio&apos;s long-run average — they capture
@@ -350,16 +450,16 @@ export default function ProjectionPage() {
         <p className="mb-3 text-[13px] text-foreground/70">Estimated lifetime tax (federal + Illinois) — same spending & assumptions:</p>
         <CompareBars
           items={[
-            { label: "Smart (bracket-fill)", value: smart.lifetimeTax, color: HEX.gain },
-            { label: "Conventional order", value: conventional.lifetimeTax, color: HEX.tax },
+            { label: "Smart (bracket-fill)", value: real ? smart.lifetimeTaxReal : smart.lifetimeTax, color: HEX.gain },
+            { label: "Conventional order", value: real ? conventional.lifetimeTaxReal : conventional.lifetimeTax, color: HEX.tax },
           ]}
           format={(n) => money(n)}
         />
         <p className="mb-2 mt-5 text-[13px] text-foreground/70">After-tax estate left at age {settings.endAge}:</p>
         <CompareBars
           items={[
-            { label: "Smart (bracket-fill)", value: smart.endingEstateAfterTax, color: HEX.gain },
-            { label: "Conventional order", value: conventional.endingEstateAfterTax, color: HEX.taxable },
+            { label: "Smart (bracket-fill)", value: real ? smart.endingEstateAfterTaxReal : smart.endingEstateAfterTax, color: HEX.gain },
+            { label: "Conventional order", value: real ? conventional.endingEstateAfterTaxReal : conventional.endingEstateAfterTax, color: HEX.taxable },
           ]}
           format={(n) => money(n)}
         />
@@ -426,24 +526,27 @@ export default function ProjectionPage() {
             </tr>
           </thead>
           <tbody className="tabular">
-            {rows.map((r) => (
+            {rows.map((r) => {
+              const d = defAt(r.year);
+              return (
               <tr key={r.year} className="border-b border-border/50">
                 <td className="px-2 py-1.5 text-left text-foreground/60">
                   {r.year} · {r.selfAge}
                 </td>
-                <td className="px-2 py-1.5 text-deferred">{r.fromPretax > 0 ? moneyCompact(r.fromPretax) : "—"}</td>
+                <td className="px-2 py-1.5 text-deferred">{r.fromPretax > 0 ? moneyCompact(r.fromPretax * d) : "—"}</td>
                 <td className={`px-2 py-1.5 ${r.rmd > 0 ? "font-semibold text-deferred" : "text-foreground/30"}`}>
-                  {r.rmd > 0 ? moneyCompact(r.rmd) : "—"}
+                  {r.rmd > 0 ? moneyCompact(r.rmd * d) : "—"}
                 </td>
-                <td className="px-2 py-1.5 text-taxable">{r.fromTaxable > 0 ? moneyCompact(r.fromTaxable) : "—"}</td>
-                <td className="px-2 py-1.5 text-roth">{r.fromRoth > 0 ? moneyCompact(r.fromRoth) : "—"}</td>
+                <td className="px-2 py-1.5 text-taxable">{r.fromTaxable > 0 ? moneyCompact(r.fromTaxable * d) : "—"}</td>
+                <td className="px-2 py-1.5 text-roth">{r.fromRoth > 0 ? moneyCompact(r.fromRoth * d) : "—"}</td>
                 <td className={`px-2 py-1.5 ${r.conversion > 0 ? "font-semibold text-roth" : "text-foreground/30"}`}>
-                  {r.conversion > 0 ? moneyCompact(r.conversion) : "—"}
+                  {r.conversion > 0 ? moneyCompact(r.conversion * d) : "—"}
                 </td>
-                <td className="px-2 py-1.5 text-tax">{moneyCompact(r.tax)}</td>
-                <td className="px-2 py-1.5">{moneyCompact(r.endTotal)}</td>
+                <td className="px-2 py-1.5 text-tax">{moneyCompact(r.tax * d)}</td>
+                <td className="px-2 py-1.5">{moneyCompact(r.endTotal * d)}</td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </Card>

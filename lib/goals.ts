@@ -57,6 +57,8 @@ export interface PlanInputs {
   convertUntilAge: number;
   /** Survivor (widow's-penalty) assumption, or null to disable. */
   survivor?: { firstDeathAge: number; spendingFactor: number } | null;
+  /** Heir's assumed marginal rate on inherited pre-tax (10-year rule). Default 0.24. */
+  heirTaxRate?: number;
 }
 
 export interface PlanMetrics {
@@ -108,6 +110,7 @@ function evaluateConfig(household: Household, inputs: PlanInputs, c: { config: P
     endAge: inputs.endAge,
     convert: c.config.useConversions ? { untilAge: inputs.convertUntilAge, mode: c.config.convertMode } : null,
     survivor: inputs.survivor ?? null,
+    heirTaxRate: inputs.heirTaxRate,
   });
   const grossIncome = projection.rows.reduce((s, r) => s + r.netCash + r.tax, 0);
   const lifetimeIrmaa = projection.rows.reduce((s, r) => s + r.irmaa, 0);
