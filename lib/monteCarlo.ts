@@ -18,8 +18,10 @@
  *  - FAILURE DEPTH: not just pass/fail — when plans fall short, at what age, and
  *    the worst-10% (CVaR) ending wealth.
  *
- * ⚠️ Educational estimates only. Independent annual draws capture fat tails and
- * sequence risk, but not serial correlation, regime shifts, or true crashes.
+ * ⚠️ Educational estimates only. Returns are drawn independently year-to-year
+ * (capturing fat tails and sequence risk); inflation follows a persistent AR(1).
+ * Not modeled: return serial correlation/regime shifts (see the historical
+ * block-bootstrap engine for a path-dependent second opinion).
  */
 
 import { Household } from "./accounts";
@@ -34,17 +36,24 @@ export interface MonteCarloResult {
   successCI: [number, number];
   /** Standard error of the success rate. */
   successSE: number;
-  /** Gross ending-wealth percentiles across simulations. */
+  /** Gross ending-wealth percentiles across simulations (nominal). */
   endingWealth: { p10: number; p25: number; p50: number; p75: number; p90: number };
+  /** Ending-wealth percentiles in TODAY'S dollars — each run deflated by its OWN
+   *  realized inflation path (correct in the tails, unlike a flat-rate deflation). */
+  endingWealthReal: { p10: number; p25: number; p50: number; p75: number; p90: number };
   /** Mean ending wealth across the WORST 10% of runs (Expected Shortfall / CVaR). */
   cvarEndingWealth: number;
+  /** CVaR in today's dollars. */
+  cvarEndingWealthReal: number;
   /** Among runs that fell short: median age the money first ran out (0 if none). */
   medianShortfallAge: number;
   /** Worst real-spending CUT (1 − min real spend ÷ plan) across runs, as fractions:
    *  typical (p50) and bad (p90). ~0 for constant spending; >0 with guardrails. */
   spendCut: { p50: number; p90: number };
-  /** Per-year gross-balance percentiles, for a fan chart (10/25/50/75/90). */
+  /** Per-year gross-balance percentiles, for a fan chart (10/25/50/75/90), nominal. */
   band: { year: number; selfAge: number; p10: number; p25: number; p50: number; p75: number; p90: number }[];
+  /** Same fan, in today's dollars (per-run realized-inflation deflation). */
+  bandReal: { year: number; selfAge: number; p10: number; p25: number; p50: number; p75: number; p90: number }[];
   /** Expected (arithmetic-mean) blended annual return assumed. */
   expectedReturn: number;
   /** Blended annual return volatility (1 standard deviation) assumed. */
@@ -142,35 +151,27 @@ export function runMonteCarlo(
     const sig2 = Math.log(1 + (c.vol * c.vol) / ((1 + c.mean) * (1 + c.mean)));
     return { weight: c.weight, muLog: Math.log(1 + c.mean) - sig2 / 2, sd: Math.sqrt(sig2) };
   });
-  const L = cholesky(m.corr);
+  // 4×4 correlation over [equity, bonds, cash, INFLATION]. Inflation is negatively
+  // correlated with bonds (a rising-inflation year hurts bond returns), so the
+  // engine can reproduce a 1966/2022-style year where bonds fall WHILE inflation
+  // spikes — the dominant real cause of near-retiree failure.
+  const INFL_CORR = { eq: -0.01, bonds: -0.24, cash: -0.03 };
+  const c3 = m.corr;
+  const corr4 = [
+    [c3[0][0], c3[0][1], c3[0][2], INFL_CORR.eq],
+    [c3[1][0], c3[1][1], c3[1][2], INFL_CORR.bonds],
+    [c3[2][0], c3[2][1], c3[2][2], INFL_CORR.cash],
+    [INFL_CORR.eq, INFL_CORR.bonds, INFL_CORR.cash, 1],
+  ];
+  const L = cholesky(corr4);
   const tScale = df > 2 ? Math.sqrt((df - 2) / df) : 1; // standardize t to unit variance
 
-  // One correlated, fat-tailed YEAR of asset returns → blended portfolio return.
-  const samplePortfolioYear = (): number => {
-    const nrm = [randn(rng), randn(rng), randn(rng)];
-    // Correlate via Cholesky: z = L · n.
-    const z = [
-      L[0][0] * nrm[0],
-      L[1][0] * nrm[0] + L[1][1] * nrm[1],
-      L[2][0] * nrm[0] + L[2][1] * nrm[1] + L[2][2] * nrm[2],
-    ];
-    // Shared chi-square scaling → multivariate Student-t (systemic fat tails).
-    let w = 0;
-    for (let k = 0; k < df; k++) {
-      const g = randn(rng);
-      w += g * g;
-    }
-    const tFactor = (df > 2 ? Math.sqrt(df / Math.max(w, 1e-9)) : 1) * tScale;
-    let port = 0;
-    for (let i = 0; i < 3; i++) {
-      // Winsorize the standardized shock so a rare extreme t draw can't blow up
-      // through exp() (e.g. a +1900% year). Keeps fat tails, bounds the absurd.
-      const shock = Math.max(-SHOCK_CLAMP, Math.min(SHOCK_CLAMP, z[i] * tFactor));
-      const r = Math.exp(logp[i].muLog + logp[i].sd * shock) - 1;
-      port += logp[i].weight * r;
-    }
-    return port;
-  };
+  // Stochastic inflation: a sticky AR(1) around the user's assumed mean (phi 0.6,
+  // stationary stdev ~1.77%/yr), driven by the inflation-correlated shock.
+  const pibar = assumptions.inflationRate;
+  const PHI = 0.6;
+  const SIGMA_INFL = 0.0177;
+  const sigmaEps = SIGMA_INFL * Math.sqrt(1 - PHI * PHI);
 
   // Compute the recommended-conversion future rate ONCE (deterministic), then
   // reuse it in every run so conversions don't react to the random returns.
@@ -178,16 +179,58 @@ export function runMonteCarlo(
   const futureRateOverride = det.futureRate;
 
   const endings: number[] = [];
+  const endingsReal: number[] = []; // each run deflated by ITS OWN inflation path
   const shortfallAges: number[] = [];
   const cuts: number[] = []; // worst real-spending cut per run (0 = no cut)
   let successes = 0;
-  const cols: number[][] = []; // per-year endTotal across runs
+  const cols: number[][] = []; // per-year endTotal across runs (nominal)
+  const colsReal: number[][] = []; // per-year endTotal in today's dollars
 
   for (let r = 0; r < runs; r++) {
-    const seq: number[] = [];
-    const returnFor = (i: number) => (seq[i] ??= samplePortfolioYear());
-    const proj = projectLifetime(household, { ...assumptions, returnFor, futureRateOverride });
+    // Per-run generator: each year draws a correlated, fat-tailed return vector AND
+    // advances the AR(1) inflation. Generated lazily in order (AR(1) is sequential).
+    const rets: number[] = [];
+    const infls: number[] = [];
+    let prevInfl = pibar;
+    const ensure = (i: number) => {
+      while (rets.length <= i) {
+        const n = [randn(rng), randn(rng), randn(rng), randn(rng)];
+        const z = [0, 0, 0, 0];
+        for (let a = 0; a < 4; a++) {
+          let s = 0;
+          for (let b = 0; b <= a; b++) s += L[a][b] * n[b];
+          z[a] = s;
+        }
+        // Shared chi-square → multivariate Student-t for the 3 return dims.
+        let w = 0;
+        for (let k = 0; k < df; k++) {
+          const g = randn(rng);
+          w += g * g;
+        }
+        const tFactor = (df > 2 ? Math.sqrt(df / Math.max(w, 1e-9)) : 1) * tScale;
+        let port = 0;
+        for (let i = 0; i < 3; i++) {
+          const shock = Math.max(-SHOCK_CLAMP, Math.min(SHOCK_CLAMP, z[i] * tFactor));
+          port += logp[i].weight * (Math.exp(logp[i].muLog + logp[i].sd * shock) - 1);
+        }
+        // Inflation: AR(1) with the correlated (Gaussian) shock, clamped to a sane band.
+        const infl = Math.max(-0.02, Math.min(0.12, pibar + PHI * (prevInfl - pibar) + sigmaEps * z[3]));
+        prevInfl = infl;
+        rets.push(port);
+        infls.push(infl);
+      }
+    };
+    const returnFor = (i: number) => {
+      ensure(i);
+      return rets[i];
+    };
+    const inflationFor = (i: number) => {
+      ensure(i);
+      return infls[i];
+    };
+    const proj = projectLifetime(household, { ...assumptions, returnFor, inflationFor, futureRateOverride });
     endings.push(proj.endingEstate);
+    endingsReal.push(proj.endingEstateReal);
     cuts.push(Math.max(0, 1 - proj.minRealSpendRatio));
     if (proj.depleted) {
       const short = proj.rows.find((row) => row.shortfall);
@@ -197,27 +240,39 @@ export function runMonteCarlo(
     }
     proj.rows.forEach((row, i) => {
       (cols[i] ??= []).push(row.endTotal);
+      (colsReal[i] ??= []).push(row.inflationFactor > 0 ? row.endTotal / row.inflationFactor : row.endTotal);
     });
   }
 
   endings.sort((a, b) => a - b);
+  endingsReal.sort((a, b) => a - b);
   shortfallAges.sort((a, b) => a - b);
   cuts.sort((a, b) => a - b);
   const worstCount = Math.max(1, Math.floor(runs * 0.1));
-  const cvar = endings.slice(0, worstCount).reduce((s, x) => s + x, 0) / worstCount;
+  const avg = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : 0);
+  const cvar = avg(endings.slice(0, worstCount));
+  const cvarReal = avg(endingsReal.slice(0, worstCount));
   const ci = wilsonInterval(successes, runs);
 
-  const band = cols.map((col, i) => {
-    col.sort((a, b) => a - b);
-    return {
-      year: det.rows[i]?.year ?? 0,
-      selfAge: det.rows[i]?.selfAge ?? 0,
-      p10: pct(col, 0.1),
-      p25: pct(col, 0.25),
-      p50: pct(col, 0.5),
-      p75: pct(col, 0.75),
-      p90: pct(col, 0.9),
-    };
+  const pctlBand = (matrix: number[][]) =>
+    matrix.map((col, i) => {
+      col.sort((a, b) => a - b);
+      return {
+        year: det.rows[i]?.year ?? 0,
+        selfAge: det.rows[i]?.selfAge ?? 0,
+        p10: pct(col, 0.1),
+        p25: pct(col, 0.25),
+        p50: pct(col, 0.5),
+        p75: pct(col, 0.75),
+        p90: pct(col, 0.9),
+      };
+    });
+  const wealthPctiles = (xs: number[]) => ({
+    p10: pct(xs, 0.1),
+    p25: pct(xs, 0.25),
+    p50: pct(xs, 0.5),
+    p75: pct(xs, 0.75),
+    p90: pct(xs, 0.9),
   });
 
   return {
@@ -225,17 +280,14 @@ export function runMonteCarlo(
     successPct: ci.p,
     successCI: [ci.lo, ci.hi],
     successSE: ci.se,
-    endingWealth: {
-      p10: pct(endings, 0.1),
-      p25: pct(endings, 0.25),
-      p50: pct(endings, 0.5),
-      p75: pct(endings, 0.75),
-      p90: pct(endings, 0.9),
-    },
+    endingWealth: wealthPctiles(endings),
+    endingWealthReal: wealthPctiles(endingsReal),
     cvarEndingWealth: cvar,
+    cvarEndingWealthReal: cvarReal,
     medianShortfallAge: shortfallAges.length ? pct(shortfallAges, 0.5) : 0,
     spendCut: { p50: pct(cuts, 0.5), p90: pct(cuts, 0.9) },
-    band,
+    band: pctlBand(cols),
+    bandReal: pctlBand(colsReal),
     expectedReturn: m.expected,
     volatility: m.volatility,
   };

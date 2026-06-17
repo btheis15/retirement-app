@@ -7,7 +7,8 @@ import { StackedArea, Bars, CompareBars, AnimatedNumber, FanChart } from "@/comp
 import { projectLifetime } from "@/lib/projection";
 import { detectMilestones } from "@/lib/milestones";
 import { analyzeConversions } from "@/lib/rothConversion";
-import { runMonteCarlo } from "@/lib/monteCarlo";
+import { runMonteCarlo, MonteCarloResult } from "@/lib/monteCarlo";
+import { runHistoricalBootstrap } from "@/lib/returnsHistorical";
 import { runStressTests } from "@/lib/stressTest";
 import { solveSafeSpending, SafeSpendResult } from "@/lib/spendingSolver";
 import { STRATEGY_META } from "@/lib/optimizer";
@@ -25,6 +26,8 @@ export default function ProjectionPage() {
   const [safe, setSafe] = useState<SafeSpendResult[] | null>(null);
   const [solving, setSolving] = useState(false);
   const [solveProg, setSolveProg] = useState(0);
+  const [boot, setBoot] = useState<MonteCarloResult | null>(null);
+  const [bootLoading, setBootLoading] = useState(false);
 
   const result = useMemo(() => {
     const base = {
@@ -124,7 +127,6 @@ export default function ProjectionPage() {
   const infl = settings.inflationRate;
   const startYr = rows[0]?.year ?? new Date().getFullYear();
   const defAt = (year: number) => (real ? 1 / Math.pow(1 + infl, year - startYr) : 1);
-  const endDef = real ? 1 / Math.pow(1 + infl, rows.length) : 1;
   const lifetimeTaxDisp = real ? chosen.lifetimeTaxReal : chosen.lifetimeTax;
   const endingAfterTaxDisp = real ? chosen.endingEstateAfterTaxReal : chosen.endingEstateAfterTax;
   const endingGrossDisp = real ? chosen.endingEstateReal : chosen.endingEstate;
@@ -156,6 +158,30 @@ export default function ProjectionPage() {
     setSolving(false);
   };
 
+  const runBootstrap = () => {
+    setBootLoading(true);
+    setBoot(null);
+    setTimeout(() => {
+      const res = runHistoricalBootstrap(
+        household,
+        {
+          strategy: settings.strategy,
+          bracketTarget: settings.bracketTarget,
+          returnRate: settings.returnRate,
+          inflationRate: settings.inflationRate,
+          endAge: settings.endAge,
+          convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
+          survivor: survivorFromSettings(settings),
+          heirTaxRate: settings.heirTaxRate,
+          spendingStrategy: settings.spendingStrategy,
+        },
+        { model: rm, runs: 600 },
+      );
+      setBoot(res);
+      setBootLoading(false);
+    }, 30);
+  };
+
   // Stacked-area series (sample is fine — rows are annual).
   const areaRows = rows.map((r) => ({ x: r.year }));
   const series = [
@@ -170,12 +196,12 @@ export default function ProjectionPage() {
     .filter((_, i) => i % step === 0)
     .map((r) => ({ label: `'${String(r.year).slice(2)}`, value: r.rmd * defAt(r.year) }));
 
-  const mcBand = real
-    ? mc.band.map((b) => {
-        const d = defAt(b.year);
-        return { ...b, p10: b.p10 * d, p25: b.p25 * d, p50: b.p50 * d, p75: b.p75 * d, p90: b.p90 * d };
-      })
-    : mc.band;
+  // Real-dollar MC outputs are deflated PER RUN by that run's own realized
+  // inflation path (in the engine), not by a single average rate — correct in the
+  // tails. So just pick the engine's real series when today's-dollars is on.
+  const mcBand = real ? mc.bandReal : mc.band;
+  const mcEnding = real ? mc.endingWealthReal : mc.endingWealth;
+  const mcCvar = real ? mc.cvarEndingWealthReal : mc.cvarEndingWealth;
 
   const savings = real ? conventional.lifetimeTaxReal - smart.lifetimeTaxReal : conventional.lifetimeTax - smart.lifetimeTax;
   const estateGain = real
@@ -399,11 +425,11 @@ export default function ProjectionPage() {
           </div>
         </div>
         <div className="mt-3 grid grid-cols-5 gap-1.5">
-          <MiniBox label="10th" value={moneyCompact(mc.endingWealth.p10 * endDef)} tone="tax" />
-          <MiniBox label="25th" value={moneyCompact(mc.endingWealth.p25 * endDef)} />
-          <MiniBox label="50th" value={moneyCompact(mc.endingWealth.p50 * endDef)} />
-          <MiniBox label="75th" value={moneyCompact(mc.endingWealth.p75 * endDef)} />
-          <MiniBox label="90th" value={moneyCompact(mc.endingWealth.p90 * endDef)} tone="gain" />
+          <MiniBox label="10th" value={moneyCompact(mcEnding.p10)} tone="tax" />
+          <MiniBox label="25th" value={moneyCompact(mcEnding.p25)} />
+          <MiniBox label="50th" value={moneyCompact(mcEnding.p50)} />
+          <MiniBox label="75th" value={moneyCompact(mcEnding.p75)} />
+          <MiniBox label="90th" value={moneyCompact(mcEnding.p90)} tone="gain" />
         </div>
         <p className="mt-2 text-[11px] text-foreground/55">
           Ending wealth by percentile{real ? " (today’s dollars)" : ""}. Assumes a{" "}
@@ -414,7 +440,7 @@ export default function ProjectionPage() {
         <div className="mt-3 grid grid-cols-2 gap-2">
           <MiniBox
             label="Worst-10% outcome (CVaR)"
-            value={moneyCompact(mc.cvarEndingWealth * endDef)}
+            value={moneyCompact(mcCvar)}
             tone="tax"
           />
           <MiniBox
@@ -481,6 +507,40 @@ export default function ProjectionPage() {
                 {" "}Aiming far above 90% mostly buys unspent legacy.
               </p>
             </div>
+          )}
+        </div>
+
+        {/* Historical block-bootstrap — a "second opinion" from real market history. */}
+        <div className="mt-3 rounded-xl border border-border p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[13px] font-semibold">Cross-check against real history</span>
+            <button
+              onClick={runBootstrap}
+              disabled={bootLoading}
+              className="press rounded-full border border-primary/40 bg-primary/5 px-3 py-1 text-[12px] font-semibold text-primary disabled:opacity-50"
+            >
+              {bootLoading ? "Running…" : boot ? "Rerun" : "Run →"}
+            </button>
+          </div>
+          {!boot && !bootLoading && (
+            <p className="mt-1 text-[11px] leading-relaxed text-foreground/55">
+              The check above draws returns from a statistical model. This re-runs your plan through random multi-year
+              blocks of <strong>actual 1928–2024 market history</strong> (a &ldquo;block bootstrap,&rdquo; like cFIREsim) —
+              capturing real crashes, the 1970s stagflation, and how stocks, bonds &amp; inflation truly moved together.
+              Detrended to the same long-run averages, so only the <em>shape</em> differs.
+            </p>
+          )}
+          {boot && !bootLoading && (
+            <p className="mt-2 text-[12px] leading-relaxed text-foreground/70">
+              Historical: <strong className="text-foreground/90">{Math.round(boot.successPct * 100)}%</strong>{" "}
+              ({Math.round(boot.successCI[0] * 100)}–{Math.round(boot.successCI[1] * 100)}%) vs.{" "}
+              <strong>{Math.round(mc.successPct * 100)}%</strong> from the model.{" "}
+              {Math.abs(boot.successPct - mc.successPct) <= 0.04
+                ? "The two agree closely — a reassuring sign your result isn't an artifact of the model's shape."
+                : boot.successPct < mc.successPct
+                  ? "History is a bit harsher — real sequences (stagflation, clustered crashes) stress the plan more than the smooth model."
+                  : "History is a touch kinder here than the fat-tailed model."}
+            </p>
           )}
         </div>
 

@@ -40,6 +40,10 @@ export interface ProjectionAssumptions {
   /** Monte Carlo: per-year nominal return (yearIndex from start). Overrides the
    *  flat returnRate for growth when present. */
   returnFor?: ((yearIndex: number) => number) | null;
+  /** Monte Carlo: per-year realized inflation (yearIndex from start). Overrides
+   *  the flat inflationRate for spending growth, SS COLA, and bracket indexing
+   *  when present (a stochastic AR(1) path). */
+  inflationFor?: ((yearIndex: number) => number) | null;
   /** Skip the inner conventional baseline and use this as the recommended-mode
    *  future RMD rate (set by Monte Carlo so conversions don't chase noisy returns). */
   futureRateOverride?: number | null;
@@ -70,6 +74,10 @@ export interface ProjectionRow {
   effMarginalRate: number;
   /** MAGI this year — kept so a later year's IRMAA can look back 2 years. */
   magi: number;
+  /** Cumulative price level at this year (realized-inflation product). Lets a
+   *  Monte-Carlo run deflate this year's balance to today's dollars by ITS OWN
+   *  inflation path, not a flat average. */
+  inflationFactor: number;
   /** Annual household Medicare IRMAA surcharge triggered by this year's income. */
   irmaa: number;
   netCash: number;
@@ -335,6 +343,12 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
   const P0 = h.accounts.reduce((s, a) => s + a.balance, 0);
   let refSpend = W0; // the intended real spend (steps down at the survivor transition)
   let minSpendRatio = Infinity; // lowest (actual real spend ÷ intended) — guardrail cut depth
+  // Cumulative price level — the inflation index applied to brackets/IRMAA and the
+  // real-dollar deflator. Built as a PRODUCT of each year's REALIZED inflation
+  // (constant when inflationFor is absent; a stochastic AR(1) path under Monte
+  // Carlo), so every inflation-sensitive site moves together off one number.
+  const inflationFor = assumptions.inflationFor;
+  let priceLevel = 1;
 
   for (let year = startYear; year <= startYear + 60; year++) {
     const selfAge = year - h.self.birthYear;
@@ -349,9 +363,10 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
     };
     startBalances.total = startBalances.pretax + startBalances.roth + startBalances.taxable;
 
-    // Inflation index for this year — the tax engine uses it to index brackets,
-    // deductions, and IRMAA tiers so nominal income/brackets move together.
-    const inflationFactor = Math.pow(1 + inflationRate, year - startYear);
+    // Inflation index for this year (= cumulative price level at its START). The
+    // tax engine uses it to index brackets, deductions, and IRMAA tiers, and it
+    // doubles as the real-dollar deflator below — one number, no drift.
+    const inflationFactor = priceLevel;
 
     // Tax drag: scale this year's investment income with the current balances.
     const curBrokerage = h.accounts.filter(isBrokerage).reduce((s, a) => s + a.balance, 0);
@@ -422,10 +437,10 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
     if (refSpend > 0) minSpendRatio = Math.min(minSpendRatio, plan.spendingTarget / inflationFactor / refSpend);
     lifetimeTax += plan.tax.totalTax;
     lifetimeIrmaa += plan.tax.irmaa.householdAnnual;
-    // Deflate to today's dollars: a tax paid in year T is worth less in real terms.
-    const realFactor = Math.pow(1 + inflationRate, year - startYear);
-    lifetimeTaxReal += plan.tax.totalTax / realFactor;
-    lifetimeIrmaaReal += plan.tax.irmaa.householdAnnual / realFactor;
+    // Deflate to today's dollars by this year's price level (same index used for
+    // brackets — a tax paid in year T is worth less in real terms).
+    lifetimeTaxReal += plan.tax.totalTax / inflationFactor;
+    lifetimeIrmaaReal += plan.tax.irmaa.householdAnnual / inflationFactor;
     peakRmd = Math.max(peakRmd, plan.rmd);
     if (plan.rmd > 0) peakRmdMarginal = Math.max(peakRmdMarginal, plan.tax.marginalOrdinaryRate);
     peakMarginalRate = Math.max(peakMarginalRate, plan.tax.marginalOrdinaryRate);
@@ -456,6 +471,7 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
       marginalRate: plan.tax.marginalOrdinaryRate,
       effMarginalRate: plan.tax.effectiveMarginalRate,
       magi: plan.tax.magi,
+      inflationFactor,
       irmaa: plan.tax.irmaa.householdAnnual,
       netCash: plan.netCash,
       spendingTarget: plan.spendingTarget,
@@ -466,17 +482,19 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
 
     if (plan.shortfall > 1 && !depleted) depleted = true;
 
-    // Set next year's spending. Constant-real just inflates; guardrails flex with
-    // the post-year portfolio and this year's realized return.
+    // This year's realized inflation (stochastic under MC, else the flat rate) and
+    // return — used to grow next year's spending/COLA and advance the price level.
     const yearReturn = returnFor ? returnFor(year - startYear) : returnRate;
+    const yearInfl = inflationFor ? inflationFor(year - startYear) : inflationRate;
     if (useGuardrails) {
-      h.annualSpending = guytonKlinger(h.annualSpending, endTotal, yearReturn, refSpend, P0, inflationRate, endAge - selfAge);
+      h.annualSpending = guytonKlinger(h.annualSpending, endTotal, yearReturn, refSpend, P0, yearInfl, endAge - selfAge);
     } else {
-      h.annualSpending *= 1 + inflationRate;
+      h.annualSpending *= 1 + yearInfl;
     }
-    // Social Security COLA (proxied by inflation) keeps pace with indexed brackets.
-    h.self = { ...h.self, socialSecurityAnnual: h.self.socialSecurityAnnual * (1 + inflationRate) };
-    h.spouse = { ...h.spouse, socialSecurityAnnual: h.spouse.socialSecurityAnnual * (1 + inflationRate) };
+    // Social Security COLA (tracks realized inflation, like the indexed brackets).
+    h.self = { ...h.self, socialSecurityAnnual: h.self.socialSecurityAnnual * (1 + yearInfl) };
+    h.spouse = { ...h.spouse, socialSecurityAnnual: h.spouse.socialSecurityAnnual * (1 + yearInfl) };
+    priceLevel *= 1 + yearInfl; // advance to next year's start
   }
 
   const endPretax = h.accounts.filter((a) => bucketOf(a.kind) === "pretax").reduce((s, a) => s + a.balance, 0);
@@ -503,7 +521,9 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
 
   // Today's-dollars versions: the ending estate sits at the final modeled year, so
   // deflate it by that many years of inflation.
-  const endDeflator = Math.pow(1 + inflationRate, rows.length);
+  // Final cumulative price level (built from realized inflation) deflates the
+  // ending estate to today's dollars — matches the per-year deflation above.
+  const endDeflator = priceLevel;
   const endingEstateReal = endingEstate / endDeflator;
   const endingEstateAfterTaxReal = endingEstateAfterTax / endDeflator;
 
