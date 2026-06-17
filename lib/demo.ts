@@ -119,6 +119,7 @@ export const DEMO_HOUSEHOLD: Household = {
   pensionAnnual: 0,
   annualSpending: 180_000, // desired after-tax spending
   brokerageDividendsAnnual: 18_000, // qualified dividends thrown off by brokerage
+  state: "IL",
   accounts: RAW_ACCOUNTS.map(syncAccountFromHoldings),
 };
 

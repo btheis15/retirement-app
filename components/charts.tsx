@@ -196,6 +196,60 @@ export function StackedArea({
   );
 }
 
+/**
+ * Monte-Carlo fan chart: a shaded P10–P90 envelope with a P50 median line, over
+ * the projection years. Reads {year, p10, p50, p90} per year.
+ */
+export function FanChart({
+  band,
+  height = 170,
+  color = "var(--color-gain)",
+  lineColor = "var(--color-primary)",
+  yLabel,
+}: {
+  band: { year: number; p10: number; p50: number; p90: number }[];
+  height?: number;
+  color?: string;
+  lineColor?: string;
+  yLabel?: (n: number) => string;
+}) {
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const t = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(t);
+  }, []);
+  const width = 340;
+  const padL = 6;
+  const padR = 6;
+  const padB = 18;
+  const n = band.length;
+  if (n === 0) return null;
+  const maxY = Math.max(1, ...band.map((b) => b.p90));
+  const xAt = (i: number) => padL + (i / Math.max(1, n - 1)) * (width - padL - padR);
+  const yAt = (v: number) => height - padB - (v / maxY) * (height - padB - 6);
+  const topPts = band.map((b, i) => `${xAt(i)},${yAt(b.p90)}`).join(" L ");
+  const botPts = band.map((b, i) => `${xAt(i)},${yAt(b.p10)}`).reverse().join(" L ");
+  const area = `M ${topPts} L ${botPts} Z`;
+  const median = `M ${band.map((b, i) => `${xAt(i)},${yAt(b.p50)}`).join(" L ")}`;
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ opacity: shown ? 1 : 0, transition: "opacity 500ms ease" }}>
+      <path d={area} fill={color} fillOpacity={0.18} />
+      <path d={median} fill="none" stroke={lineColor} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      {yLabel && (
+        <text x={padL} y={12} fontSize="9" fill="var(--color-foreground)" opacity="0.4">
+          {yLabel(maxY)}
+        </text>
+      )}
+      <text x={padL} y={height - 4} fontSize="9" fill="var(--color-foreground)" opacity="0.45">
+        {band[0].year}
+      </text>
+      <text x={width - padR} y={height - 4} fontSize="9" textAnchor="end" fill="var(--color-foreground)" opacity="0.45">
+        {band[n - 1].year}
+      </text>
+    </svg>
+  );
+}
+
 /** Simple vertical bars (e.g. RMDs by year, or tax by year). */
 export function Bars({
   data,

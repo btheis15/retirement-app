@@ -7,6 +7,7 @@ import { Card, PageTitle, SectionTitle, Pill, Disclaimer, Callout, Explainer, In
 import { CompareBars } from "@/components/charts";
 import { projectLifetime } from "@/lib/projection";
 import { StrategyId, BracketTarget } from "@/lib/optimizer";
+import { survivorFromSettings } from "@/lib/defaults";
 import { returnModel } from "@/lib/returns";
 import { ReturnMethodInfo } from "@/components/ReturnMethodInfo";
 import { money, moneyCompact, percent } from "@/lib/format";
@@ -19,6 +20,10 @@ interface PlanDef {
   how: string;
   strategy: StrategyId;
   bracketTarget: BracketTarget;
+  /** Roll pre-tax → Roth through the low-tax window. */
+  convert?: boolean;
+  /** Conversion sizing when convert is true (default "recommended"). */
+  convertMode?: "recommended" | "fillBracket";
 }
 
 const PLANS: PlanDef[] = [
@@ -50,6 +55,24 @@ const PLANS: PlanDef[] = [
     strategy: "smart",
     bracketTarget: 0.24,
   },
+  {
+    id: "crec",
+    label: "Smart + recommended conversions",
+    how: "Roll pre-tax → Roth each year up to your projected future RMD-era tax rate (the recommended default) — the RMD tax-bomb defuser, sized so you never pay more now than later.",
+    strategy: "smart",
+    bracketTarget: 0.22,
+    convert: true,
+    convertMode: "recommended",
+  },
+  {
+    id: "c24",
+    label: "Smart + fill-24% conversions",
+    how: "Advanced: aggressively fill the 24% bracket with conversions — moves the most pre-tax into tax-free Roth now.",
+    strategy: "smart",
+    bracketTarget: 0.24,
+    convert: true,
+    convertMode: "fillBracket",
+  },
 ];
 
 export default function ScenariosPage() {
@@ -77,9 +100,15 @@ export default function ScenariosPage() {
       returnRate: settings.returnRate,
       inflationRate: settings.inflationRate,
       endAge: settings.endAge,
+      survivor: survivorFromSettings(settings),
     };
     return PLANS.map((p) => {
-      const r = projectLifetime(household, { ...base, strategy: p.strategy, bracketTarget: p.bracketTarget });
+      const r = projectLifetime(household, {
+        ...base,
+        strategy: p.strategy,
+        bracketTarget: p.bracketTarget,
+        convert: p.convert ? { untilAge: settings.convertUntilAge, mode: p.convertMode ?? "recommended" } : null,
+      });
       const gross = r.rows.reduce((s, row) => s + row.netCash + row.tax, 0);
       const lifetimeIrmaa = r.rows.reduce((s, row) => s + row.irmaa, 0);
       return {
@@ -89,9 +118,10 @@ export default function ScenariosPage() {
         netWealth: r.endingEstateAfterTax,
         lifetimeIrmaa,
         depleted: r.depleted,
+        totalConverted: r.totalConverted,
       };
     });
-  }, [household, settings.returnRate, settings.inflationRate, settings.endAge]);
+  }, [household, settings.returnRate, settings.inflationRate, settings.endAge, settings.convertUntilAge]);
 
   if (!ready) return <div className="h-screen" />;
 
@@ -108,7 +138,10 @@ export default function ScenariosPage() {
 
   const ranked = [...scn].sort((a, b) => b.netWealth - a.netWealth);
   const isActive = (p: PlanDef) =>
-    settings.strategy === p.strategy && (p.strategy !== "smart" || settings.bracketTarget === p.bracketTarget);
+    settings.strategy === p.strategy &&
+    (p.strategy !== "smart" || settings.bracketTarget === p.bracketTarget) &&
+    !!settings.useConversions === !!p.convert &&
+    (!p.convert || settings.convertMode === (p.convertMode ?? "recommended"));
 
   return (
     <div>
@@ -197,8 +230,8 @@ export default function ScenariosPage() {
       </Card>
 
       {/* Lifetime tax bars */}
-      <SectionTitle>Total lifetime federal tax</SectionTitle>
-      <Explainer>Every dollar of federal tax paid across the whole projection. Lower looks better here — but remember it&apos;s only half the story.</Explainer>
+      <SectionTitle>Total lifetime tax (federal + Illinois)</SectionTitle>
+      <Explainer>Every dollar of federal and Illinois tax paid across the whole projection. Lower looks better here — but remember it&apos;s only half the story.</Explainer>
       <Card>
         <CompareBars
           items={ranked.map((p) => ({
@@ -213,7 +246,7 @@ export default function ScenariosPage() {
       {/* Per-plan detail */}
       <SectionTitle>Every plan, side by side</SectionTitle>
       <Explainer>Tap &quot;Use this plan&quot; to apply it everywhere else in the app.</Explainer>
-      <div className="space-y-2">
+      <div className="space-y-2 lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0">
         {ranked.map((p) => (
           <Card as="div" key={p.id} className={isActive(p) ? "border-primary/40 bg-primary/[0.03]" : ""}>
             <div className="flex items-start justify-between gap-2">
@@ -224,6 +257,7 @@ export default function ScenariosPage() {
               <div className="flex shrink-0 flex-col items-end gap-1">
                 {p.id === mostWealth.id && <Pill tone="gain">Most wealth</Pill>}
                 {p.id === lowestTax.id && <Pill tone="ss">Lowest tax</Pill>}
+                {p.convert && p.totalConverted > 0 && <Pill tone="roth">Rolls {moneyCompact(p.totalConverted)} → Roth</Pill>}
                 {p.depleted && <Pill tone="tax">Runs short</Pill>}
               </div>
             </div>
@@ -240,7 +274,14 @@ export default function ScenariosPage() {
               </div>
             </div>
             <button
-              onClick={() => updateSettings({ strategy: p.strategy, bracketTarget: p.bracketTarget })}
+              onClick={() =>
+                updateSettings({
+                  strategy: p.strategy,
+                  bracketTarget: p.bracketTarget,
+                  useConversions: !!p.convert,
+                  convertMode: p.convertMode ?? "recommended",
+                })
+              }
               disabled={isActive(p)}
               className={`press mt-3 w-full rounded-xl py-2 text-sm font-semibold ${
                 isActive(p) ? "bg-primary/10 text-primary" : "bg-primary text-white"

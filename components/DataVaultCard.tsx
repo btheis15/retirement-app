@@ -48,6 +48,9 @@ export function DataVaultCard() {
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [pendingEnvelope, setPendingEnvelope] = useState<Envelope | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Passphrase remembered for THIS session (in memory only) after you load or
+  // save a file — lets you re-save changes in one click without re-typing it.
+  const [sessionPass, setSessionPass] = useState<{ pass: string; hint: string } | null>(null);
 
   const reset = () => {
     setMode("idle");
@@ -68,6 +71,7 @@ export function DataVaultCard() {
       const { envelope } = await encryptObject(payload, pass, hint.trim() || undefined);
       const stamp = new Date().toISOString().slice(0, 10);
       downloadFile(`retirement-plan-${stamp}.retire`, JSON.stringify(envelope, null, 2));
+      setSessionPass({ pass, hint: hint.trim() });
       setMsg({ kind: "ok", text: "Saved. Keep this file somewhere safe (Files, iCloud Drive, your Mac)." });
       reset();
     } catch (e) {
@@ -105,12 +109,32 @@ export function DataVaultCard() {
       const { data } = await decryptObject<Payload>(pendingEnvelope, pass);
       if (!data?.household) throw new Error("File is missing your plan data.");
       loadOwn(data.household, data.settings);
-      setMsg({ kind: "ok", text: "Unlocked and loaded your data." });
+      setSessionPass({ pass, hint: pendingEnvelope.hint ?? "" });
+      setMsg({ kind: "ok", text: "Unlocked and loaded. Make changes anytime — then “Save my changes” to update your file." });
       reset();
     } catch (e) {
       setMsg({ kind: "err", text: e instanceof Error ? e.message : "Couldn't unlock the file." });
       setBusy(false);
     }
+  };
+
+  // Re-encrypt the CURRENT data with the remembered passphrase and download an
+  // updated file — one click, no re-typing. Lets you load, change things over
+  // time, and keep your encrypted backup current.
+  const saveChanges = async () => {
+    if (!sessionPass) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const payload: Payload = { app: "retirement-tax-optimizer", v: 1, household, settings };
+      const { envelope } = await encryptObject(payload, sessionPass.pass, sessionPass.hint || undefined);
+      const stamp = new Date().toISOString().slice(0, 10);
+      downloadFile(`retirement-plan-${stamp}.retire`, JSON.stringify(envelope, null, 2));
+      setMsg({ kind: "ok", text: "Saved an updated encrypted copy (same passphrase). Replace your old file with it." });
+    } catch (e) {
+      setMsg({ kind: "err", text: e instanceof Error ? e.message : "Couldn't save your changes." });
+    }
+    setBusy(false);
   };
 
   return (
@@ -123,6 +147,21 @@ export function DataVaultCard() {
       <Card>
         {mode === "idle" && (
           <div className="space-y-2">
+            {sessionPass && (
+              <>
+                <button
+                  onClick={saveChanges}
+                  disabled={busy}
+                  className="press w-full rounded-xl bg-gain/15 px-4 py-3 text-sm font-semibold text-gain disabled:opacity-50"
+                >
+                  💾 {busy ? "Saving…" : "Save my changes (encrypted)"}
+                </button>
+                <p className="px-1 text-[11px] text-foreground/55">
+                  Re-saves with the passphrase you just used — no re-typing. Your edits are also kept on this device
+                  automatically; this updates your backup file so you can reload it later.
+                </p>
+              </>
+            )}
             <button
               onClick={() => {
                 setMsg(null);
@@ -130,7 +169,7 @@ export function DataVaultCard() {
               }}
               className="press w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-white"
             >
-              ⬇️ Download my data (encrypted)
+              ⬇️ {sessionPass ? "Save as a new file (new passphrase)" : "Download my data (encrypted)"}
             </button>
             <button
               onClick={() => {

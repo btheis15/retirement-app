@@ -87,6 +87,8 @@ export function syncAccountFromHoldings(a: Account): Account {
   };
 }
 
+import type { StateCode } from "./tax/state";
+
 export interface Person {
   label: string;
   birthYear: number;
@@ -114,6 +116,8 @@ export interface Household {
   /** Annual tax-exempt (municipal) interest — NOT taxed, but still raises MAGI for
    *  Medicare IRMAA and the taxability of Social Security. */
   taxExemptInterestAnnual?: number;
+  /** State of residence for state income tax (defaults to Illinois). */
+  state?: StateCode;
   accounts: Account[];
 }
 

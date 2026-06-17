@@ -1,6 +1,13 @@
 import { Household } from "./accounts";
 import { BracketTarget, StrategyId } from "./optimizer";
 
+/**
+ * What the user is optimizing FOR. The robo-advisor turns a goal into a concrete
+ * plan (strategy + bracket + whether to do Roth conversions) by simulating the
+ * candidates and picking the winner for that objective. See lib/goals.ts.
+ */
+export type GoalId = "maxCapital" | "lowestTax" | "lowestRate";
+
 /** A blank household for "enter my own numbers" mode. */
 export function emptyHousehold(): Household {
   const thisYear = new Date().getFullYear();
@@ -10,22 +17,50 @@ export function emptyHousehold(): Household {
     pensionAnnual: 0,
     annualSpending: 120_000,
     brokerageDividendsAnnual: 0,
+    state: "IL",
     accounts: [],
   };
 }
 
 export interface PlannerSettings {
+  /** The objective the robo-advisor optimizes for. */
+  goal: GoalId;
   strategy: StrategyId;
   bracketTarget: BracketTarget;
   returnRate: number;
   inflationRate: number;
   endAge: number;
+  /** Whether the active plan rolls pre-tax → Roth in the low-tax window. */
+  useConversions: boolean;
+  /** How much to convert: "recommended" (rate-arbitrage, the default) or
+   *  "fillBracket" (fill `bracketTarget` — the advanced manual lever). */
+  convertMode: "recommended" | "fillBracket";
+  /** Convert pre-tax → Roth each year through this (self) age. */
+  convertUntilAge: number;
+  /** Model the surviving-spouse years (widow's penalty). On by default. */
+  survivorModel: boolean;
+  /** Age of the OLDER spouse at the (assumed) first death. */
+  firstDeathAge: number;
+}
+
+/** Survivor spends this fraction of the couple's spending (fixed internal default). */
+export const SURVIVOR_SPENDING_FACTOR = 0.8;
+
+/** Build the projection's `survivor` assumption from settings (null = off). */
+export function survivorFromSettings(s: PlannerSettings): { firstDeathAge: number; spendingFactor: number } | null {
+  return s.survivorModel ? { firstDeathAge: s.firstDeathAge, spendingFactor: SURVIVOR_SPENDING_FACTOR } : null;
 }
 
 export const DEFAULT_SETTINGS: PlannerSettings = {
+  goal: "maxCapital",
   strategy: "smart",
   bracketTarget: 0.22,
   returnRate: 0.05,
   inflationRate: 0.025,
   endAge: 95,
+  useConversions: false,
+  convertMode: "recommended",
+  convertUntilAge: 75,
+  survivorModel: true,
+  firstDeathAge: 85,
 };

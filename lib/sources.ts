@@ -42,4 +42,9 @@ export const SOURCES = {
   fees: { label: "SEC Investor.gov — How fees & expenses eat into returns", url: "https://www.investor.gov/financial-tools-calculators/calculators/compound-interest-calculator" },
   fiduciary: { label: "SEC Investor.gov — Working with an investment professional (fiduciary, how they're paid)", url: "https://www.investor.gov/protect-your-investments/working-investment-professional" },
   annuitiesSEC: { label: "SEC Investor.gov — Annuities (types, fees, surrender charges)", url: "https://www.investor.gov/introduction-investing/investing-basics/investment-products/insurance-products/annuities" },
+  ilRetirement: {
+    label: "IL Dept. of Revenue Pub-120 — retirement income subtraction (incl. Roth conversions)",
+    url: "https://tax.illinois.gov/content/dam/soi/en/web/tax/research/publications/pubs/documents/pub-120.pdf",
+  },
+  ilRate: { label: "IL Dept. of Revenue — individual income tax rate & exemptions", url: "https://tax.illinois.gov/research/taxrates/income.html" },
 } as const;

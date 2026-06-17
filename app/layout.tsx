@@ -34,16 +34,19 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body className="min-h-full text-foreground antialiased">
         <HouseholdProvider>
           <PricesProvider>
-            <main
-              className="page-enter mx-auto w-full max-w-md px-4"
-              style={{
-                paddingTop: "env(safe-area-inset-top)",
-                paddingBottom: "calc(6rem + env(safe-area-inset-bottom))",
-              }}
-            >
-              <ModeBanner />
-              {children}
-            </main>
+            {/* Offset for the desktop sidebar; phone has a bottom bar instead. */}
+            <div className="lg:pl-56">
+              <main
+                className="page-enter mx-auto w-full max-w-md px-4 lg:max-w-4xl lg:px-8 lg:py-6 xl:max-w-5xl"
+                style={{
+                  paddingTop: "env(safe-area-inset-top)",
+                  paddingBottom: "calc(6rem + env(safe-area-inset-bottom))",
+                }}
+              >
+                <ModeBanner />
+                {children}
+              </main>
+            </div>
             <TabBar />
           </PricesProvider>
         </HouseholdProvider>

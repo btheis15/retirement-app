@@ -166,6 +166,14 @@ export default function AccountsPage() {
             Social Security is taxed.
           </p>
         </Field>
+        <div className="mt-3 flex items-start gap-2 rounded-xl bg-gain/5 px-3 py-2 text-[12px] text-foreground/70">
+          <span>📍</span>
+          <span>
+            <strong>State: Illinois.</strong> Illinois doesn&apos;t tax retirement income — your withdrawals, RMDs,
+            Roth conversions, pension, and Social Security are state-tax-free; only investment income is taxed at the
+            flat 4.95%. <span className="text-foreground/50">(More states coming.)</span>
+          </span>
+        </div>
       </Card>
 
       {/* Accounts */}

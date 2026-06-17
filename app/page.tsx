@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { useMemo } from "react";
 import { useStore } from "@/components/HouseholdProvider";
-import { Card, PageTitle, Stat, StackedBar, Pill, Disclaimer, SectionTitle } from "@/components/ui";
+import { Card, PageTitle, Stat, StackedBar, Pill, Disclaimer, SectionTitle, Callout } from "@/components/ui";
 import { SpendingPowerCard } from "@/components/SpendingPowerCard";
 import { PortfolioCard } from "@/components/PortfolioCard";
 import { sumBuckets, ageInYear } from "@/lib/accounts";
 import { planYear, computeRmd } from "@/lib/optimizer";
+import { analyzeConversions } from "@/lib/rothConversion";
+import { survivorFromSettings } from "@/lib/defaults";
 import { money, moneyCompact, percent } from "@/lib/format";
 import { rmdStartAge } from "@/lib/tax/constants";
 
@@ -23,12 +25,21 @@ export default function HomePage() {
       year,
     });
     const rmd = computeRmd(household, year);
-    return { buckets, plan, rmd };
+    const conv = analyzeConversions(household, {
+      strategy: "smart",
+      bracketTarget: settings.bracketTarget,
+      returnRate: settings.returnRate,
+      inflationRate: settings.inflationRate,
+      endAge: settings.endAge,
+      convertUntilAge: settings.convertUntilAge,
+      survivor: survivorFromSettings(settings),
+    });
+    return { buckets, plan, rmd, conv };
   }, [household, settings, year]);
 
   if (!ready) return <Loading />;
 
-  const { buckets, plan, rmd } = data;
+  const { buckets, plan, rmd, conv } = data;
   const selfAge = ageInYear(household.self.birthYear, year);
   const spouseAge = ageInYear(household.spouse.birthYear, year);
   const selfRmdAge = rmdStartAge(household.self.birthYear);
@@ -62,6 +73,28 @@ export default function HomePage() {
         </div>
       </Card>
 
+      {/* Robo-advisor teaser: surface the rollover plan when it's worth it */}
+      {conv.recommended && (
+        <Callout tone="warn" icon="💣" title="You may have an RMD tax bomb" className="mt-3">
+          About {Math.round(conv.pretaxShare * 100)}% of your money is in pre-tax accounts. Rolling roughly{" "}
+          <strong>{moneyCompact(conv.avgAnnualConversion)}/yr</strong> to Roth in your low-tax years could cut your
+          worst-year RMD from <strong>{moneyCompact(conv.peakRmdBaseline)}</strong> to{" "}
+          <strong>{moneyCompact(conv.peakRmdWithConversions)}</strong>
+          {conv.estateGain > 0 && (
+            <>
+              {" "}and leave about <strong>{moneyCompact(conv.estateGain)}</strong> more after tax
+            </>
+          )}
+          .
+          <Link
+            href="/plan"
+            className="press mt-3 block rounded-xl bg-primary px-4 py-2 text-center text-sm font-semibold text-white"
+          >
+            See your recommended rollover plan →
+          </Link>
+        </Callout>
+      )}
+
       {/* Live portfolio value (shows once holdings with tickers exist) */}
       <PortfolioCard />
 
@@ -81,7 +114,7 @@ export default function HomePage() {
           <DrawTile label="Roth" amount={plan.withdrawals.roth} tone="roth" />
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Pill tone="tax">Est. federal tax {money(plan.tax.totalTax)}</Pill>
+          <Pill tone="tax">Est. tax (fed + IL) {money(plan.tax.totalTax)}</Pill>
           <Pill>Effective {percent(plan.tax.effectiveRate)}</Pill>
           <Pill>Marginal {percent(plan.tax.marginalOrdinaryRate, 0)}</Pill>
         </div>

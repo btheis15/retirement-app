@@ -18,8 +18,9 @@
  * ⚠️ Educational estimates only — not tax advice.
  */
 
-import { computeTaxes, ordinaryBracketCeiling, TaxResult } from "./tax/engine";
-import { rmdStartAge, uniformLifetimeFactor } from "./tax/constants";
+import { computeTaxes, ordinaryBracketCeiling, ordinaryBracketFloor, TaxResult } from "./tax/engine";
+import { StateCode } from "./tax/state";
+import { rmdStartAge, uniformLifetimeFactor, FilingStatus } from "./tax/constants";
 import {
   Account,
   Household,
@@ -95,6 +96,9 @@ interface YearContext {
   num65Plus: number;
   gainFraction: number; // unrealized-gain share of a taxable withdrawal
   balances: { pretax: number; roth: number; taxable: number };
+  state: StateCode;
+  inflationFactor: number;
+  filingStatus: FilingStatus;
 }
 
 /** Full tax + cash picture for a candidate set of withdrawals. */
@@ -110,6 +114,9 @@ function evaluate(ctx: YearContext, draws: Draws): { tax: TaxResult; grossInflow
     ordinaryDividends: ctx.ordinaryDividends,
     taxExemptInterest: ctx.taxExemptInterest,
     num65Plus: ctx.num65Plus,
+    state: ctx.state,
+    inflationFactor: ctx.inflationFactor,
+    filingStatus: ctx.filingStatus,
   });
   // All of this is cash the household receives, reducing how much it must withdraw.
   const fixedIncome =
@@ -145,20 +152,22 @@ function solveBucket(
 }
 
 /**
- * Largest extra pre-tax withdrawal that keeps ordinary taxable income at or
- * below the top of the chosen bracket (used by the smart "fill the bracket"
- * step). Binary search because Social Security taxability bends the curve.
+ * Largest extra pre-tax amount (withdrawal OR conversion) that keeps ordinary
+ * taxable income at or below `targetOTI`, given everything else in the year
+ * (Social Security taxability bends the curve, so this is a bisection). Used
+ * both by the smart "fill the bracket" spending step and by the Roth-conversion
+ * overlay to fill up to any income target.
  */
-function pretaxRoomToBracket(ctx: YearContext, base: Draws, ceiling: number, cap: number): number {
+export function pretaxRoomToTarget(ctx: YearContext, base: Draws, targetOTI: number, cap: number): number {
   if (cap <= 0) return 0;
   const atCap = evaluate(ctx, { ...base, pretax: base.pretax + cap }).tax.ordinaryTaxableIncome;
-  if (atCap <= ceiling) return cap;
+  if (atCap <= targetOTI) return cap;
   let lo = 0;
   let hi = cap;
   for (let i = 0; i < 40; i++) {
     const mid = (lo + hi) / 2;
     const oti = evaluate(ctx, { ...base, pretax: base.pretax + mid }).tax.ordinaryTaxableIncome;
-    if (oti <= ceiling) lo = mid;
+    if (oti <= targetOTI) lo = mid;
     else hi = mid;
   }
   return lo;
@@ -184,7 +193,19 @@ export interface YearPlan {
   grossInflow: number;
   netCash: number;
   shortfall: number; // > 0 means assets ran out / target unmet
-  tax: TaxResult;
+  tax: TaxResult; // INCLUDES the tax on any Roth conversion below
+  /** Gross pre-tax dollars converted to Roth this year (0 if none). Separate
+   *  from `withdrawals` because a conversion funds Roth, not spending. */
+  conversion: number;
+  /** Incremental tax (federal + state) caused by this year's conversion (already
+   *  in `tax`). In Illinois this is federal-only, since IL exempts conversions. */
+  conversionTax: number;
+  /** Inflation index used for this year's brackets — callers (e.g. the
+   *  opportunity detector) must scale nominal bracket ceilings by it. */
+  inflationFactor: number;
+  /** Filing status used this year (so callers like the opportunity detector
+   *  pick the right brackets/IRMAA tiers). */
+  filingStatus: FilingStatus;
   notes: string[];
 }
 
@@ -192,7 +213,29 @@ export interface PlanParams {
   strategy: StrategyId;
   bracketTarget: BracketTarget;
   year: number;
+  /**
+   * When set, AFTER funding spending the planner converts pre-tax → Roth (the
+   * "rollover to defuse the RMD tax bomb" move). Two modes:
+   *  - fillBracket: fill up to the top of `toBracket` (the advanced manual lever).
+   *  - recommended: rate-arbitrage — convert only while today's marginal rate is
+   *    at or below `futureRate` (the rate this household is projected to face in
+   *    its worst future RMD year), filling up to the top of that future bracket,
+   *    optionally capped at `capOTI`. This is the smart default.
+   * Either way it's NOT spending: the dollars land in Roth and the extra tax is
+   * paid from cash (or withheld), shrinking future forced RMDs.
+   */
+  conversion?: ConversionParam;
+  /** Inflation index for this year vs. the base year — scales the tax brackets,
+   *  deductions, and the conversion/spending bracket targets. Default 1. */
+  inflationFactor?: number;
+  /** Filing status this year — "single" once a surviving spouse files alone. Default "mfj". */
+  filingStatus?: FilingStatus;
 }
+
+export type ConversionParam =
+  | { mode: "fillBracket"; toBracket: BracketTarget }
+  | { mode: "recommended"; futureRate: number; capOTI?: number }
+  | null;
 
 /**
  * Build one year's withdrawal plan. `household.annualSpending` is the desired
@@ -202,7 +245,15 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
   const { year, strategy, bracketTarget } = params;
   const selfAge = ageInYear(household.self.birthYear, year);
   const spouseAge = ageInYear(household.spouse.birthYear, year);
-  const num65Plus = (selfAge >= 65 ? 1 : 0) + (spouseAge >= 65 ? 1 : 0);
+  const filingStatus: FilingStatus = params.filingStatus ?? "mfj";
+  // A single survivor counts only the SURVIVING (younger) spouse for the age-65
+  // deductions — never the deceased spouse, even though their age field lingers.
+  const num65Plus =
+    filingStatus === "single"
+      ? Math.min(selfAge, spouseAge) >= 65
+        ? 1
+        : 0
+      : (selfAge >= 65 ? 1 : 0) + (spouseAge >= 65 ? 1 : 0);
 
   // The stored benefit is the full-retirement (PIA) amount; the actual check is
   // reduced for early claiming or boosted by delayed-retirement credits, and is
@@ -235,6 +286,9 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
     num65Plus,
     gainFraction: gf,
     balances,
+    state: household.state ?? "IL",
+    inflationFactor: params.inflationFactor ?? 1,
+    filingStatus,
   };
 
   const { total: rmd, details: rmdDetails } = computeRmd(household, year);
@@ -274,8 +328,8 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
     };
 
     if (strategy === "smart") {
-      const ceiling = ordinaryBracketCeiling(bracketTarget);
-      const room = pretaxRoomToBracket(ctx, draws, ceiling, remainingPretax());
+      const ceiling = ordinaryBracketCeiling(bracketTarget, ctx.filingStatus) * ctx.inflationFactor;
+      const room = pretaxRoomToTarget(ctx, draws, ceiling, remainingPretax());
       fill("pretax", room);
       if (net < target) fill("taxable", remainingTaxable());
       if (net < target) fill("roth", remainingRoth());
@@ -311,16 +365,66 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
     notes.push(`⚠️ Assets can't fully cover spending this year — short by about ${money(shortfall)}.`);
   }
 
-  // IRMAA awareness.
-  if (finalEval.tax.irmaa.perPerson > 0) {
+  // --- Optional Roth-conversion overlay -------------------------------------
+  // Once spending is funded, fill remaining pre-tax room up to an income target
+  // by moving pre-tax → Roth. pretaxRoomToTarget finds the largest extra pre-tax
+  // amount that stays at/under that target, given everything else this year (SS
+  // taxability, gains stacking). Skipped in a shortfall year (no point adding tax).
+  let conversion = 0;
+  let conversionTax = 0;
+  let taxResult = finalEval.tax;
+  const conv = params.conversion;
+  if (conv && shortfall <= 1) {
+    const remainingPretax = Math.max(0, balances.pretax - draws.pretax);
+
+    // The ordinary-taxable-income level to fill pre-tax up to (−1 = don't convert).
+    let targetOTI = -1;
+    let label = "";
+    if (conv.mode === "fillBracket") {
+      targetOTI = ordinaryBracketCeiling(conv.toBracket, ctx.filingStatus) * ctx.inflationFactor;
+      label = `filling the ${(conv.toBracket * 100).toFixed(0)}% bracket`;
+    } else {
+      // Recommended (rate arbitrage): convert only the dollars that are STRICTLY
+      // cheaper now than later. We fill up to where the future RMD-era bracket
+      // BEGINS (its floor) — so every converted dollar is taxed today at a rate
+      // below that future rate. Dollars inside the future bracket itself are a
+      // rate "wash" and are left to the advanced fill-the-bracket option.
+      const rNow = finalEval.tax.marginalOrdinaryRate;
+      if (conv.futureRate > 0 && rNow < conv.futureRate - 1e-9) {
+        targetOTI = ordinaryBracketFloor(conv.futureRate, ctx.filingStatus) * ctx.inflationFactor;
+        if (conv.capOTI != null) targetOTI = Math.min(targetOTI, conv.capOTI);
+        label = `up to the ${Math.round(conv.futureRate * 100)}% bracket your future RMDs will reach (filling only the cheaper brackets below it)`;
+      }
+    }
+
+    if (targetOTI > 0) {
+      const room = pretaxRoomToTarget(ctx, draws, targetOTI, remainingPretax);
+      if (room > 1) {
+        conversion = room;
+        const withConv = evaluate(ctx, { ...draws, pretax: draws.pretax + conversion });
+        conversionTax = Math.max(0, withConv.tax.totalTax - finalEval.tax.totalTax);
+        taxResult = withConv.tax; // the year's tax now reflects the conversion income
+        notes.push(
+          `Roll about ${money(conversion)} from pre-tax to Roth this year, ${label}. It costs roughly ${money(
+            conversionTax,
+          )} in ${ctx.state === "IL" ? "federal" : "income"} tax now${
+            ctx.state === "IL" ? " (Illinois doesn't tax conversions, so that's the whole bill)" : ""
+          }, best paid from cash savings — but it permanently shrinks the pre-tax balance that drives future RMDs, then grows tax-free with no RMDs of its own.`,
+        );
+      }
+    }
+  }
+
+  // IRMAA / NIIT awareness — reflect the conversion income too.
+  if (taxResult.irmaa.perPerson > 0) {
     notes.push(
-      `Heads up: this income lands in a Medicare IRMAA tier (${finalEval.tax.irmaa.label}) — about ${money(
-        finalEval.tax.irmaa.householdAnnual,
+      `Heads up: this income lands in a Medicare IRMAA tier (${taxResult.irmaa.label}) — about ${money(
+        taxResult.irmaa.householdAnnual,
       )}/yr in extra Part B & D premiums for the couple, two years out.`,
     );
   }
-  if (finalEval.tax.niit > 0) {
-    notes.push(`The 3.8% Net Investment Income Tax applies (${money(finalEval.tax.niit)}).`);
+  if (taxResult.niit > 0) {
+    notes.push(`The 3.8% Net Investment Income Tax applies (${money(taxResult.niit)}).`);
   }
 
   return {
@@ -343,7 +447,11 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
     grossInflow: finalEval.grossInflow,
     netCash: finalEval.netCash,
     shortfall,
-    tax: finalEval.tax,
+    tax: taxResult,
+    conversion,
+    conversionTax,
+    inflationFactor: params.inflationFactor ?? 1,
+    filingStatus,
     notes,
   };
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, ReactNode } from "react";
+import { useMemo, useState, ReactNode } from "react";
 import Link from "next/link";
 import { useStore } from "@/components/HouseholdProvider";
 import { Card, PageTitle, SectionTitle, Pill, Stat, Disclaimer, Callout, Explainer, Info, StackedBar } from "@/components/ui";
@@ -8,6 +8,10 @@ import { Donut, Legend, AnimatedNumber } from "@/components/charts";
 import { planYear, STRATEGY_META, StrategyId, BracketTarget } from "@/lib/optimizer";
 import { ordinaryBracketCeiling } from "@/lib/tax/engine";
 import { detectOpportunities } from "@/lib/opportunities";
+import { projectLifetime } from "@/lib/projection";
+import { recommendPlan, describePlan, configMatches, GOAL_META } from "@/lib/goals";
+import { analyzeConversions } from "@/lib/rothConversion";
+import { buildActionPlan, PlanAction } from "@/lib/actionPlan";
 import {
   adjustedAnnualBenefit,
   ssBenefitFactor,
@@ -17,9 +21,14 @@ import {
   CLAIM_MAX,
 } from "@/lib/socialSecurity";
 import { ageInYear, Household } from "@/lib/accounts";
+import { GoalId, PlannerSettings, survivorFromSettings } from "@/lib/defaults";
+import { runMonteCarlo } from "@/lib/monteCarlo";
+import { returnModel } from "@/lib/returns";
 import { money, moneyCompact, percent } from "@/lib/format";
 import { HEX } from "@/lib/palette";
 import { SOURCES } from "@/lib/sources";
+
+const GOALS: GoalId[] = ["maxCapital", "lowestTax", "lowestRate"];
 
 const STRATEGIES: StrategyId[] = ["smart", "conventional", "proportional"];
 const BRACKETS: BracketTarget[] = [0.12, 0.22, 0.24, 0.32];
@@ -42,6 +51,7 @@ const STRATEGY_SHORT: Record<StrategyId, string> = {
 
 export default function PlanPage() {
   const { ready, household, settings, updateSettings, updateHousehold } = useStore();
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const year = new Date().getFullYear();
 
   const plan = useMemo(
@@ -52,6 +62,21 @@ export default function PlanPage() {
     () => detectOpportunities(household, plan, settings.bracketTarget),
     [household, plan, settings.bracketTarget],
   );
+  // Active lifetime plan (respects the conversion mode) — its first row is this year.
+  const activeProj = useMemo(
+    () =>
+      projectLifetime(household, {
+        strategy: settings.strategy,
+        bracketTarget: settings.bracketTarget,
+        returnRate: settings.returnRate,
+        inflationRate: settings.inflationRate,
+        endAge: settings.endAge,
+        convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
+        survivor: survivorFromSettings(settings),
+      }),
+    [household, settings],
+  );
+  const thisYearConversion = activeProj.rows[0]?.conversion ?? 0;
 
   if (!ready) return <div className="h-screen" />;
 
@@ -133,10 +158,25 @@ export default function PlanPage() {
       tone: "roth",
     });
   }
+  if (settings.useConversions && thisYearConversion > 0.5) {
+    steps.push({
+      label: "Roll pre-tax → Roth (the tax-bomb fix)",
+      amount: thisYearConversion,
+      detail: `Not spending — this rolls ${money(thisYearConversion)} from your pre-tax IRA/401(k) into Roth${
+        settings.convertMode === "recommended"
+          ? ", sized to your projected future RMD-era tax rate"
+          : `, filling the ${percent(settings.bracketTarget, 0)} bracket`
+      }. Pay the tax from cash — Illinois doesn't tax the conversion — and it shrinks every future RMD, then grows tax-free with no RMDs of its own.`,
+      tone: "roth",
+    });
+  }
 
   return (
     <div>
       <PageTitle title={`What to do in ${year}`} subtitle="Your plan in plain English: how much to spend, where to pull it from, and the tax." />
+
+      {/* ---------- ROBO-ADVISOR: goal → recommended plan ---------- */}
+      <GoalAndRecommendation />
 
       {/* ---------- THE HEADLINE: what to do ---------- */}
       <Callout tone="good" icon="🧭" title="Your move this year">
@@ -150,7 +190,7 @@ export default function PlanPage() {
           <>
             To spend <strong>{money(plan.spendingTarget)}</strong>{" "}after tax this year, withdraw about{" "}
             <strong>{money(totalDraw)}</strong>{" "}total from your accounts (the steps below), and set aside
-            roughly <strong>{money(plan.tax.totalTax)}</strong>{" "}for federal tax.
+            roughly <strong>{money(plan.tax.totalTax)}</strong>{" "}for tax (federal + Illinois).
           </>
         )}
       </Callout>
@@ -263,10 +303,16 @@ export default function PlanPage() {
 
         <div className="mt-4 border-t border-border pt-3 text-[13px] text-foreground/80">
           <strong>Bottom line:</strong>{" "}you keep <strong>{money(plan.spendingTarget)}</strong>{" "}to spend
-          after paying about <strong className="text-tax">{money(plan.tax.totalTax)}</strong>{" "}in federal
-          tax — that&apos;s {percent(plan.tax.effectiveRate)} of your total income for the year.
+          after paying about <strong className="text-tax">{money(plan.tax.totalTax)}</strong>{" "}in tax
+          (federal + Illinois) — that&apos;s {percent(plan.tax.effectiveRate)} of your total income for the year.
         </div>
       </Card>
+
+      {/* ---------- LOOKING AHEAD: the next several years ---------- */}
+      <LookingAhead />
+
+      {/* ---------- ROLLOVER / ROTH-CONVERSION PLAN ---------- */}
+      <RolloverPlanCard />
 
       <Info q="Why this order? (pre-tax → brokerage → Roth)" sources={[SOURCES.rmd, SOURCES.rothNoRmd, SOURCES.capGains]}>
         <p className="mb-1.5">Your accounts fall into three tax &quot;buckets,&quot; and the bucket — not the brand — sets the order:</p>
@@ -308,7 +354,7 @@ export default function PlanPage() {
       <Card>
         <div className="grid grid-cols-2 gap-y-4">
           <Stat label="After-tax spending" value={money(plan.spendingTarget)} />
-          <Stat label="Est. federal tax" tone="tax" value={<AnimatedNumber value={plan.tax.totalTax} />} />
+          <Stat label="Est. tax (fed + IL)" tone="tax" value={<AnimatedNumber value={plan.tax.totalTax} />} />
           <Stat label="Effective rate" value={percent(plan.tax.effectiveRate)} />
           <Stat label="Marginal rate" value={percent(plan.tax.marginalOrdinaryRate, 0)} />
         </div>
@@ -368,8 +414,16 @@ export default function PlanPage() {
           <Row label="Ordinary income tax" value={money(plan.tax.ordinaryTax)} />
           <Row label="Capital gains tax" value={money(plan.tax.capitalGainsTax)} />
           {plan.tax.niit > 0 && <Row label="Net investment income tax" value={money(plan.tax.niit)} />}
-          <Row label="Total federal tax" value={money(plan.tax.totalTax)} bold tone="tax" />
+          <Row label="Federal tax" value={money(plan.tax.federalTax)} />
+          <Row label={`${plan.tax.state.stateName} state tax (${percent(plan.tax.state.rate, 2)})`} value={money(plan.tax.stateTax)} />
+          <Row label="Total tax (federal + state)" value={money(plan.tax.totalTax)} bold tone="tax" />
         </div>
+        {plan.tax.state.state === "IL" && (
+          <p className="mt-3 rounded-xl bg-gain/5 px-3 py-2 text-[12px] text-foreground/65">
+            🟢 Illinois taxes only your investment income (interest, dividends, capital gains) at a flat 4.95% — your
+            IRA/401(k) withdrawals, RMDs, Roth conversions, pension, and Social Security are all <strong>state-tax-free</strong>.
+          </p>
+        )}
       </Card>
 
       {/* ---------- Why ---------- */}
@@ -391,7 +445,7 @@ export default function PlanPage() {
         <>
           <SectionTitle hint={`${opportunities.length} ideas`}>Opportunities to save</SectionTitle>
           <Explainer>Optional moves that could lower your tax — each links to the official IRS / Medicare source.</Explainer>
-          <div className="space-y-2">
+          <div className="space-y-2 lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0">
             {opportunities.map((o) => (
               <Card as="div" key={o.id} className={`border-l-4 ${oppBorder(o.tone)}`}>
                 <div className="flex items-start gap-2">
@@ -428,11 +482,20 @@ export default function PlanPage() {
       {/* ---------- Social Security timing ---------- */}
       <SsTiming household={household} year={year} update={updateHousehold} />
 
-      {/* ---------- Strategy controls (explained) ---------- */}
-      <SectionTitle>Change the strategy</SectionTitle>
+      {/* ---------- Advanced: tune the strategy yourself (collapsed by default) ---------- */}
+      <button
+        onClick={() => setShowAdvanced((v) => !v)}
+        aria-expanded={showAdvanced}
+        className="press mt-6 flex w-full items-center justify-between rounded-xl border border-border bg-card px-4 py-3 text-sm font-semibold text-foreground/70"
+      >
+        <span>⚙️ Advanced: change the strategy yourself</span>
+        <span className={`transition-transform ${showAdvanced ? "rotate-180" : ""}`}>⌄</span>
+      </button>
+      {showAdvanced && (
+      <div className="rise mt-2">
       <Explainer>
         A &quot;strategy&quot; is just the <em>order</em>{" "}we pull money from your accounts — it&apos;s a method, not a
-        dollar amount or a tax rate. Smart is recommended.
+        dollar amount or a tax rate. The robo-advisor already picks this for your goal; change it only to experiment.
       </Explainer>
       <Card>
         <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
@@ -526,6 +589,8 @@ export default function PlanPage() {
           Compare strategies over your whole life →
         </Link>
       </Card>
+      </div>
+      )}
 
       <div className="mt-6">
         <Disclaimer />
@@ -567,6 +632,7 @@ function SsTiming({
   year: number;
   update: (patch: Partial<Household>) => void;
 }) {
+  const { settings } = useStore();
   const anyBenefit = household.self.socialSecurityAnnual > 0 || household.spouse.socialSecurityAnnual > 0;
   const higher =
     household.self.socialSecurityAnnual >= household.spouse.socialSecurityAnnual ? household.self : household.spouse;
@@ -692,6 +758,13 @@ function SsTiming({
           the smaller one stops. So delaying the higher earner&apos;s claim ({higher.label}) permanently raises the
           benefit that lasts as long as <em>either</em>{" "}of you lives. With both of you near the same age, that survivor
           protection is often the strongest reason for the higher earner to wait.
+          {settings.survivorModel && (
+            <span className="mt-2 block rounded-lg bg-tax/5 px-2.5 py-1.5 text-[12px] text-foreground/75">
+              🕊️ The tax side bites too: the survivor files <strong>single</strong> — brackets and the standard deduction
+              roughly halve — so the same RMDs are taxed harder. Your forecast models this from age {settings.firstDeathAge},
+              which is a big reason converting to Roth while you&apos;re both alive (wide joint brackets) pays off.
+            </span>
+          )}
           <div className="mt-2">
             <a
               href={SOURCES.ssSurvivor.url}
@@ -710,6 +783,398 @@ function SsTiming({
         62 and it&apos;s permanently reduced — roughly 25–30% less. Wait past full retirement and you earn delayed-retirement
         credits of about 8% per year up to age 70 (no benefit to waiting beyond 70). The amount you enter on the Accounts
         tab is your full-retirement benefit; this control adjusts it.
+      </Info>
+    </>
+  );
+}
+
+/** Small metric tile used inside the robo-advisor callouts. */
+function MiniStat({ label, value, tone }: { label: string; value: string; tone?: "gain" | "tax" | "deferred" }) {
+  const color =
+    tone === "gain" ? "text-gain" : tone === "tax" ? "text-tax" : tone === "deferred" ? "text-deferred" : "text-foreground";
+  return (
+    <div className="rounded-xl border border-border bg-card/60 p-2 text-center">
+      <div className="text-[10px] uppercase tracking-wide text-foreground/50">{label}</div>
+      <div className={`tabular text-sm font-bold ${color}`}>{value}</div>
+    </div>
+  );
+}
+
+/** Goal picker (robo-advisor) + the plan it recommends for that goal. */
+function GoalAndRecommendation() {
+  const { household, settings, updateSettings } = useStore();
+  const inputs = {
+    returnRate: settings.returnRate,
+    inflationRate: settings.inflationRate,
+    endAge: settings.endAge,
+    convertUntilAge: settings.convertUntilAge,
+    survivor: survivorFromSettings(settings),
+  };
+  const rec = useMemo(
+    () => recommendPlan(household, inputs, settings.goal),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [household, settings],
+  );
+  // Monte-Carlo "plan confidence" for the recommended plan (stable, fixed seed).
+  const confidence = useMemo(
+    () => {
+      const rm = returnModel(household.accounts);
+      return runMonteCarlo(
+        household,
+        {
+          strategy: rec.best.config.strategy,
+          bracketTarget: rec.best.config.bracketTarget,
+          returnRate: settings.returnRate,
+          inflationRate: settings.inflationRate,
+          endAge: settings.endAge,
+          convert: rec.best.config.useConversions
+            ? { untilAge: settings.convertUntilAge, mode: rec.best.config.convertMode }
+            : null,
+          survivor: survivorFromSettings(settings),
+        },
+        { expected: rm.expected, volatility: rm.volatility },
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [household, settings, rec.best.label],
+  );
+  const matches = configMatches(
+    {
+      strategy: settings.strategy,
+      bracketTarget: settings.bracketTarget,
+      useConversions: settings.useConversions,
+      convertMode: settings.convertMode,
+    },
+    rec.best.config,
+  );
+
+  const applyGoal = (goal: GoalId) => {
+    const r = recommendPlan(household, inputs, goal);
+    updateSettings({
+      goal,
+      strategy: r.best.config.strategy,
+      bracketTarget: r.best.config.bracketTarget,
+      useConversions: r.best.config.useConversions,
+      convertMode: r.best.config.convertMode,
+    });
+  };
+
+  return (
+    <>
+      <SectionTitle>Your goal</SectionTitle>
+      <Explainer>
+        Tell the planner what matters most. It simulates your options across your whole life and picks the plan that
+        wins for that goal — then lays out exactly what to do.
+      </Explainer>
+      <Card>
+        <div className="grid grid-cols-3 gap-2">
+          {GOALS.map((g) => {
+            const active = settings.goal === g;
+            return (
+              <button
+                key={g}
+                onClick={() => applyGoal(g)}
+                className={`press rounded-xl border px-2 py-3 text-center ${active ? "border-primary bg-primary/10" : "border-border"}`}
+              >
+                <div className="text-xl leading-none">{GOAL_META[g].icon}</div>
+                <div className={`mt-1 text-[12px] font-semibold ${active ? "text-primary" : "text-foreground/70"}`}>
+                  {GOAL_META[g].short}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-2 text-[12px] leading-relaxed text-foreground/60">{GOAL_META[settings.goal].blurb}</p>
+      </Card>
+
+      <Callout tone="good" icon="🤖" title="Your recommended plan" className="mt-2">
+        <div className="mb-1 flex flex-wrap items-center gap-2">
+          <span className="font-medium text-foreground/85">{describePlan(rec.best.config, settings.convertUntilAge)}</span>
+          <Pill tone={confidence.successPct >= 0.8 ? "gain" : confidence.successPct >= 0.6 ? "ss" : "tax"}>
+            {Math.round(confidence.successPct * 100)}% confidence
+          </Pill>
+        </div>
+        <p className="mt-1">{rec.rationale}</p>
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <MiniStat label="After-tax wealth" value={moneyCompact(rec.best.metrics.netWealth)} tone="gain" />
+          <MiniStat label="Lifetime tax" value={moneyCompact(rec.best.metrics.lifetimeTax)} tone="tax" />
+          <MiniStat label="Peak RMD" value={moneyCompact(rec.best.metrics.peakRmd)} tone="deferred" />
+        </div>
+        <Info q="What does “confidence” mean?">
+          In {confidence.runs} simulations of randomized market returns (about {percent(returnModel(household.accounts).volatility, 0)} volatility for your
+          mix), this plan funded your full spending to age {settings.endAge} in <strong>{Math.round(confidence.successPct * 100)}%</strong> of
+          them. Median money left: {moneyCompact(confidence.endingWealth.p50)}; an unlucky run (10th percentile) leaves{" "}
+          {moneyCompact(confidence.endingWealth.p10)}. Returns are modeled as independent draws — directional, not a guarantee.
+        </Info>
+        {matches ? (
+          <p className="mt-3 text-[12px] font-medium text-gain">✓ This plan is active across the app.</p>
+        ) : (
+          <button
+            onClick={() => applyGoal(settings.goal)}
+            className="press mt-3 w-full rounded-xl bg-primary py-2.5 text-sm font-semibold text-white"
+          >
+            Apply this plan everywhere →
+          </button>
+        )}
+      </Callout>
+    </>
+  );
+}
+
+function actionColor(kind: PlanAction["kind"]): string {
+  switch (kind) {
+    case "rmd":
+    case "pretax":
+      return HEX.deferred;
+    case "convert":
+    case "roth":
+      return HEX.roth;
+    case "taxable":
+      return HEX.taxable;
+    default:
+      return HEX.gain;
+  }
+}
+
+/** "Looking ahead" — the next several years of concrete actions. */
+function LookingAhead() {
+  const { household, settings } = useStore();
+  const proj = useMemo(
+    () =>
+      projectLifetime(household, {
+        strategy: settings.strategy,
+        bracketTarget: settings.bracketTarget,
+        returnRate: settings.returnRate,
+        inflationRate: settings.inflationRate,
+        endAge: settings.endAge,
+        convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
+        survivor: survivorFromSettings(settings),
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      household,
+      settings.strategy,
+      settings.bracketTarget,
+      settings.returnRate,
+      settings.inflationRate,
+      settings.endAge,
+      settings.useConversions,
+      settings.convertMode,
+      settings.convertUntilAge,
+    ],
+  );
+  const years = useMemo(() => buildActionPlan(household, proj, 6), [household, proj]);
+  if (years.length === 0) return null;
+
+  return (
+    <>
+      <SectionTitle hint={`next ${years.length} years`}>Looking ahead — your plan year by year</SectionTitle>
+      <Explainer>
+        What to actually do each year, so you can plan around it{settings.useConversions ? ", including the Roth rollovers" : ""}.
+        It re-runs whenever you change your goal, spending, or assumptions.
+      </Explainer>
+      <div className="space-y-2 lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0">
+        {years.map((y, i) => (
+          <Card as="div" key={y.year} className={i === 0 ? "border-primary/40" : ""}>
+            <div className="flex items-center justify-between">
+              <span className="font-semibold">
+                {y.year} <span className="text-foreground/50">· age {y.selfAge}/{y.spouseAge}</span>
+              </span>
+              <span className="tabular text-[12px] text-foreground/55">est. tax {moneyCompact(y.tax)}</span>
+            </div>
+            {y.events.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {y.events.map((e, j) => (
+                  <Pill key={j} tone="ss">
+                    🔔 {e}
+                  </Pill>
+                ))}
+              </div>
+            )}
+            <ul className="mt-2 space-y-1">
+              {y.actions.map((a, j) => (
+                <li key={j} className="flex items-start gap-2 text-[13px]">
+                  <span
+                    className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
+                    style={{ background: actionColor(a.kind) }}
+                  />
+                  <span className="text-foreground/75">{a.text}</span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        ))}
+      </div>
+      <Link
+        href="/projection"
+        className="press mt-3 block rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 text-center text-sm font-semibold text-primary"
+      >
+        See the full year-by-year forecast →
+      </Link>
+    </>
+  );
+}
+
+/** Through-age control for the rollover window. */
+function ConvertUntilControl({
+  settings,
+  updateSettings,
+}: {
+  settings: PlannerSettings;
+  updateSettings: (p: Partial<PlannerSettings>) => void;
+}) {
+  const opts = [70, 73, 75, 80];
+  return (
+    <div>
+      <div className="text-[11px] font-medium text-foreground/55">Keep rolling through age</div>
+      <div className="mt-1 grid grid-cols-4 gap-2">
+        {opts.map((a) => (
+          <button
+            key={a}
+            onClick={() => updateSettings({ convertUntilAge: a })}
+            className={`press rounded-lg border py-1.5 text-center text-[13px] font-semibold ${
+              settings.convertUntilAge === a ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/70"
+            }`}
+          >
+            {a}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** The RMD tax-bomb explainer + the Roth-conversion plan that defuses it. */
+function RolloverPlanCard() {
+  const { household, settings, updateSettings } = useStore();
+  const conv = useMemo(
+    () =>
+      analyzeConversions(household, {
+        strategy: "smart",
+        bracketTarget: settings.bracketTarget,
+        returnRate: settings.returnRate,
+        inflationRate: settings.inflationRate,
+        endAge: settings.endAge,
+        convertUntilAge: settings.convertUntilAge,
+        mode: settings.convertMode,
+        survivor: survivorFromSettings(settings),
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [household, settings],
+  );
+
+  // Only worth showing if there's a real pre-tax balance and a conversion to make.
+  if (conv.pretaxShare < 0.25 || conv.totalConverted < 5_000) return null;
+
+  const helps = conv.estateGain > 0;
+
+  return (
+    <>
+      <SectionTitle>The RMD tax bomb — and the rollover plan that defuses it</SectionTitle>
+      <Explainer>
+        {Math.round(conv.pretaxShare * 100)}% of your money sits in pre-tax accounts. Left alone, the IRS forces
+        ever-larger taxable withdrawals (RMDs) in your 70s–80s. Rolling some to Roth now, in your low-tax years, shrinks
+        that future bill.
+      </Explainer>
+      <Callout
+        tone={conv.recommended ? "warn" : "info"}
+        icon="💣"
+        title={conv.recommended ? "Recommended: roll pre-tax → Roth" : "Consider rolling pre-tax → Roth"}
+      >
+        <p>
+          Rolling about <strong>{money(conv.avgAnnualConversion)}/yr</strong> through <strong>{conv.windowEndYear}</strong>{" "}
+          (≈{money(conv.totalConverted)} in total) cuts your worst-year RMD from{" "}
+          <strong className="text-tax">{money(conv.peakRmdBaseline)}</strong> down to{" "}
+          <strong className="text-gain">{money(conv.peakRmdWithConversions)}</strong>.
+        </p>
+        {(household.state ?? "IL") === "IL" && (
+          <p className="mt-2 rounded-lg bg-gain/10 px-2.5 py-1.5 text-[12px] text-gain">
+            🟢 In Illinois the rollover itself is <strong>state-tax-free</strong> — you only owe federal tax to convert,
+            which makes converting more attractive here than in most states.
+          </p>
+        )}
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <MiniStat label="Peak RMD cut" value={moneyCompact(conv.peakRmdReduction)} tone="gain" />
+          <MiniStat
+            label={helps ? "After-tax gain" : "After-tax change"}
+            value={(helps ? "+" : "") + moneyCompact(conv.estateGain)}
+            tone={helps ? "gain" : "tax"}
+          />
+          <MiniStat
+            label="Lifetime tax"
+            value={(conv.lifetimeTaxDelta >= 0 ? "+" : "−") + moneyCompact(Math.abs(conv.lifetimeTaxDelta))}
+            tone={conv.lifetimeTaxDelta <= 0 ? "gain" : "tax"}
+          />
+        </div>
+        <p className="mt-3 text-[12px] text-foreground/65">
+          {helps
+            ? "Even after paying some tax now, you end up with more after-tax money AND a much smaller forced-RMD tax bomb later."
+            : "This trades a little lifetime tax for a much smaller forced-RMD spike and more tax-free Roth — useful if you value flexibility and lower late-life taxable income."}
+        </p>
+        <button
+          onClick={() => updateSettings({ useConversions: !settings.useConversions })}
+          className={`press mt-3 w-full rounded-xl py-2.5 text-sm font-semibold ${
+            settings.useConversions ? "bg-gain/15 text-gain" : "bg-primary text-white"
+          }`}
+        >
+          {settings.useConversions ? "✓ Rollover plan is on — see it in Looking ahead" : "Turn on the rollover plan"}
+        </button>
+
+        {settings.useConversions && (
+          <div className="mt-3">
+            <div className="text-[11px] font-medium text-foreground/55">How much to convert each year</div>
+            <div className="mt-1 grid grid-cols-2 gap-2">
+              <button
+                onClick={() => updateSettings({ convertMode: "recommended" })}
+                className={`press rounded-xl border px-2 py-2 text-center ${
+                  settings.convertMode === "recommended" ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/70"
+                }`}
+              >
+                <div className="text-[13px] font-semibold">Recommended</div>
+                <div className="text-[10px] text-foreground/50">sized to your future RMD rate</div>
+              </button>
+              <button
+                onClick={() => updateSettings({ convertMode: "fillBracket" })}
+                className={`press rounded-xl border px-2 py-2 text-center ${
+                  settings.convertMode === "fillBracket" ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/70"
+                }`}
+              >
+                <div className="text-[13px] font-semibold">Fill the bracket</div>
+                <div className="text-[10px] text-foreground/50">{percent(settings.bracketTarget, 0)} (advanced)</div>
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-3">
+          <ConvertUntilControl settings={settings} updateSettings={updateSettings} />
+        </div>
+        <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1">
+          {[SOURCES.rothConversion, SOURCES.rmd, SOURCES.rothNoRmd].map((s, i) => (
+            <a
+              key={i}
+              href={s.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[11px] text-primary underline decoration-primary/30 underline-offset-2"
+            >
+              {s.label} ↗
+            </a>
+          ))}
+        </div>
+      </Callout>
+      <Info q="Why pay tax now to save later? (the tax-bomb logic)" sources={[SOURCES.rothConversion, SOURCES.rmd, SOURCES.rothNoRmd]}>
+        <p className="mb-1.5">
+          A big pre-tax balance isn&apos;t really &quot;yours&quot; — a chunk is a deferred IRS bill. Starting at age
+          73–75 the IRS forces you to withdraw a rising percentage every year (RMDs), all taxed as ordinary income,
+          whether you need the cash or not. Stacked on Social Security, those forced withdrawals can push you into higher
+          brackets and trigger Medicare (IRMAA) surcharges.
+        </p>
+        <p>
+          Rolling money to Roth in your low-bracket years pays tax now at a <em>known, low</em> rate, permanently shrinks
+          those future forced withdrawals, and the Roth then grows tax-free with <strong>no RMDs ever</strong>. The
+          numbers above are run on your actual accounts — if rolling didn&apos;t help, this card would say so.
+        </p>
       </Info>
     </>
   );

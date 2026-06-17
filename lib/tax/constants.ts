@@ -73,6 +73,93 @@ export const IRMAA_TIERS_MFJ: { upTo: number; monthlyPerPerson: number; label: s
   { upTo: Infinity, monthlyPerPerson: 516, label: "Top tier surcharge" },
 ];
 
+// ─── SINGLE-filer 2026 figures (for the surviving-spouse "widow's penalty") ───
+// Verified against IRS Rev. Proc. 2025-32 / OBBBA, June 2026. A survivor files
+// Single, with roughly half-width brackets and deductions — the same income is
+// taxed harder, which is why converting while both spouses are alive (wide MFJ
+// brackets) is so valuable.
+
+/** Ordinary-income brackets (Single). */
+export const ORDINARY_BRACKETS_SINGLE: { rate: number; upTo: number }[] = [
+  { rate: 0.10, upTo: 12_400 },
+  { rate: 0.12, upTo: 50_400 },
+  { rate: 0.22, upTo: 105_700 },
+  { rate: 0.24, upTo: 201_775 },
+  { rate: 0.32, upTo: 256_225 },
+  { rate: 0.35, upTo: 640_600 },
+  { rate: 0.37, upTo: Infinity },
+];
+
+/** Long-term capital gains breakpoints (Single taxable income). */
+export const LTCG_BRACKETS_SINGLE: { rate: number; upTo: number }[] = [
+  { rate: 0.0, upTo: 49_450 },
+  { rate: 0.15, upTo: 545_500 },
+  { rate: 0.20, upTo: Infinity },
+];
+
+export const STANDARD_DEDUCTION_SINGLE = 16_100;
+/** Additional standard deduction for a single filer age 65+ (larger than the MFJ per-spouse amount). */
+export const ADDL_STD_DEDUCTION_65_SINGLE = 2_050;
+export const SENIOR_BONUS_PHASEOUT_START_SINGLE = 75_000;
+/** SS taxability thresholds (Single, statutory, not indexed). */
+export const SS_BASE_SINGLE = 25_000;
+export const SS_SECOND_SINGLE = 34_000;
+/** NIIT threshold (Single, statutory, not indexed). */
+export const NIIT_THRESHOLD_SINGLE = 200_000;
+/** IRMAA tiers for Single — same per-person surcharge dollars as MFJ, lower MAGI bounds. */
+export const IRMAA_TIERS_SINGLE: { upTo: number; monthlyPerPerson: number; label: string }[] = [
+  { upTo: 109_000, monthlyPerPerson: 0, label: "Standard premium" },
+  { upTo: 137_000, monthlyPerPerson: 86, label: "Tier 1 surcharge" },
+  { upTo: 171_000, monthlyPerPerson: 215, label: "Tier 2 surcharge" },
+  { upTo: 205_000, monthlyPerPerson: 344, label: "Tier 3 surcharge" },
+  { upTo: 500_000, monthlyPerPerson: 473, label: "Tier 4 surcharge" },
+  { upTo: Infinity, monthlyPerPerson: 516, label: "Top tier surcharge" },
+];
+
+export type FilingStatus = "mfj" | "single";
+
+export interface FilingConstants {
+  ordinary: { rate: number; upTo: number }[];
+  ltcg: { rate: number; upTo: number }[];
+  stdDeduction: number;
+  addlStd65: number;
+  seniorBonusStart: number;
+  ssBase: number;
+  ssSecond: number;
+  niitThreshold: number;
+  irmaaTiers: { upTo: number; monthlyPerPerson: number; label: string }[];
+  /** Number of people on the return — scales the household IRMAA surcharge. */
+  people: number;
+}
+
+/** Single source of truth for status-dependent federal constants. */
+export const FILING_CONSTANTS: Record<FilingStatus, FilingConstants> = {
+  mfj: {
+    ordinary: ORDINARY_BRACKETS_MFJ,
+    ltcg: LTCG_BRACKETS_MFJ,
+    stdDeduction: STANDARD_DEDUCTION_MFJ,
+    addlStd65: ADDL_STD_DEDUCTION_65,
+    seniorBonusStart: SENIOR_BONUS_PHASEOUT_START_MFJ,
+    ssBase: SS_BASE_MFJ,
+    ssSecond: SS_SECOND_MFJ,
+    niitThreshold: NIIT_THRESHOLD_MFJ,
+    irmaaTiers: IRMAA_TIERS_MFJ,
+    people: 2,
+  },
+  single: {
+    ordinary: ORDINARY_BRACKETS_SINGLE,
+    ltcg: LTCG_BRACKETS_SINGLE,
+    stdDeduction: STANDARD_DEDUCTION_SINGLE,
+    addlStd65: ADDL_STD_DEDUCTION_65_SINGLE,
+    seniorBonusStart: SENIOR_BONUS_PHASEOUT_START_SINGLE,
+    ssBase: SS_BASE_SINGLE,
+    ssSecond: SS_SECOND_SINGLE,
+    niitThreshold: NIIT_THRESHOLD_SINGLE,
+    irmaaTiers: IRMAA_TIERS_SINGLE,
+    people: 1,
+  },
+};
+
 /**
  * Required Minimum Distribution age under SECURE 2.0, by birth year.
  *  - 1950 or earlier: 72 (already in RMDs)

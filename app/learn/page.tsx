@@ -169,11 +169,32 @@ const TOPICS: Topic[] = [
     sources: [SOURCES.aca],
   },
   {
-    icon: "📍",
-    title: "Muni-bond interest & state taxes (two quiet gotchas)",
+    icon: "🟢",
+    title: "Illinois state tax — why it loves retirees (and conversions)",
     body: [
-      "Tax-exempt municipal bond interest isn't taxed federally — but it still counts toward the income that determines how much of your Social Security is taxed and which Medicare (IRMAA) tier you're in. 'Tax-free' isn't free of those effects, and the planner now accounts for it (enter it on the Accounts tab).",
-      "Everything here is FEDERAL tax only. Your state may tax retirement income very differently — some don't tax Social Security or retirement withdrawals at all, others do — and that can change which strategy wins. Treat the results as the federal piece of the picture.",
+      "Illinois has a flat 4.95% income tax, but it does NOT tax retirement income. Distributions from 401(k)s, 403(b)s, and IRAs (including your RMDs), pensions and government/military retirement, and Social Security are all subtracted on the Illinois return (IL-1040 Line 5). So at the state level, those are tax-free.",
+      "The big one for planning: a Traditional-IRA-to-Roth CONVERSION is also subtracted — Illinois doesn't tax the conversion at all. You only pay FEDERAL tax to convert. That makes Roth conversions more attractive in Illinois than in most states, because the state takes nothing on the way over.",
+      "What Illinois DOES tax (at the flat 4.95%, with no preferential capital-gains rate): your investment income — taxable interest, dividends, and capital gains in a brokerage account. So the state-tax lever here is mostly about your taxable brokerage, not your retirement accounts.",
+      "One catch: a very large conversion can push your AGI over $500,000 (married filing jointly), which phases out the Illinois personal exemption (about $2,850 per person) — a small effect, but the planner accounts for it. Illinois figures are 2025 (verified against the IL Dept. of Revenue). This tool now models Illinois; more states are coming.",
+    ],
+    sources: [SOURCES.ilRetirement, SOURCES.ilRate, SOURCES.rothConversion],
+  },
+  {
+    icon: "🔬",
+    title: "What this planner models (and what it doesn't)",
+    body: [
+      "To project decades realistically, the tool moves things forward in nominal dollars and keeps them consistent: your spending rises with inflation, Social Security gets a matching cost-of-living adjustment, and the federal tax brackets, standard/senior deductions, and Medicare (IRMAA) tiers are inflation-indexed each year — so your income and the brackets rise together instead of you silently drifting into higher brackets ('bracket creep'). A few thresholds are deliberately frozen because the law freezes them: the Social Security taxability thresholds ($32k/$44k) and the 3.8% NIIT threshold ($250k) aren't indexed, so over time more income crosses them — exactly as in real life.",
+      "It also models the annual 'tax drag' on a taxable brokerage: as that account grows, it throws off proportionally more taxable dividends each year, which is a real cost that tax-free Roth (and tax-deferred pre-tax) accounts avoid — a key reason conversions help.",
+      "What it does NOT model yet, so treat these as judgment calls on top of the numbers: (1) The 'widow's penalty' — it assumes both spouses live to your plan age and file jointly the whole time. In reality the survivor eventually files Single, with roughly half the brackets and deductions, which makes conversions while both are alive even more valuable than shown. (2) Market risk — returns are a single steady rate, not a range, so it can't show sequence-of-returns risk (a bad early decade). (3) State tax is Illinois only for now, and ACA subsidies (pre-65) aren't modeled. Everything here is an educational estimate — confirm with a tax professional before acting.",
+    ],
+    sources: [SOURCES.brackets2026, SOURCES.ssSurvivor, SOURCES.rothConversion],
+  },
+  {
+    icon: "📍",
+    title: "Muni-bond interest & other states",
+    body: [
+      "Tax-exempt municipal bond interest isn't taxed federally — but it still counts toward the income that determines how much of your Social Security is taxed and which Medicare (IRMAA) tier you're in. 'Tax-free' isn't free of those effects, and the planner accounts for it (enter it on the Accounts tab).",
+      "This tool currently models FEDERAL tax plus ILLINOIS state tax. Other states tax retirement income very differently — some (like Illinois) exempt it entirely, others tax it in full — and that can change which strategy wins. If you move or live elsewhere, treat the state piece as Illinois-specific until more states are added.",
     ],
     sources: [SOURCES.ssTax, SOURCES.irmaa],
   },
@@ -210,7 +231,7 @@ export default function LearnPage() {
     <div>
       <PageTitle title="How the rules work" subtitle="Plain-English explanations behind every recommendation — with sources." />
 
-      <div className="space-y-2">
+      <div className="space-y-2 lg:grid lg:grid-cols-2 lg:items-start lg:gap-3 lg:space-y-0">
         {TOPICS.map((t, i) => {
           const isOpen = open === i;
           return (

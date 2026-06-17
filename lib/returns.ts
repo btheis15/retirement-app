@@ -17,6 +17,12 @@ import { Account, holdingValue } from "./accounts";
 
 export const ASSET_RETURN = { equity: 0.1, bonds: 0.045, cash: 0.03 } as const;
 
+/** Long-run nominal annual return standard deviations, by asset class — used by
+ *  the Monte-Carlo "probability of success" simulation. Educational estimates. */
+export const ASSET_STDEV = { equity: 0.17, bonds: 0.05, cash: 0.01 } as const;
+/** Approximate equity↔bond correlation for blending portfolio volatility. */
+const RHO_EQ_BD = 0.15;
+
 /** Allocation assumed for accounts that have a balance but no itemized holdings
  *  (and aren't a cash account): a generic diversified mix. */
 const ASSUMED_MIX = { equity: 0.7, bonds: 0.25, cash: 0.05 };
@@ -29,6 +35,8 @@ export interface ReturnModel {
   expected: number;
   conservative: number;
   optimistic: number;
+  /** Blended annual return standard deviation (for Monte Carlo). */
+  volatility: number;
   /** Whether the mix came from real holdings, assumptions, or both. */
   basis: "holdings" | "assumed" | "mixed";
 }
@@ -63,7 +71,7 @@ export function returnModel(accounts: Account[]): ReturnModel {
 
   const total = eq + bd + ca;
   if (total <= 0) {
-    return { equityPct: 0, bondPct: 0, cashPct: 0, expected: 0.06, conservative: 0.04, optimistic: 0.08, basis: "assumed" };
+    return { equityPct: 0, bondPct: 0, cashPct: 0, expected: 0.06, conservative: 0.04, optimistic: 0.08, volatility: 0.1, basis: "assumed" };
   }
 
   const equityPct = eq / total;
@@ -73,7 +81,13 @@ export function returnModel(accounts: Account[]): ReturnModel {
   // Bracket the blend: a weak run vs a strong run around the expected.
   const conservative = round1(Math.max(0.02, expected - 0.035));
   const optimistic = round1(expected + 0.025);
+  // Portfolio volatility: blend asset-class variances with one equity↔bond correlation.
+  const se = equityPct * ASSET_STDEV.equity;
+  const sb = bondPct * ASSET_STDEV.bonds;
+  const sc = cashPct * ASSET_STDEV.cash;
+  const variance = se * se + sb * sb + sc * sc + 2 * RHO_EQ_BD * se * sb;
+  const volatility = round1(Math.sqrt(variance));
   const basis = holdingsUsed && assumedUsed ? "mixed" : holdingsUsed ? "holdings" : "assumed";
 
-  return { equityPct, bondPct, cashPct, expected, conservative, optimistic, basis };
+  return { equityPct, bondPct, cashPct, expected, conservative, optimistic, volatility, basis };
 }

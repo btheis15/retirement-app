@@ -9,8 +9,8 @@
 
 import { Household, sumBuckets, bucketOf } from "./accounts";
 import { YearPlan, BracketTarget } from "./optimizer";
-import { ordinaryBracketCeiling, LTCG_ZERO_CEILING } from "./tax/engine";
-import { IRMAA_TIERS_MFJ, rmdStartAge } from "./tax/constants";
+import { ordinaryBracketCeiling, ltcgZeroCeiling } from "./tax/engine";
+import { FILING_CONSTANTS, rmdStartAge } from "./tax/constants";
 import { SOURCES, Source } from "./sources";
 import { money } from "./format";
 
@@ -33,9 +33,12 @@ export function detectOpportunities(
   const buckets = sumBuckets(household.accounts);
   const tax = plan.tax;
   const selfAge = plan.selfAge;
+  const status = plan.filingStatus;
 
   // 1) Roth conversion / bracket-fill headroom in a low-tax year.
-  const ceiling = ordinaryBracketCeiling(bracketTarget);
+  // Brackets are inflation-indexed in the engine, so scale the nominal ceiling
+  // by the plan's year factor to compare against the (already-indexed) income.
+  const ceiling = ordinaryBracketCeiling(bracketTarget, status) * plan.inflationFactor;
   const headroom = ceiling - tax.ordinaryTaxableIncome;
   if (headroom > 5_000 && buckets.pretax > 10_000) {
     const fillable = Math.min(headroom, buckets.pretax);
@@ -57,15 +60,16 @@ export function detectOpportunities(
   }
 
   // 2) 0% long-term capital gains harvesting.
-  const zeroRoom = LTCG_ZERO_CEILING - tax.taxableIncome;
+  const zeroCeiling = ltcgZeroCeiling(status) * plan.inflationFactor;
+  const zeroRoom = zeroCeiling - tax.taxableIncome;
   if (zeroRoom > 2_000 && buckets.taxableGain > 1_000) {
     const harvest = Math.min(zeroRoom, buckets.taxableGain);
     out.push({
       id: "cap-gains-harvest",
       icon: "🎁",
       title: "Harvest capital gains at 0%",
-      detail: `Married-filing-jointly, long-term gains are taxed at 0% until taxable income reaches ${money(
-        LTCG_ZERO_CEILING,
+      detail: `${status === "single" ? "Filing single" : "Married filing jointly"}, long-term gains are taxed at 0% until taxable income reaches ${money(
+        zeroCeiling,
       )}. You have about ${money(
         zeroRoom,
       )} of room left this year. Selling appreciated brokerage holdings to realize up to ${money(
@@ -77,14 +81,17 @@ export function detectOpportunities(
     });
   }
 
-  // 3) IRMAA cliff proximity.
+  // 3) IRMAA cliff proximity (status-aware tiers; surcharge × people on the return).
   const magi = tax.magi;
-  for (let i = 0; i < IRMAA_TIERS_MFJ.length - 1; i++) {
-    const boundary = IRMAA_TIERS_MFJ[i].upTo;
-    const nextSurcharge = IRMAA_TIERS_MFJ[i + 1].monthlyPerPerson;
-    const here = IRMAA_TIERS_MFJ[i].monthlyPerPerson;
+  const irmaaTiers = FILING_CONSTANTS[status].irmaaTiers;
+  const people = FILING_CONSTANTS[status].people;
+  const whoseWord = people === 1 ? "your" : "both spouses'";
+  for (let i = 0; i < irmaaTiers.length - 1; i++) {
+    const boundary = irmaaTiers[i].upTo * plan.inflationFactor;
+    const nextSurcharge = irmaaTiers[i + 1].monthlyPerPerson;
+    const here = irmaaTiers[i].monthlyPerPerson;
     if (magi > boundary - 15_000 && magi <= boundary && nextSurcharge > here && selfAge >= 62) {
-      const annualHit = (nextSurcharge - here) * 12 * 2;
+      const annualHit = (nextSurcharge - here) * 12 * people;
       out.push({
         id: `irmaa-${i}`,
         icon: "🚧",
@@ -93,7 +100,7 @@ export function detectOpportunities(
           magi,
         )}) is within ${money(boundary - magi)} of the next IRMAA bracket at ${money(
           boundary,
-        )}. Crossing it would raise both spouses' Medicare premiums about ${money(
+        )}. Crossing it would raise ${whoseWord} Medicare premiums about ${money(
           annualHit,
         )}/yr (two years later). Covering the last bit of spending from Roth or cash instead of pre-tax keeps you under the line.`,
         impact: `Avoids ~${money(annualHit)}/yr in extra premiums`,
@@ -123,13 +130,13 @@ export function detectOpportunities(
     out.push({
       id: "pretax-heavy",
       icon: "💣",
-      title: "Pre-tax balance is RMD-heavy",
+      title: "RMD tax bomb — roll pre-tax → Roth now",
       detail: `About ${Math.round(
         (buckets.pretax / buckets.total) * 100,
-      )}% of your assets are pre-tax. Left alone, these grow until RMDs force large taxable withdrawals in your 70s–80s, often pushing you into higher brackets and IRMAA. The years before RMDs/Social Security are the ideal time to draw these down voluntarily or convert to Roth.`,
-      impact: "Smooths future RMD-driven tax spikes",
+      )}% of your assets are pre-tax. Left alone, these grow until RMDs force large taxable withdrawals in your 70s–80s, often pushing you into higher brackets and IRMAA. The years before RMDs/Social Security are the ideal time to roll some to Roth — see the quantified "rollover plan" above, which shows exactly how much to convert and how far it cuts your worst-year RMD.`,
+      impact: "Shrinks future RMD-driven tax spikes",
       tone: "warn",
-      sources: [SOURCES.rmd, SOURCES.rothConversion],
+      sources: [SOURCES.rmd, SOURCES.rothConversion, SOURCES.rothNoRmd],
     });
   }
 

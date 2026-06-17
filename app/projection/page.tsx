@@ -3,11 +3,14 @@
 import { useMemo } from "react";
 import { useStore } from "@/components/HouseholdProvider";
 import { Card, PageTitle, SectionTitle, Stat, Pill, Disclaimer, Callout, Explainer, Info } from "@/components/ui";
-import { StackedArea, Bars, CompareBars, AnimatedNumber } from "@/components/charts";
+import { StackedArea, Bars, CompareBars, AnimatedNumber, FanChart } from "@/components/charts";
 import { projectLifetime } from "@/lib/projection";
 import { detectMilestones } from "@/lib/milestones";
+import { analyzeConversions } from "@/lib/rothConversion";
+import { runMonteCarlo } from "@/lib/monteCarlo";
 import { STRATEGY_META } from "@/lib/optimizer";
 import { returnModel } from "@/lib/returns";
+import { survivorFromSettings } from "@/lib/defaults";
 import { ReturnMethodInfo } from "@/components/ReturnMethodInfo";
 import { SpendingPowerCard } from "@/components/SpendingPowerCard";
 import { money, moneyCompact, percent } from "@/lib/format";
@@ -23,13 +26,50 @@ export default function ProjectionPage() {
       returnRate: settings.returnRate,
       inflationRate: settings.inflationRate,
       endAge: settings.endAge,
+      survivor: survivorFromSettings(settings),
     };
-    const chosen = projectLifetime(household, { ...base, strategy: settings.strategy });
+    const chosen = projectLifetime(household, {
+      ...base,
+      strategy: settings.strategy,
+      convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
+    });
     const smart = projectLifetime(household, { ...base, strategy: "smart" });
     const conventional = projectLifetime(household, { ...base, strategy: "conventional" });
     const milestones = detectMilestones(household, chosen);
-    return { chosen, smart, conventional, milestones };
+    const conv = analyzeConversions(household, {
+      strategy: settings.strategy === "proportional" ? "smart" : settings.strategy,
+      bracketTarget: settings.bracketTarget,
+      returnRate: settings.returnRate,
+      inflationRate: settings.inflationRate,
+      endAge: settings.endAge,
+      convertUntilAge: settings.convertUntilAge,
+      mode: settings.convertMode,
+      survivor: survivorFromSettings(settings),
+    });
+    return { chosen, smart, conventional, milestones, conv };
   }, [household, settings]);
+
+  // Monte-Carlo "plan confidence" for the active plan (fixed seed → stable number).
+  const mc = useMemo(
+    () => {
+      const m = returnModel(household.accounts);
+      return runMonteCarlo(
+        household,
+        {
+          strategy: settings.strategy,
+          bracketTarget: settings.bracketTarget,
+          returnRate: settings.returnRate,
+          inflationRate: settings.inflationRate,
+          endAge: settings.endAge,
+          convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
+          survivor: survivorFromSettings(settings),
+        },
+        { expected: m.expected, volatility: m.volatility },
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [household, settings],
+  );
 
   // Return scenarios derived from the actual holdings (the SpendingPowerCard
   // normalizes settings.returnRate to one of these on mount).
@@ -45,7 +85,7 @@ export default function ProjectionPage() {
 
   if (!ready) return <div className="h-screen" />;
 
-  const { chosen, smart, conventional, milestones } = result;
+  const { chosen, smart, conventional, milestones, conv } = result;
   const rows = chosen.rows;
 
   // Stacked-area series (sample is fine — rows are annual).
@@ -124,21 +164,70 @@ export default function ProjectionPage() {
       {/* Headline */}
       <SectionTitle hint={STRATEGY_META[settings.strategy].label}>If you follow this plan</SectionTitle>
       <Card>
-        <div className="grid grid-cols-2 gap-y-4">
-          <Stat label="Lifetime federal tax" tone="tax" value={<AnimatedNumber value={chosen.lifetimeTax} format={moneyCompact} />} />
+        <div className="grid grid-cols-3 gap-y-4">
+          <Stat label="Lifetime tax (fed + IL)" tone="tax" value={<AnimatedNumber value={chosen.lifetimeTax} format={moneyCompact} />} />
           <Stat
             label={`After-tax estate at ${settings.endAge}`}
             tone="gain"
             value={<AnimatedNumber value={chosen.endingEstateAfterTax} format={moneyCompact} />}
             sub={`${moneyCompact(chosen.endingEstate)} before deferred tax`}
           />
+          <Stat
+            label="Plan confidence"
+            tone={mc.successPct >= 0.8 ? "gain" : mc.successPct >= 0.6 ? "default" : "tax"}
+            value={`${Math.round(mc.successPct * 100)}%`}
+            sub={`money lasts to ${settings.endAge}`}
+          />
         </div>
         {chosen.depleted && (
           <div className="mt-3">
-            <Pill tone="tax">⚠️ Assets run short before age {settings.endAge}</Pill>
+            <Pill tone="tax">⚠️ At the flat return, assets run short before age {settings.endAge}</Pill>
           </div>
         )}
       </Card>
+
+      {/* ---------- Monte-Carlo: probability the money lasts ---------- */}
+      <SectionTitle hint={`${mc.runs} simulations`}>Will your money last? (market-risk check)</SectionTitle>
+      <Explainer>
+        The forecast above uses one steady return. Real markets bounce around — here we re-run your plan {mc.runs} times with
+        random yearly returns (~{percent(rm.volatility, 0)} volatility for your mix) to see how often it funds your full spending.
+      </Explainer>
+      <Card>
+        <div className="text-center">
+          <div className="tabular text-3xl font-bold" style={{ color: mc.successPct >= 0.8 ? HEX.gain : mc.successPct >= 0.6 ? HEX.accent : HEX.tax }}>
+            {Math.round(mc.successPct * 100)}%
+          </div>
+          <div className="text-[13px] text-foreground/65">
+            of simulations funded your full spending to age {settings.endAge}
+          </div>
+        </div>
+        <div className="mt-4">
+          <FanChart band={mc.band} yLabel={(n) => moneyCompact(n)} />
+          <p className="mt-1 text-[11px] text-foreground/45">
+            Shaded band = the 10th–90th percentile range of money left each year; line = the median outcome.
+          </p>
+        </div>
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <MiniBox label="Unlucky (10th)" value={moneyCompact(mc.endingWealth.p10)} tone="tax" />
+          <MiniBox label="Median" value={moneyCompact(mc.endingWealth.p50)} />
+          <MiniBox label="Lucky (90th)" value={moneyCompact(mc.endingWealth.p90)} tone="gain" />
+        </div>
+        <Info q="How should I read this?" sources={[]}>
+          Returns are modeled as independent random draws around your portfolio&apos;s long-run average — they capture
+          sequence-of-returns risk (a bad early stretch hurts more) but not fat tails or crashes, so treat the percentage as
+          a directional confidence check, not a guarantee. A concentrated, single-stock portfolio is riskier than the
+          volatility shown. Lowering spending, delaying Social Security, or holding more bonds raises the number.
+        </Info>
+      </Card>
+
+      {chosen.survivorYear > 0 && (
+        <Callout tone="warn" icon="🕊️" title={`Survivor years modeled from ${chosen.survivorYear}`} className="mt-2">
+          From {chosen.survivorYear} the forecast assumes one spouse has passed and the survivor files <strong>single</strong>{" "}
+          — tax brackets and the standard deduction roughly halve, so the same RMDs are taxed harder (the &quot;widow&apos;s
+          penalty&quot;). It&apos;s built into every number here, and it&apos;s a major reason converting to Roth during your
+          joint years pays off.
+        </Callout>
+      )}
 
       {/* Spending power (shared with Home) */}
       <SpendingPowerCard />
@@ -204,10 +293,61 @@ export default function ProjectionPage() {
         </p>
       </Info>
 
+      {/* Roth conversion / rollover plan */}
+      <SectionTitle>Roll pre-tax → Roth to defuse the bomb</SectionTitle>
+      <Explainer>
+        Your forecast with and without rolling pre-tax money to Roth in your low-tax years. Toggle it on to apply the
+        rollovers to every chart and the table below.
+      </Explainer>
+      <Card>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="font-semibold">Rollover plan {settings.useConversions ? "on" : "off"}</div>
+            <p className="text-[12px] text-foreground/60">
+              Rolls about {moneyCompact(conv.avgAnnualConversion)}/yr through {conv.windowEndYear} ({moneyCompact(conv.totalConverted)} total).
+            </p>
+          </div>
+          <button
+            onClick={() => updateSettings({ useConversions: !settings.useConversions })}
+            className={`press shrink-0 rounded-full px-4 py-2 text-sm font-semibold ${
+              settings.useConversions ? "bg-gain/15 text-gain" : "bg-primary text-white"
+            }`}
+          >
+            {settings.useConversions ? "✓ On" : "Turn on"}
+          </button>
+        </div>
+        <p className="mb-2 mt-4 text-[13px] text-foreground/70">Worst-year RMD — the forced &quot;tax bomb&quot;:</p>
+        <CompareBars
+          items={[
+            { label: "No rollovers", value: conv.peakRmdBaseline, color: HEX.tax },
+            { label: "With rollovers", value: conv.peakRmdWithConversions, color: HEX.gain },
+          ]}
+          format={(n) => money(n)}
+        />
+        <div className="mt-5 grid grid-cols-3 gap-2">
+          <MiniBox label="Rolled to Roth" value={moneyCompact(conv.totalConverted)} tone="roth" />
+          <MiniBox
+            label="After-tax wealth"
+            value={(conv.estateGain >= 0 ? "+" : "−") + moneyCompact(Math.abs(conv.estateGain))}
+            tone={conv.estateGain >= 0 ? "gain" : "tax"}
+          />
+          <MiniBox
+            label="Lifetime tax"
+            value={(conv.lifetimeTaxDelta >= 0 ? "+" : "−") + moneyCompact(Math.abs(conv.lifetimeTaxDelta))}
+            tone={conv.lifetimeTaxDelta <= 0 ? "gain" : "tax"}
+          />
+        </div>
+        <p className="mt-3 text-[12px] text-foreground/60">
+          {conv.recommended
+            ? "For your numbers, rolling pre-tax → Roth leaves more after-tax money and a far smaller forced-RMD spike. Recommended."
+            : "For your numbers the gain is modest — rolling mainly trades a little lifetime tax for a smaller RMD spike and more tax-free Roth."}
+        </p>
+      </Card>
+
       {/* Strategy comparison */}
       <SectionTitle>Smart vs. conventional</SectionTitle>
       <Card>
-        <p className="mb-3 text-[13px] text-foreground/70">Estimated lifetime federal tax — same spending & assumptions:</p>
+        <p className="mb-3 text-[13px] text-foreground/70">Estimated lifetime tax (federal + Illinois) — same spending & assumptions:</p>
         <CompareBars
           items={[
             { label: "Smart (bracket-fill)", value: smart.lifetimeTax, color: HEX.gain },
@@ -227,7 +367,7 @@ export default function ProjectionPage() {
           <p className="mt-3 rounded-xl bg-gain/10 p-3 text-[13px] text-gain">
             {savings > 1000 && (
               <>
-                The smart plan pays about <strong>{money(savings)}</strong>{" "}less in lifetime federal tax
+                The smart plan pays about <strong>{money(savings)}</strong>{" "}less in lifetime tax
                 {estateGain > 1000 ? " " : "."}
               </>
             )}
@@ -250,7 +390,7 @@ export default function ProjectionPage() {
 
       {/* Decisions timeline */}
       <SectionTitle hint={`${milestones.length} events`}>Key decisions & milestones</SectionTitle>
-      <div className="space-y-2">
+      <div className="space-y-2 lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0">
         {milestones.map((m, i) => (
           <Card as="div" key={i} className={`border-l-4 ${toneBorder(m.tone)}`}>
             <div className="flex items-center justify-between">
@@ -280,6 +420,7 @@ export default function ProjectionPage() {
               <th className="px-2 py-2">RMD min</th>
               <th className="px-2 py-2">Broker</th>
               <th className="px-2 py-2">Roth</th>
+              <th className="px-2 py-2">→Roth</th>
               <th className="px-2 py-2">Tax</th>
               <th className="px-2 py-2">Assets</th>
             </tr>
@@ -296,6 +437,9 @@ export default function ProjectionPage() {
                 </td>
                 <td className="px-2 py-1.5 text-taxable">{r.fromTaxable > 0 ? moneyCompact(r.fromTaxable) : "—"}</td>
                 <td className="px-2 py-1.5 text-roth">{r.fromRoth > 0 ? moneyCompact(r.fromRoth) : "—"}</td>
+                <td className={`px-2 py-1.5 ${r.conversion > 0 ? "font-semibold text-roth" : "text-foreground/30"}`}>
+                  {r.conversion > 0 ? moneyCompact(r.conversion) : "—"}
+                </td>
                 <td className="px-2 py-1.5 text-tax">{moneyCompact(r.tax)}</td>
                 <td className="px-2 py-1.5">{moneyCompact(r.endTotal)}</td>
               </tr>
@@ -321,4 +465,15 @@ function Key({ color, label }: { color: string; label: string }) {
 
 function toneBorder(tone: "info" | "warn" | "good"): string {
   return tone === "warn" ? "border-l-tax" : tone === "good" ? "border-l-gain" : "border-l-ss";
+}
+
+function MiniBox({ label, value, tone }: { label: string; value: string; tone?: "gain" | "tax" | "roth" }) {
+  const color =
+    tone === "gain" ? "text-gain" : tone === "tax" ? "text-tax" : tone === "roth" ? "text-roth" : "text-foreground";
+  return (
+    <div className="rounded-xl border border-border bg-background/60 p-2 text-center">
+      <div className="text-[10px] uppercase tracking-wide text-foreground/50">{label}</div>
+      <div className={`tabular text-sm font-bold ${color}`}>{value}</div>
+    </div>
+  );
 }
