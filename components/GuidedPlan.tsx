@@ -25,14 +25,14 @@ import { runMonteCarlo } from "@/lib/monteCarlo";
 import { returnModel } from "@/lib/returns";
 import { buildActionPlan, PlanYear, PlanAction } from "@/lib/actionPlan";
 import { GoalId, survivorFromSettings } from "@/lib/defaults";
-import { bucketOf } from "@/lib/accounts";
+import { bucketOf, ACCOUNT_KIND_META, TaxBucket, Household } from "@/lib/accounts";
 import { money, moneyCompact, percent } from "@/lib/format";
 
 const GOALS: GoalId[] = ["maxCapital", "lowestTax", "lowestRate"];
 const SPEND_MAX = 400_000;
 
 export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
-  const { household, settings, updateSettings, updateHousehold, mode } = useStore();
+  const { household, settings, updateSettings, updateHousehold, mode, setMode } = useStore();
   const year = useMemo(() => new Date().getFullYear(), []);
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState<"fwd" | "back">("fwd");
@@ -212,22 +212,21 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   type Step = { key: string; eyebrow: string; render: () => ReactNode };
   const steps: Step[] = [];
   const total = household.accounts.reduce((s, a) => s + a.balance, 0);
-  const needsSetup = mode === "demo" || household.accounts.length === 0;
+  // Truly empty only when the user is on their OWN data with nothing entered yet.
+  // In demo mode we SHOW the example (that's the whole point of an example).
+  const needsOwnSetup = mode === "own" && household.accounts.length === 0;
 
   steps.push({
     key: "accounts",
     eyebrow: "start with your money",
     render: () => {
-      if (needsSetup) {
+      if (needsOwnSetup) {
         return (
           <div>
-            <h2 className="text-xl font-bold leading-snug">First, let&apos;s use your real numbers</h2>
+            <h2 className="text-xl font-bold leading-snug">Let&apos;s use your real numbers</h2>
             <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
-              {mode === "demo"
-                ? "Right now you're looking at a $5M example."
-                : "You haven't added any accounts yet."}{" "}
-              Add your accounts — balances, which funds, your IRAs/401(k)s/Roth — and this whole plan recalculates around
-              what you actually have.
+              You haven&apos;t added any accounts yet. Add your IRAs, 401(k)s, Roth, and brokerage — balances and which
+              funds — and this whole plan recalculates around what you actually have.
             </p>
             <Link
               href="/accounts"
@@ -235,46 +234,42 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             >
               Add my accounts →
             </Link>
-            {mode === "demo" && (
-              <button
-                onClick={() => go(1)}
-                className="press mt-2 block w-full rounded-2xl border border-border py-3 text-center text-sm font-semibold text-foreground/70"
-              >
-                Or keep exploring the example
-              </button>
-            )}
+            <button
+              onClick={() => setMode("demo")}
+              className="press mt-2 block w-full rounded-2xl border border-border py-3 text-center text-sm font-semibold text-foreground/70"
+            >
+              Explore a $5M example instead →
+            </button>
           </div>
         );
       }
-      const pre = household.accounts.filter((a) => bucketOf(a.kind) === "pretax").reduce((s, a) => s + a.balance, 0);
-      const roth = household.accounts.filter((a) => bucketOf(a.kind) === "roth").reduce((s, a) => s + a.balance, 0);
-      const taxable = household.accounts.filter((a) => bucketOf(a.kind) === "taxable").reduce((s, a) => s + a.balance, 0);
       return (
         <div>
-          <h2 className="text-xl font-bold leading-snug">Here&apos;s what you have</h2>
-          <p className="mt-1 text-[13px] text-foreground/60">Everything below is built from these accounts. Looks right?</p>
-          <div className="mt-5 text-center">
+          {mode === "demo" && (
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-ss/25 bg-ss/[0.06] px-3 py-2">
+              <span className="text-[12px] text-foreground/70">
+                📊 You&apos;re exploring a <strong>sample ~$5M household</strong> — nothing is your real money.
+              </span>
+              <Link href="/accounts" className="press shrink-0 text-[12px] font-semibold text-primary underline underline-offset-2">
+                Use my own numbers →
+              </Link>
+            </div>
+          )}
+          <h2 className="text-xl font-bold leading-snug">{mode === "demo" ? "The example portfolio" : "Here’s what you have"}</h2>
+          <p className="mt-1 text-[13px] text-foreground/60">
+            {mode === "demo"
+              ? "Here's exactly what we'll assess — every account, by tax treatment."
+              : "Everything below is built from these accounts. Looks right?"}
+          </p>
+          <div className="mt-4 text-center">
             <div className="tabular text-4xl font-bold text-primary">
               <AnimatedNumber value={total} format={(n) => money(n)} />
             </div>
-            <div className="text-[12px] text-foreground/50">across {household.accounts.length} accounts</div>
+            <div className="text-[12px] text-foreground/50">total across {household.accounts.length} accounts</div>
           </div>
-          <div className="mt-4">
-            <StackedBar
-              segments={[
-                { value: pre, className: "bg-deferred", label: "Pre-tax" },
-                { value: taxable, className: "bg-taxable", label: "Taxable" },
-                { value: roth, className: "bg-roth", label: "Roth" },
-              ].filter((s) => s.value > 0.5)}
-            />
-            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-foreground/60">
-              {pre > 0.5 && <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-deferred align-middle" />Pre-tax {moneyCompact(pre)}</span>}
-              {taxable > 0.5 && <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-taxable align-middle" />Taxable {moneyCompact(taxable)}</span>}
-              {roth > 0.5 && <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-roth align-middle" />Roth {moneyCompact(roth)}</span>}
-            </div>
-          </div>
+          <AccountOverview household={household} total={total} />
           <Link href="/accounts" className="press mt-4 block rounded-xl border border-border py-2.5 text-center text-[13px] font-semibold text-primary">
-            Edit my accounts
+            {mode === "demo" ? "Build my own plan instead" : "Edit my accounts"}
           </Link>
         </div>
       );
@@ -398,9 +393,25 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
           {hasRoom && (
             <p className="mt-3 rounded-xl bg-primary/5 px-3 py-2 text-[12px] leading-relaxed text-foreground/70">
-              💡 Most careful savers <em>under</em>-spend. Based on your accounts, you can comfortably spend up to about{" "}
-              <strong>{money(sweep.comfortableMax)}/yr</strong> — and up to <strong>{money(sweep.sustainableMax)}/yr</strong>{" "}
-              before you&apos;d risk running short.
+              💡 Most careful savers <em>under</em>-spend.{" "}
+              {sweep.sustainableMax >= sweep.max ? (
+                <>
+                  Based on your accounts, your savings comfortably support even the most we model here —{" "}
+                  <strong>{money(sweep.max)}/yr</strong>. You have plenty of room.
+                </>
+              ) : (
+                <>
+                  Based on your accounts, you can comfortably spend up to about{" "}
+                  <strong>{money(sweep.comfortableMax)}/yr</strong>
+                  {sweep.sustainableMax > sweep.comfortableMax + 5_000 ? (
+                    <>
+                      {" "}
+                      — and up to <strong>{money(sweep.sustainableMax)}/yr</strong> before you&apos;d risk running short
+                    </>
+                  ) : null}
+                  .
+                </>
+              )}
               {localSpend < sweep.comfortableMax - 10_000 && (
                 <>
                   {" "}
@@ -855,6 +866,68 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   );
 }
 
+/** Professional, advisor-grade snapshot of the accounts being assessed: grouped
+ *  by tax treatment (Pre-tax / Roth / Taxable) with subtotals and % of total,
+ *  each account showing its type, owner, balance, and (for taxable) unrealized
+ *  gain. Answers "what exactly are we looking at?" at a glance. */
+function AccountOverview({ household, total }: { household: Household; total: number }) {
+  const nameOf = (owner: "self" | "spouse") => (owner === "self" ? household.self.label : household.spouse.label);
+  const sumOf = (b: TaxBucket) =>
+    household.accounts.filter((a) => bucketOf(a.kind) === b).reduce((s, a) => s + a.balance, 0);
+  const groups: { bucket: TaxBucket; title: string; note: string; dot: string }[] = [
+    { bucket: "pretax", title: "Pre-tax (Traditional)", note: "Taxed as income when withdrawn · RMDs apply", dot: "bg-deferred" },
+    { bucket: "roth", title: "Roth", note: "Already taxed · grows tax-free · no RMDs", dot: "bg-roth" },
+    { bucket: "taxable", title: "Taxable (brokerage & cash)", note: "Only the gains are taxed", dot: "bg-taxable" },
+  ];
+  return (
+    <div className="mt-4">
+      <StackedBar
+        segments={[
+          { value: sumOf("pretax"), className: "bg-deferred", label: "Pre-tax" },
+          { value: sumOf("taxable"), className: "bg-taxable", label: "Taxable" },
+          { value: sumOf("roth"), className: "bg-roth", label: "Roth" },
+        ].filter((s) => s.value > 0.5)}
+      />
+      <div className="mt-3 space-y-2.5">
+        {groups
+          .map((g) => ({ ...g, accts: household.accounts.filter((a) => bucketOf(a.kind) === g.bucket), subtotal: sumOf(g.bucket) }))
+          .filter((g) => g.subtotal > 0.5)
+          .map((g) => (
+            <div key={g.bucket} className="rounded-xl border border-border/70 p-2.5">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="flex items-center gap-1.5 text-[12px] font-semibold">
+                  <span className={`inline-block h-2 w-2 rounded-full ${g.dot}`} />
+                  {g.title}
+                  <span className="font-normal text-foreground/40">· {Math.round((g.subtotal / total) * 100)}%</span>
+                </span>
+                <span className="tabular text-[13px] font-semibold">{money(g.subtotal)}</span>
+              </div>
+              <p className="mt-0.5 text-[10px] leading-snug text-foreground/45">{g.note}</p>
+              <div className="mt-1.5 space-y-1 border-t border-border/40 pt-1.5">
+                {g.accts.map((a) => {
+                  const meta = ACCOUNT_KIND_META[a.kind];
+                  const gain = g.bucket === "taxable" && a.costBasis != null ? Math.max(0, a.balance - a.costBasis) : 0;
+                  return (
+                    <div key={a.id} className="flex items-baseline justify-between gap-2">
+                      <span className="min-w-0">
+                        <span className="text-[12px] text-foreground/85">{a.label}</span>
+                        <span className="block text-[10px] leading-snug text-foreground/45">
+                          {meta.label} · {nameOf(a.owner)}
+                          {gain > 0 ? ` · ${moneyCompact(gain)} unrealized gain` : ""}
+                        </span>
+                      </span>
+                      <span className="tabular shrink-0 text-[12px] font-medium text-foreground/80">{money(a.balance)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
+
 /** One year in the "Looking ahead" list. Collapsed it shows a one-line summary;
  *  tapped, it reveals EVERY action for that year (RMD, conversion, brokerage
  *  sale, Roth tap…), any life events that begin that year, and the spending it
@@ -985,32 +1058,53 @@ function BracketLadder({
 /** Tiny line showing account value left at the end vs. yearly spending, with a
  *  dot at the current choice — makes the spend↔legacy tradeoff visceral. */
 function SpendSparkline({ sweep, current, endAge }: { sweep: SpendingSweep; current: number; endAge: number }) {
-  const w = 320;
-  const h = 64;
-  const padX = 4;
-  const padTop = 6;
-  const padBot = 4;
   const pts = sweep.points;
   if (pts.length < 2) return null;
+  // Plot area with gutters for axis labels.
+  const w = 340;
+  const h = 124;
+  const L = 46; // left gutter (y labels)
+  const R = 10;
+  const T = 10;
+  const B = 26; // bottom gutter (x labels)
+  const plotW = w - L - R;
+  const plotH = h - T - B;
   const maxEst = Math.max(1, ...pts.map((p) => p.endingEstate));
-  const xAt = (spend: number) => padX + (spend / sweep.max) * (w - 2 * padX);
-  const yAt = (est: number) => padTop + (1 - est / maxEst) * (h - padTop - padBot);
+  const xAt = (spend: number) => L + (spend / sweep.max) * plotW;
+  const yAt = (est: number) => T + (1 - est / maxEst) * plotH;
+  const baseY = yAt(0); // the $0 ("runs out") line
   const line = pts.map((p) => `${xAt(p.spend)},${yAt(p.endingEstate)}`).join(" L ");
   const cur = sweep.at(current);
   const cx = xAt(current);
   const cy = yAt(cur.endingEstate);
+  const axis = "var(--color-foreground)";
+  const xMid = sweep.max / 2;
   return (
     <div className="mt-3">
-      <div className="mb-1 text-[10px] uppercase tracking-wide text-foreground/45">Money left at {endAge} vs. yearly spending</div>
-      <svg viewBox={`0 0 ${w} ${h}`} className="w-full">
-        <path d={`M ${line}`} fill="none" stroke="var(--color-primary)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-        <line x1={cx} y1={padTop} x2={cx} y2={h - padBot} stroke="var(--color-foreground)" strokeOpacity="0.2" strokeDasharray="3 3" />
-        <circle cx={cx} cy={cy} r="3.5" fill="var(--color-primary)" />
-      </svg>
-      <div className="flex justify-between text-[10px] text-foreground/45">
-        <span>spend $0</span>
-        <span>{moneyCompact(sweep.max)}+</span>
+      <div className="mb-1 text-[10px] uppercase tracking-wide text-foreground/45">
+        Money left at age {endAge} (up) vs. what you spend each year (right)
       </div>
+      <svg viewBox={`0 0 ${w} ${h}`} className="w-full" role="img" aria-label="Money left versus yearly spending">
+        {/* axes */}
+        <line x1={L} y1={T} x2={L} y2={baseY} stroke={axis} strokeOpacity="0.25" strokeWidth="1" />
+        <line x1={L} y1={baseY} x2={w - R} y2={baseY} stroke={axis} strokeOpacity="0.25" strokeWidth="1" />
+        {/* y-axis reference labels */}
+        <text x={L - 5} y={T + 3} textAnchor="end" fontSize="9" fill={axis} fillOpacity="0.55">{moneyCompact(maxEst)}</text>
+        <text x={L - 5} y={(T + baseY) / 2 + 3} textAnchor="end" fontSize="9" fill={axis} fillOpacity="0.45">{moneyCompact(maxEst / 2)}</text>
+        <text x={L - 5} y={baseY + 3} textAnchor="end" fontSize="9" fill={axis} fillOpacity="0.55">$0</text>
+        {/* the curve */}
+        <path d={`M ${line}`} fill="none" stroke="var(--color-primary)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+        {/* current choice marker + value */}
+        <line x1={cx} y1={T} x2={cx} y2={baseY} stroke={axis} strokeOpacity="0.25" strokeDasharray="3 3" />
+        <circle cx={cx} cy={cy} r="4" fill="var(--color-primary)" />
+        <text x={Math.min(cx + 6, w - R)} y={Math.max(cy - 6, T + 8)} textAnchor={cx > w - 70 ? "end" : "start"} fontSize="10" fontWeight="600" fill="var(--color-primary)">
+          {moneyCompact(cur.endingEstate)} left
+        </text>
+        {/* x-axis reference labels */}
+        <text x={L} y={h - 8} textAnchor="start" fontSize="9" fill={axis} fillOpacity="0.55">$0</text>
+        <text x={L + plotW / 2} y={h - 8} textAnchor="middle" fontSize="9" fill={axis} fillOpacity="0.45">{moneyCompact(xMid)}/yr</text>
+        <text x={w - R} y={h - 8} textAnchor="end" fontSize="9" fill={axis} fillOpacity="0.55">{moneyCompact(sweep.max)}+/yr</text>
+      </svg>
     </div>
   );
 }
