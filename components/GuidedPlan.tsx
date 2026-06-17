@@ -835,6 +835,14 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   const current = steps[safeStep];
   const isLast = safeStep >= steps.length - 1;
 
+  // Persistent cash-flow reference: once the user has set their spending, keep the
+  // key line items visible on every later step so they never lose track of the
+  // number they picked (or where the rest of the cash is going). Off on the
+  // setup/intro steps and when there's nothing to fund.
+  const spendStepIdx = steps.findIndex((s) => s.key === "spend");
+  const irmaa = plan.tax.irmaa?.householdAnnual ?? 0;
+  const showCashFlow = !needsOwnSetup && spendStepIdx >= 0 && safeStep > spendStepIdx;
+
   return (
     <Card className="overflow-hidden">
       {/* progress dots */}
@@ -849,6 +857,17 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         ))}
       </div>
       <div className="text-[11px] font-semibold uppercase tracking-wide text-primary">{current.eyebrow}</div>
+
+      {showCashFlow && (
+        <CashFlowBar
+          spending={spending}
+          conversion={conversion}
+          tax={totalTax}
+          irmaa={irmaa}
+          guaranteed={guaranteed}
+          fromSavings={totalDraw}
+        />
+      )}
 
       {/* animated step body — re-keyed so the directional slide replays each step */}
       <div key={current.key} className={`mt-1 min-h-[360px] ${dir === "back" ? "step-back" : "step-fwd"}`}>
@@ -878,6 +897,57 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         )}
       </div>
     </Card>
+  );
+}
+
+/**
+ * Persistent at-a-glance cash-flow reference shown across the later walkthrough
+ * steps, so the user never loses sight of the spending number they picked or how
+ * the rest of this year's cash splits up. Uses (where the money goes) as chips,
+ * with a muted funding line (where it comes from).
+ */
+function CashFlowBar({
+  spending,
+  conversion,
+  tax,
+  irmaa,
+  guaranteed,
+  fromSavings,
+}: {
+  spending: number;
+  conversion: number;
+  tax: number;
+  irmaa: number;
+  guaranteed: number;
+  fromSavings: number;
+}) {
+  return (
+    <div className="mt-2 rounded-xl border border-border bg-background/50 px-3 py-2">
+      <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/40">
+        This year’s cash flow — for reference
+      </div>
+      <div className="flex flex-wrap gap-x-5 gap-y-1.5">
+        <CFItem icon="💵" label="Personal spending" value={spending} tone="text-foreground" />
+        {conversion > 0.5 && <CFItem icon="🔄" label="Roth rollover" value={conversion} tone="text-roth" />}
+        {tax > 0.5 && <CFItem icon="🧾" label="Tax set-aside" value={tax} tone="text-tax" />}
+        {irmaa > 0.5 && <CFItem icon="🏥" label="Medicare IRMAA" value={irmaa} tone="text-tax" />}
+      </div>
+      <div className="mt-1.5 border-t border-border/50 pt-1 text-[10.5px] leading-snug text-foreground/45">
+        Funded by {money(guaranteed)} of guaranteed income
+        {fromSavings > 0.5 ? <> + {money(fromSavings)} pulled from your accounts</> : <> — no withdrawals needed</>}.
+        {conversion > 0.5 && " The rollover moves to Roth (not spent); its tax is best paid from cash."}
+      </div>
+    </div>
+  );
+}
+
+function CFItem({ icon, label, value, tone }: { icon: string; label: string; value: number; tone: string }) {
+  return (
+    <div className="flex items-baseline gap-1.5">
+      <span aria-hidden className="text-[12px]">{icon}</span>
+      <span className="text-[11px] text-foreground/55">{label}</span>
+      <span className={`tabular text-[13px] font-bold ${tone}`}>{money(value)}</span>
+    </div>
   );
 }
 
