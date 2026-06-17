@@ -7,9 +7,8 @@ import { StackedArea, Bars, CompareBars, AnimatedNumber, FanChart } from "@/comp
 import { projectLifetime } from "@/lib/projection";
 import { detectMilestones } from "@/lib/milestones";
 import { analyzeConversions } from "@/lib/rothConversion";
-import { runMonteCarlo, MonteCarloResult } from "@/lib/monteCarlo";
-import { runHistoricalBootstrap } from "@/lib/returnsHistorical";
-import { runRegimeSwitching } from "@/lib/returnsRegime";
+import { MonteCarloResult } from "@/lib/monteCarlo";
+import { computeMonteCarlo } from "@/lib/mcClient";
 import { runStressTests } from "@/lib/stressTest";
 import { solveSafeSpending, SafeSpendResult } from "@/lib/spendingSolver";
 import { STRATEGY_META } from "@/lib/optimizer";
@@ -98,27 +97,35 @@ export default function ProjectionPage() {
   const [mcLoading, setMcLoading] = useState(true);
   useEffect(() => {
     setMcLoading(true);
-    const id = setTimeout(() => {
-      const m = returnModel(household.accounts);
-      const res = runMonteCarlo(
-        household,
-        {
-          strategy: settings.strategy,
-          bracketTarget: settings.bracketTarget,
-          returnRate: settings.returnRate,
-          inflationRate: settings.inflationRate,
-          endAge: settings.endAge,
-          convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
-          survivor: survivorFromSettings(settings),
-          heirTaxRate: settings.heirTaxRate,
-          spendingStrategy: settings.spendingStrategy,
-        },
-        { model: m, runs: MC_RUNS },
-      );
-      setMc(res);
-      setMcLoading(false);
-    }, 0);
-    return () => clearTimeout(id);
+    let cancelled = false;
+    computeMonteCarlo({
+      kind: "mc",
+      household,
+      assumptions: {
+        strategy: settings.strategy,
+        bracketTarget: settings.bracketTarget,
+        returnRate: settings.returnRate,
+        inflationRate: settings.inflationRate,
+        endAge: settings.endAge,
+        convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
+        survivor: survivorFromSettings(settings),
+        heirTaxRate: settings.heirTaxRate,
+        spendingStrategy: settings.spendingStrategy,
+      },
+      model: returnModel(household.accounts),
+      runs: MC_RUNS,
+    })
+      .then((res) => {
+        if (cancelled) return;
+        setMc(res);
+        setMcLoading(false);
+      })
+      .catch(() => {
+        if (!cancelled) setMcLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [household, computeKey]);
 
@@ -196,52 +203,38 @@ export default function ProjectionPage() {
     setSolving(false);
   };
 
+  const crossCheckAssumptions = () => ({
+    strategy: settings.strategy,
+    bracketTarget: settings.bracketTarget,
+    returnRate: settings.returnRate,
+    inflationRate: settings.inflationRate,
+    endAge: settings.endAge,
+    convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
+    survivor: survivorFromSettings(settings),
+    heirTaxRate: settings.heirTaxRate,
+    spendingStrategy: settings.spendingStrategy,
+  });
+
   const runBootstrap = () => {
     setBootLoading(true);
     setBoot(null);
-    setTimeout(() => {
-      const res = runHistoricalBootstrap(
-        household,
-        {
-          strategy: settings.strategy,
-          bracketTarget: settings.bracketTarget,
-          returnRate: settings.returnRate,
-          inflationRate: settings.inflationRate,
-          endAge: settings.endAge,
-          convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
-          survivor: survivorFromSettings(settings),
-          heirTaxRate: settings.heirTaxRate,
-          spendingStrategy: settings.spendingStrategy,
-        },
-        { model: rm, runs: 600 },
-      );
-      setBoot(res);
-      setBootLoading(false);
-    }, 30);
+    computeMonteCarlo({ kind: "bootstrap", household, assumptions: crossCheckAssumptions(), model: rm, runs: 600 })
+      .then((res) => {
+        setBoot(res);
+        setBootLoading(false);
+      })
+      .catch(() => setBootLoading(false));
   };
 
   const runRegime = () => {
     setRegimeLoading(true);
     setRegime(null);
-    setTimeout(() => {
-      const res = runRegimeSwitching(
-        household,
-        {
-          strategy: settings.strategy,
-          bracketTarget: settings.bracketTarget,
-          returnRate: settings.returnRate,
-          inflationRate: settings.inflationRate,
-          endAge: settings.endAge,
-          convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
-          survivor: survivorFromSettings(settings),
-          heirTaxRate: settings.heirTaxRate,
-          spendingStrategy: settings.spendingStrategy,
-        },
-        { model: rm, runs: 600 },
-      );
-      setRegime(res);
-      setRegimeLoading(false);
-    }, 30);
+    computeMonteCarlo({ kind: "regime", household, assumptions: crossCheckAssumptions(), model: rm, runs: 600 })
+      .then((res) => {
+        setRegime(res);
+        setRegimeLoading(false);
+      })
+      .catch(() => setRegimeLoading(false));
   };
 
   // Stacked-area series (sample is fine — rows are annual).

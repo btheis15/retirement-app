@@ -22,7 +22,8 @@ import {
 } from "@/lib/socialSecurity";
 import { ageInYear, Household } from "@/lib/accounts";
 import { GoalId, PlannerSettings, survivorFromSettings } from "@/lib/defaults";
-import { runMonteCarlo, MonteCarloResult } from "@/lib/monteCarlo";
+import { MonteCarloResult } from "@/lib/monteCarlo";
+import { computeMonteCarlo } from "@/lib/mcClient";
 import { returnModel } from "@/lib/returns";
 import { money, moneyCompact, percent } from "@/lib/format";
 import { HEX } from "@/lib/palette";
@@ -840,29 +841,31 @@ function GoalAndRecommendation() {
   });
   const [confidence, setConfidence] = useState<MonteCarloResult | null>(null);
   useEffect(() => {
-    const id = setTimeout(() => {
-      const rm = returnModel(household.accounts);
-      setConfidence(
-        runMonteCarlo(
-          household,
-          {
-            strategy: rec.best.config.strategy,
-            bracketTarget: rec.best.config.bracketTarget,
-            returnRate: settings.returnRate,
-            inflationRate: settings.inflationRate,
-            endAge: settings.endAge,
-            convert: rec.best.config.useConversions
-              ? { untilAge: settings.convertUntilAge, mode: rec.best.config.convertMode }
-              : null,
-            survivor: survivorFromSettings(settings),
-            heirTaxRate: settings.heirTaxRate,
-            spendingStrategy: settings.spendingStrategy,
-          },
-          { model: rm, runs: 600 },
-        ),
-      );
-    }, 0);
-    return () => clearTimeout(id);
+    let cancelled = false;
+    computeMonteCarlo({
+      kind: "mc",
+      household,
+      assumptions: {
+        strategy: rec.best.config.strategy,
+        bracketTarget: rec.best.config.bracketTarget,
+        returnRate: settings.returnRate,
+        inflationRate: settings.inflationRate,
+        endAge: settings.endAge,
+        convert: rec.best.config.useConversions
+          ? { untilAge: settings.convertUntilAge, mode: rec.best.config.convertMode }
+          : null,
+        survivor: survivorFromSettings(settings),
+        heirTaxRate: settings.heirTaxRate,
+        spendingStrategy: settings.spendingStrategy,
+      },
+      model: returnModel(household.accounts),
+      runs: 600,
+    }).then((res) => {
+      if (!cancelled) setConfidence(res);
+    });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [household, confKey]);
   const matches = configMatches(
