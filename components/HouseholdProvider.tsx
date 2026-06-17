@@ -182,7 +182,10 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       persistOwn(h);
       if (s) {
         setSettings((prev) => {
-          const next = { ...prev, ...s };
+          // Treat an imported plan as the user's deliberate state: if the backup
+          // doesn't say otherwise, mark it customized so the goal auto-apply
+          // doesn't overwrite what they just restored.
+          const next = { ...prev, ...s, planCustomized: s.planCustomized ?? true };
           try {
             localStorage.setItem(KEY_SETTINGS, JSON.stringify(next));
           } catch {

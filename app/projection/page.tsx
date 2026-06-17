@@ -308,7 +308,7 @@ export default function ProjectionPage() {
             </p>
           </div>
           <button
-            onClick={() => updateSettings({ useConversions: !settings.useConversions })}
+            onClick={() => updateSettings({ useConversions: !settings.useConversions, planCustomized: true })}
             className={`press shrink-0 rounded-full px-4 py-2 text-sm font-semibold ${
               settings.useConversions ? "bg-gain/15 text-gain" : "bg-primary text-white"
             }`}

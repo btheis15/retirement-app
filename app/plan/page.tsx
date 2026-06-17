@@ -526,7 +526,7 @@ export default function PlanPage() {
           {STRATEGIES.map((s) => (
             <button
               key={s}
-              onClick={() => updateSettings({ strategy: s })}
+              onClick={() => updateSettings({ strategy: s, planCustomized: true })}
               className={`press whitespace-nowrap rounded-full px-3 py-1.5 text-[13px] font-medium ${
                 settings.strategy === s ? "bg-primary text-white" : "border border-border bg-card text-foreground/70"
               }`}
@@ -570,7 +570,7 @@ export default function PlanPage() {
               {BRACKETS.map((b) => (
                 <button
                   key={b}
-                  onClick={() => updateSettings({ bracketTarget: b })}
+                  onClick={() => updateSettings({ bracketTarget: b, planCustomized: true })}
                   className={`press rounded-xl border py-2 text-center ${
                     settings.bracketTarget === b
                       ? "border-primary bg-primary/10 text-primary"
@@ -878,6 +878,7 @@ function GoalAndRecommendation() {
     const r = recommendPlan(household, inputs, goal);
     updateSettings({
       goal,
+      planCustomized: false,
       strategy: r.best.config.strategy,
       bracketTarget: r.best.config.bracketTarget,
       useConversions: r.best.config.useConversions,
@@ -933,14 +934,17 @@ function GoalAndRecommendation() {
           {moneyCompact(confidence.endingWealth.p10)}. Returns are modeled as independent draws — directional, not a guarantee.
         </Info>
         {matches ? (
-          <p className="mt-3 text-[12px] font-medium text-gain">✓ This plan is active across the app.</p>
+          <p className="mt-3 text-[12px] font-medium text-gain">✓ This is your plan — active everywhere, automatically.</p>
         ) : (
-          <button
-            onClick={() => applyGoal(settings.goal)}
-            className="press mt-3 w-full rounded-xl bg-primary py-2.5 text-sm font-semibold text-white"
-          >
-            Apply this plan everywhere →
-          </button>
+          <p className="mt-3 text-[12px] leading-relaxed text-foreground/60">
+            Your active plan differs because you adjusted the rollover yourself.{" "}
+            <button
+              onClick={() => applyGoal(settings.goal)}
+              className="press font-semibold text-primary underline underline-offset-2"
+            >
+              Switch back to the recommended plan
+            </button>
+          </p>
         )}
       </Callout>
     </>
@@ -1138,7 +1142,7 @@ function RolloverPlanCard() {
             : "This trades a little lifetime tax for a much smaller forced-RMD spike and more tax-free Roth — useful if you value flexibility and lower late-life taxable income."}
         </p>
         <button
-          onClick={() => updateSettings({ useConversions: !settings.useConversions })}
+          onClick={() => updateSettings({ useConversions: !settings.useConversions, planCustomized: true })}
           className={`press mt-3 w-full rounded-xl py-2.5 text-sm font-semibold ${
             settings.useConversions ? "bg-gain/15 text-gain" : "bg-primary text-white"
           }`}
@@ -1151,7 +1155,7 @@ function RolloverPlanCard() {
             <div className="text-[11px] font-medium text-foreground/55">How much to convert each year</div>
             <div className="mt-1 grid grid-cols-2 gap-2">
               <button
-                onClick={() => updateSettings({ convertMode: "recommended" })}
+                onClick={() => updateSettings({ convertMode: "recommended", planCustomized: true })}
                 className={`press rounded-xl border px-2 py-2 text-center ${
                   settings.convertMode === "recommended" ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/70"
                 }`}
@@ -1160,7 +1164,7 @@ function RolloverPlanCard() {
                 <div className="text-[10px] text-foreground/50">sized to your future RMD rate</div>
               </button>
               <button
-                onClick={() => updateSettings({ convertMode: "fillBracket" })}
+                onClick={() => updateSettings({ convertMode: "fillBracket", planCustomized: true })}
                 className={`press rounded-xl border px-2 py-2 text-center ${
                   settings.convertMode === "fillBracket" ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/70"
                 }`}

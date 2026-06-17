@@ -41,6 +41,12 @@ export interface PlannerSettings {
   survivorModel: boolean;
   /** Age of the OLDER spouse at the (assumed) first death. */
   firstDeathAge: number;
+  /** True once the user has manually adjusted the rollover (turned conversions
+   *  on/off or switched smooth↔fill) away from the goal's recommendation. While
+   *  false, the goal's recommended plan auto-applies — so the user never has to
+   *  re-confirm or "apply" a plan after answering the goal question. Re-picking a
+   *  goal resets this to false. */
+  planCustomized: boolean;
 }
 
 /** Survivor spends this fraction of the couple's spending (fixed internal default). */
@@ -63,4 +69,5 @@ export const DEFAULT_SETTINGS: PlannerSettings = {
   convertUntilAge: 75,
   survivorModel: true,
   firstDeathAge: 85,
+  planCustomized: false,
 };

@@ -280,6 +280,7 @@ export default function ScenariosPage() {
                   bracketTarget: p.bracketTarget,
                   useConversions: !!p.convert,
                   convertMode: p.convertMode ?? "recommended",
+                  planCustomized: true,
                 })
               }
               disabled={isActive(p)}

@@ -100,7 +100,11 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     const rm = returnModel(dHousehold.accounts);
     return runMonteCarlo(dHousehold, dAssumptions, { expected: rm.expected, volatility: rm.volatility, runs: 150 });
   }, [dHousehold, dAssumptions]);
-  const rec = useMemo(() => recommendPlan(dHousehold, inputs, settings.goal), [dHousehold, settings]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Use the FRESH household (not the deferred one) so the bracket this flow picks
+  // always matches what the full dashboard picks for the same goal — otherwise the
+  // two can momentarily disagree (the 22% vs 24% the user saw). The grid is light
+  // and household edits are already debounced upstream.
+  const rec = useMemo(() => recommendPlan(household, inputs, settings.goal), [household, settings]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pre-tax share decides whether the rollover step is even relevant.
   const pretaxShare = useMemo(() => {
@@ -147,6 +151,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       const r = recommendPlan(household, inputs, goal);
       updateSettings({
         goal,
+        planCustomized: false, // picking a goal = use its recommended plan
         strategy: r.best.config.strategy,
         bracketTarget: r.best.config.bracketTarget,
         useConversions: r.best.config.useConversions,
@@ -154,6 +159,41 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       });
     });
   };
+
+  // Auto-apply the recommended plan for the chosen goal so the user never has to
+  // confirm or "apply" anything after answering the goal question. This covers
+  // the default goal (never tapped) and keeps every surface (this flow + the full
+  // dashboard) showing the SAME plan. It backs off the moment the user manually
+  // adjusts the rollover (planCustomized), and converges in one pass (it only
+  // writes when the active config actually differs from the recommendation).
+  const rc = rec.best.config;
+  useEffect(() => {
+    if (settings.planCustomized) return;
+    if (
+      settings.strategy !== rc.strategy ||
+      settings.bracketTarget !== rc.bracketTarget ||
+      settings.useConversions !== rc.useConversions ||
+      settings.convertMode !== rc.convertMode
+    ) {
+      updateSettings({
+        strategy: rc.strategy,
+        bracketTarget: rc.bracketTarget,
+        useConversions: rc.useConversions,
+        convertMode: rc.convertMode,
+      });
+    }
+  }, [
+    rc.strategy,
+    rc.bracketTarget,
+    rc.useConversions,
+    rc.convertMode,
+    settings.planCustomized,
+    settings.strategy,
+    settings.bracketTarget,
+    settings.useConversions,
+    settings.convertMode,
+    updateSettings,
+  ]);
 
   // ---- Steps ----
   type Step = { key: string; eyebrow: string; render: () => ReactNode };
@@ -598,7 +638,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[13px] font-semibold">Use the smoothing rollover plan?</span>
                 <button
-                  onClick={() => updateSettings({ useConversions: !settings.useConversions })}
+                  onClick={() => updateSettings({ useConversions: !settings.useConversions, planCustomized: true })}
                   className={`press rounded-full px-4 py-1.5 text-[13px] font-semibold ${settings.useConversions ? "bg-gain/15 text-gain" : "bg-primary text-white"}`}
                 >
                   {settings.useConversions ? "✓ On" : "Turn on"}
@@ -612,13 +652,13 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   </p>
                   <div className="mt-2 grid grid-cols-2 gap-2">
                     <button
-                      onClick={() => updateSettings({ convertMode: "recommended" })}
+                      onClick={() => updateSettings({ convertMode: "recommended", planCustomized: true })}
                       className={`press rounded-xl border px-2 py-1.5 text-center text-[12px] ${settings.convertMode === "recommended" ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/70"}`}
                     >
                       Smooth (recommended)
                     </button>
                     <button
-                      onClick={() => updateSettings({ convertMode: "fillBracket" })}
+                      onClick={() => updateSettings({ convertMode: "fillBracket", planCustomized: true })}
                       className={`press rounded-xl border px-2 py-1.5 text-center text-[12px] ${settings.convertMode === "fillBracket" ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/70"}`}
                     >
                       Fill the {percent(settings.bracketTarget, 0)} bracket
