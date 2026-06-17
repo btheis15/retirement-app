@@ -24,6 +24,7 @@ import { ageInYear, Household } from "@/lib/accounts";
 import { GoalId, PlannerSettings, survivorFromSettings } from "@/lib/defaults";
 import { runMonteCarlo } from "@/lib/monteCarlo";
 import { returnModel } from "@/lib/returns";
+import { GuidedPlan } from "@/components/GuidedPlan";
 import { money, moneyCompact, percent } from "@/lib/format";
 import { HEX } from "@/lib/palette";
 import { SOURCES } from "@/lib/sources";
@@ -52,6 +53,7 @@ const STRATEGY_SHORT: Record<StrategyId, string> = {
 export default function PlanPage() {
   const { ready, household, settings, updateSettings, updateHousehold } = useStore();
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const year = new Date().getFullYear();
 
   const plan = useMemo(
@@ -173,8 +175,22 @@ export default function PlanPage() {
 
   return (
     <div>
-      <PageTitle title={`What to do in ${year}`} subtitle="Your plan in plain English: how much to spend, where to pull it from, and the tax." />
+      <PageTitle title={`What to do in ${year}`} subtitle="A step-by-step walkthrough — one thing at a time, in plain English." />
 
+      {/* ---------- GUIDED WALKTHROUGH (the calm front door) ---------- */}
+      <GuidedPlan onSeeDetails={() => setShowAll(true)} />
+
+      <button
+        onClick={() => setShowAll((v) => !v)}
+        aria-expanded={showAll}
+        className="press mt-3 flex w-full items-center justify-between rounded-xl border border-border bg-card px-4 py-3 text-sm font-semibold text-foreground/70"
+      >
+        <span>📋 {showAll ? "Hide the full dashboard" : "Prefer the full dashboard? Show all the numbers & charts"}</span>
+        <span className={`transition-transform ${showAll ? "rotate-180" : ""}`}>⌄</span>
+      </button>
+
+      {showAll && (
+      <div className="rise mt-2">
       {/* ---------- ROBO-ADVISOR: goal → recommended plan ---------- */}
       <GoalAndRecommendation />
 
@@ -589,6 +605,8 @@ export default function PlanPage() {
           Compare strategies over your whole life →
         </Link>
       </Card>
+      </div>
+      )}
       </div>
       )}
 
