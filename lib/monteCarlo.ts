@@ -40,6 +40,9 @@ export interface MonteCarloResult {
   cvarEndingWealth: number;
   /** Among runs that fell short: median age the money first ran out (0 if none). */
   medianShortfallAge: number;
+  /** Worst real-spending CUT (1 − min real spend ÷ plan) across runs, as fractions:
+   *  typical (p50) and bad (p90). ~0 for constant spending; >0 with guardrails. */
+  spendCut: { p50: number; p90: number };
   /** Per-year gross-balance percentiles, for a fan chart (10/25/50/75/90). */
   band: { year: number; selfAge: number; p10: number; p25: number; p50: number; p75: number; p90: number }[];
   /** Expected (arithmetic-mean) blended annual return assumed. */
@@ -176,6 +179,7 @@ export function runMonteCarlo(
 
   const endings: number[] = [];
   const shortfallAges: number[] = [];
+  const cuts: number[] = []; // worst real-spending cut per run (0 = no cut)
   let successes = 0;
   const cols: number[][] = []; // per-year endTotal across runs
 
@@ -184,6 +188,7 @@ export function runMonteCarlo(
     const returnFor = (i: number) => (seq[i] ??= samplePortfolioYear());
     const proj = projectLifetime(household, { ...assumptions, returnFor, futureRateOverride });
     endings.push(proj.endingEstate);
+    cuts.push(Math.max(0, 1 - proj.minRealSpendRatio));
     if (proj.depleted) {
       const short = proj.rows.find((row) => row.shortfall);
       shortfallAges.push(short ? short.selfAge : det.rows[det.rows.length - 1]?.selfAge ?? 0);
@@ -197,6 +202,7 @@ export function runMonteCarlo(
 
   endings.sort((a, b) => a - b);
   shortfallAges.sort((a, b) => a - b);
+  cuts.sort((a, b) => a - b);
   const worstCount = Math.max(1, Math.floor(runs * 0.1));
   const cvar = endings.slice(0, worstCount).reduce((s, x) => s + x, 0) / worstCount;
   const ci = wilsonInterval(successes, runs);
@@ -228,6 +234,7 @@ export function runMonteCarlo(
     },
     cvarEndingWealth: cvar,
     medianShortfallAge: shortfallAges.length ? pct(shortfallAges, 0.5) : 0,
+    spendCut: { p50: pct(cuts, 0.5), p90: pct(cuts, 0.9) },
     band,
     expectedReturn: m.expected,
     volatility: m.volatility,

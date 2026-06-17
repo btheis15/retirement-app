@@ -74,6 +74,7 @@ export default function PlanPage() {
         convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
         survivor: survivorFromSettings(settings),
         heirTaxRate: settings.heirTaxRate,
+        spendingStrategy: settings.spendingStrategy,
       }),
     [household, settings],
   );
@@ -836,6 +837,7 @@ function GoalAndRecommendation() {
             : null,
           survivor: survivorFromSettings(settings),
           heirTaxRate: settings.heirTaxRate,
+          spendingStrategy: settings.spendingStrategy,
         },
         { model: rm, runs: 600 },
       );

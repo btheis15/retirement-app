@@ -47,6 +47,9 @@ export interface PlannerSettings {
   /** Assumed marginal tax rate a non-spouse heir pays on the inherited pre-tax,
    *  spread over the SECURE Act 10-year window. Advanced; default 24%. */
   heirTaxRate: number;
+  /** Spending behavior: "constant" real (default) or "guardrails" (Guyton-Klinger
+   *  dynamic spending — flex up/down with the markets). Advanced. */
+  spendingStrategy: "constant" | "guardrails";
   /** True once the user has manually adjusted the rollover (turned conversions
    *  on/off or switched smooth↔fill) away from the goal's recommendation. While
    *  false, the goal's recommended plan auto-applies — so the user never has to
@@ -77,5 +80,6 @@ export const DEFAULT_SETTINGS: PlannerSettings = {
   firstDeathAge: 85,
   realDollars: false,
   heirTaxRate: 0.24,
+  spendingStrategy: "constant",
   planCustomized: false,
 };

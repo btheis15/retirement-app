@@ -46,6 +46,10 @@ export interface ProjectionAssumptions {
   /** Marginal rate a non-spouse heir pays on inherited pre-tax, spread over the
    *  SECURE 10-year window. Drives the after-tax estate. Default 0.24. */
   heirTaxRate?: number;
+  /** Spending behavior. "constant" (default) = a fixed real (inflation-grown)
+   *  amount every year. "guardrails" = Guyton-Klinger dynamic spending: flex up in
+   *  good markets and trim in bad ones, which materially raises survivability. */
+  spendingStrategy?: "constant" | "guardrails";
 }
 
 export interface ProjectionRow {
@@ -97,6 +101,9 @@ export interface ProjectionResult {
   endingBuckets: { pretax: number; roth: number; taxable: number; taxableGain: number };
   yearsModeled: number;
   depleted: boolean; // ran out of money before endAge
+  /** Lowest real (today's-dollars) spending in any year ÷ the initial spend. 1.0
+   *  means spending never dipped below plan; <1 means a dynamic-spending cut. */
+  minRealSpendRatio: number;
   /** Total pre-tax dollars rolled to Roth across the whole projection. */
   totalConverted: number;
   /** Largest single-year RMD across the projection (the "tax bomb" peak). */
@@ -226,6 +233,36 @@ function growAll(accounts: Account[], rate: number) {
   }
 }
 
+/**
+ * Guyton-Klinger dynamic spending — next year's spend from this year's. Compares
+ * the current withdrawal rate to the INITIAL planning rate (W0/P0) and applies:
+ *  • Modified Withdrawal Rule: skip the inflation raise after a down year if the
+ *    rate is already above the initial rate.
+ *  • Capital-Preservation Rule: cut 10% if the rate climbs >20% above initial
+ *    (suspended in the final ~15 years — no need to preserve for a short horizon).
+ *  • Prosperity Rule: raise 10% if the rate falls >20% below initial.
+ */
+function guytonKlinger(
+  prevSpend: number,
+  portfolio: number,
+  lastReturn: number,
+  refSpend: number,
+  p0: number,
+  inflation: number,
+  yearsLeft: number,
+): number {
+  if (portfolio <= 0 || p0 <= 0) return prevSpend * (1 + inflation);
+  const initWR = refSpend / p0;
+  let spend = prevSpend * (1 + inflation);
+  // Modified Withdrawal Rule.
+  if (lastReturn < 0 && spend / portfolio > initWR) spend = prevSpend;
+  const wr = spend / portfolio;
+  // Capital Preservation (cut) / Prosperity (raise) — mutually exclusive.
+  if (yearsLeft > 15 && wr > 1.2 * initWR) spend *= 0.9;
+  else if (wr < 0.8 * initWR) spend *= 1.1;
+  return spend;
+}
+
 export function projectLifetime(household: Household, assumptions: ProjectionResultInput): ProjectionResult {
   const { strategy, bracketTarget, returnRate, inflationRate, endAge, convert, survivor, returnFor, futureRateOverride } =
     assumptions;
@@ -290,6 +327,15 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
   const initBrokerage = h.accounts.filter(isBrokerage).reduce((s, a) => s + a.balance, 0);
   const initCash = h.accounts.filter((a) => a.kind === "cash").reduce((s, a) => s + a.balance, 0);
 
+  // Guyton-Klinger references: initial spend (W0) and initial portfolio (P0) set
+  // the planning withdrawal rate the guardrails defend. refSpend is dropped at the
+  // survivor transition so the rate recenters on the survivor's lower baseline.
+  const useGuardrails = assumptions.spendingStrategy === "guardrails";
+  const W0 = h.annualSpending;
+  const P0 = h.accounts.reduce((s, a) => s + a.balance, 0);
+  let refSpend = W0; // the intended real spend (steps down at the survivor transition)
+  let minSpendRatio = Infinity; // lowest (actual real spend ÷ intended) — guardrail cut depth
+
   for (let year = startYear; year <= startYear + 60; year++) {
     const selfAge = year - h.self.birthYear;
     const spouseAge = year - h.spouse.birthYear;
@@ -334,6 +380,7 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
       h[olderWho] = { ...h[olderWho], socialSecurityAnnual: 0 };
       for (const a of h.accounts) if (a.owner === olderWho) a.owner = survivorWho;
       h.annualSpending *= survivor.spendingFactor;
+      refSpend *= survivor.spendingFactor; // recenter the guardrail rate on the survivor's lower spend
     }
     const filingStatus = isSurvivorYear ? ("single" as const) : ("mfj" as const);
 
@@ -369,6 +416,10 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
     const surplus = plan.netCash - plan.spendingTarget;
     if (surplus > 0) reinvestSurplus(h.accounts, surplus);
 
+    // Cut depth = actual real spend vs. the intended real spend (refSpend already
+    // includes the survivor step-down), so constant-real reads 0 cut and only
+    // guardrail-driven trims below plan count.
+    if (refSpend > 0) minSpendRatio = Math.min(minSpendRatio, plan.spendingTarget / inflationFactor / refSpend);
     lifetimeTax += plan.tax.totalTax;
     lifetimeIrmaa += plan.tax.irmaa.householdAnnual;
     // Deflate to today's dollars: a tax paid in year T is worth less in real terms.
@@ -415,9 +466,15 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
 
     if (plan.shortfall > 1 && !depleted) depleted = true;
 
-    // Inflate next year's spending, and give Social Security a COLA (proxied by
-    // inflation) so it keeps pace with the indexed brackets and rising spending.
-    h.annualSpending *= 1 + inflationRate;
+    // Set next year's spending. Constant-real just inflates; guardrails flex with
+    // the post-year portfolio and this year's realized return.
+    const yearReturn = returnFor ? returnFor(year - startYear) : returnRate;
+    if (useGuardrails) {
+      h.annualSpending = guytonKlinger(h.annualSpending, endTotal, yearReturn, refSpend, P0, inflationRate, endAge - selfAge);
+    } else {
+      h.annualSpending *= 1 + inflationRate;
+    }
+    // Social Security COLA (proxied by inflation) keeps pace with indexed brackets.
     h.self = { ...h.self, socialSecurityAnnual: h.self.socialSecurityAnnual * (1 + inflationRate) };
     h.spouse = { ...h.spouse, socialSecurityAnnual: h.spouse.socialSecurityAnnual * (1 + inflationRate) };
   }
@@ -463,6 +520,7 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
     endingBuckets: { pretax: endPretax, roth: endRoth, taxable: endTaxable, taxableGain: endTaxableGain },
     yearsModeled: rows.length,
     depleted,
+    minRealSpendRatio: minSpendRatio === Infinity ? 1 : Math.min(1, minSpendRatio),
     totalConverted,
     peakRmd,
     peakMarginalRate,

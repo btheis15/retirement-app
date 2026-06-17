@@ -74,6 +74,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
       survivor: survivorFromSettings(settings),
       heirTaxRate: settings.heirTaxRate,
+      spendingStrategy: settings.spendingStrategy,
     }),
     [settings],
   );
