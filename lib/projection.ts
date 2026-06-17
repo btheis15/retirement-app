@@ -83,6 +83,9 @@ export interface ProjectionResult {
   totalConverted: number;
   /** Largest single-year RMD across the projection (the "tax bomb" peak). */
   peakRmd: number;
+  /** Highest ordinary tax bracket touched in any year (conversions included) —
+   *  how "high" the plan ever pushes you. Lower = smoother. */
+  peakMarginalRate: number;
   /** The worst future RMD-era marginal rate used for recommended conversions
    *  (from the conventional baseline). Exposed so Monte Carlo can reuse it. */
   futureRate: number;
@@ -216,6 +219,7 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
   let totalConverted = 0;
   let peakRmd = 0;
   let peakRmdMarginal = 0; // highest marginal rate seen in an RMD year (the bomb's real rate)
+  let peakMarginalRate = 0; // highest ordinary bracket touched in ANY year (incl. conversions)
 
   // For recommended-mode conversions, derive the marginal rate this household
   // would face in its worst future RMD year if it did NOTHING extra. We use a
@@ -340,6 +344,7 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
     lifetimeTax += plan.tax.totalTax;
     peakRmd = Math.max(peakRmd, plan.rmd);
     if (plan.rmd > 0) peakRmdMarginal = Math.max(peakRmdMarginal, plan.tax.marginalOrdinaryRate);
+    peakMarginalRate = Math.max(peakMarginalRate, plan.tax.marginalOrdinaryRate);
 
     growAll(h.accounts, returnFor ? returnFor(year - startYear) : returnRate);
     // Carve this year's brokerage dividends/interest out of its total-return
@@ -411,6 +416,7 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
     depleted,
     totalConverted,
     peakRmd,
+    peakMarginalRate,
     futureRate,
     survivorYear,
   };

@@ -18,6 +18,7 @@ import { spendingSweep, SpendingSweep } from "@/lib/spendingSweep";
 import { AnimatedNumber } from "@/components/charts";
 import { planYear } from "@/lib/optimizer";
 import { ltcgZeroCeiling } from "@/lib/tax/engine";
+import { FILING_CONSTANTS, FilingStatus } from "@/lib/tax/constants";
 import { projectLifetime, ProjectionAssumptions } from "@/lib/projection";
 import { recommendPlan, GOAL_META } from "@/lib/goals";
 import { runMonteCarlo } from "@/lib/monteCarlo";
@@ -116,7 +117,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     return {
       none: mk({ convert: null }),
       smooth: mk({ convert: { untilAge: settings.convertUntilAge, mode: "recommended" } }),
-      aggressive: mk({ convert: { untilAge: settings.convertUntilAge, mode: "fillBracket" }, bracketTarget: 0.24 }),
+      aggressive: mk({ convert: { untilAge: settings.convertUntilAge, mode: "fillBracket" }, bracketTarget: 0.32 }),
     };
   }, [dHousehold, dAssumptions, settings.convertUntilAge]);
 
@@ -418,49 +419,81 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       key: "roll",
       eyebrow: "smoothing your future taxes",
       render: () => {
-        const lt = (p: { lifetimeTax: number }) => p.lifetimeTax;
         const rows = [
-          { name: "Do nothing extra", p: compare.none, hint: "RMDs come out in big chunks later" },
+          { name: "Do nothing extra", p: compare.none, hint: "RMDs arrive in big, high-bracket chunks" },
           { name: "Smooth (recommended)", p: compare.smooth, hint: "small rollovers, stay in low brackets", best: true },
-          { name: "Convert aggressively", p: compare.aggressive, hint: "fill the 24% bracket every year" },
+          { name: "Convert aggressively", p: compare.aggressive, hint: "fill the 32% bracket every year" },
         ];
-        const lowestLifetime = Math.min(...rows.map((r) => lt(r.p)));
+        const mostKept = Math.max(...rows.map((r) => r.p.endingEstateAfterTax));
+        const biggestRmd = Math.max(...rows.map((r) => r.p.peakRmd));
+        const smoothKeep = compare.smooth.endingEstateAfterTax;
+        const aggrKeep = compare.aggressive.endingEstateAfterTax;
+        const noneKeep = compare.none.endingEstateAfterTax;
+        const gainVsNothing = smoothKeep - noneKeep;
+        // How much of the best-case gain smoothing captures, vs. doing nothing.
+        const captured =
+          aggrKeep > noneKeep + 1 ? Math.round(((smoothKeep - noneKeep) / (aggrKeep - noneKeep)) * 100) : 100;
+        const aggrEdge = aggrKeep - smoothKeep;
         return (
           <div>
             <h2 className="text-xl font-bold leading-snug">Smooth your future tax bill</h2>
             <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
-              RMDs aren&apos;t the enemy — a steady withdrawal is fine. The trap is a <strong>big</strong> one that jumps
-              you into a higher bracket. The fix isn&apos;t to wipe out RMDs; it&apos;s to move a little to Roth now —
-              only up to the top of a low bracket — so every year stays low and your <strong>lifetime</strong> tax is the
-              smallest. We never convert a dollar at a higher rate than you&apos;d pay later.
+              RMDs aren&apos;t the enemy — a steady withdrawal is fine. The trap is one <strong>big</strong> forced
+              withdrawal that lands in a high bracket. The fix: move a little to Roth each year, only up to the top of a
+              low bracket, so the balance that drives future RMDs shrinks gently. We never convert a dollar at a higher
+              rate than you&apos;d pay later.
             </p>
+
+            {/* Bracket reference: what "a low bracket" actually means, in dollars */}
+            <BracketLadder
+              status={plan.filingStatus}
+              fillRate={settings.bracketTarget}
+              futureRate={compare.none.peakMarginalRate}
+              year={year}
+            />
 
             {/* Proof: three approaches on YOUR numbers */}
             <div className="mt-4 overflow-hidden rounded-2xl border border-border">
-              <div className="grid grid-cols-[1.4fr_1fr_1fr] bg-foreground/[0.03] px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-foreground/50">
+              <div className="grid grid-cols-[1.5fr_1fr_1fr] bg-foreground/[0.03] px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-foreground/50">
                 <span>Approach</span>
-                <span className="text-right">Lifetime tax</span>
-                <span className="text-right">Worst RMD</span>
+                <span className="text-right">Money you keep</span>
+                <span className="text-right">Biggest RMD</span>
               </div>
               {rows.map((r) => (
                 <div
                   key={r.name}
-                  className={`grid grid-cols-[1.4fr_1fr_1fr] items-center px-3 py-2 text-[12px] ${r.best ? "bg-gain/[0.06]" : "border-t border-border/50"}`}
+                  className={`grid grid-cols-[1.5fr_1fr_1fr] items-center px-3 py-2 text-[12px] ${r.best ? "bg-gain/[0.06]" : "border-t border-border/50"}`}
                 >
                   <span>
                     <span className={`font-semibold ${r.best ? "text-gain" : ""}`}>{r.name}</span>
                     <span className="block text-[10px] leading-tight text-foreground/50">{r.hint}</span>
                   </span>
-                  <span className={`tabular text-right font-semibold ${lt(r.p) === lowestLifetime ? "text-gain" : "text-foreground/80"}`}>
-                    {moneyCompact(r.p.lifetimeTax)}
+                  <span className={`tabular text-right font-semibold ${r.p.endingEstateAfterTax >= mostKept - 1 ? "text-gain" : "text-foreground/70"}`}>
+                    {moneyCompact(r.p.endingEstateAfterTax)}
                   </span>
-                  <span className="tabular text-right text-foreground/70">{moneyCompact(r.p.peakRmd)}</span>
+                  <span className={`tabular text-right font-semibold ${r.p.peakRmd >= biggestRmd - 1 ? "text-tax/80" : "text-foreground/70"}`}>
+                    {moneyCompact(r.p.peakRmd)}
+                  </span>
                 </div>
               ))}
             </div>
+            <p className="mt-1.5 text-[10px] leading-relaxed text-foreground/45">
+              &ldquo;Money you keep&rdquo; is your estate after all taxes — including the tax still owed on any pre-tax
+              left behind. &ldquo;Biggest RMD&rdquo; is the largest single forced withdrawal you&apos;d ever face.
+            </p>
             <p className="mt-2 text-[12px] leading-relaxed text-foreground/65">
-              See it? <strong>Smoothing</strong> pays the least lifetime tax — small rollovers keep every year in a low
-              bracket. Doing nothing lets RMDs balloon; converting aggressively just pre-pays tax you didn&apos;t need to.
+              Both rollover plans leave you better off than doing nothing and shrink your biggest forced RMD.{" "}
+              <strong>Smoothing</strong> gets you about <strong>{moneyCompact(gainVsNothing)}</strong> of that
+              {captured < 98 ? <> — roughly {captured}% of the best case</> : null} in small, low-bracket steps.
+              {aggrEdge > Math.max(50_000, noneKeep * 0.005) ? (
+                <>
+                  {" "}
+                  Converting aggressively squeezes out about {moneyCompact(aggrEdge)} more, but only by converting big and
+                  paying tax up in the {Math.round(compare.aggressive.peakMarginalRate * 100)}% bracket — your call.
+                </>
+              ) : (
+                " Going more aggressive wouldn't gain you enough to be worth the bigger tax bills."
+              )}
             </p>
 
             {/* The decision, right here */}
@@ -478,7 +511,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 <>
                   <p className="mt-2 text-[12px] text-foreground/65">
                     This year that&apos;s about <strong>{money(conversion)}</strong> moved pre-tax → Roth — sized to fill
-                    your low bracket, no more.
+                    your {percent(settings.bracketTarget, 0)} bracket, no more.
                   </p>
                   <div className="mt-2 grid grid-cols-2 gap-2">
                     <button
@@ -661,6 +694,69 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         )}
       </div>
     </Card>
+  );
+}
+
+/** Plain-English reference for "a low bracket": the actual federal ordinary
+ *  brackets with their dollar ranges, marking where the smoothing plan FILLS to
+ *  (green) and where untouched RMDs would eventually LAND (red). Turns the
+ *  abstract "fill the low bracket" into something the user can sanity-check. */
+function BracketLadder({
+  status,
+  fillRate,
+  futureRate,
+  year,
+}: {
+  status: FilingStatus;
+  fillRate: number;
+  futureRate: number;
+  year: number;
+}) {
+  const brackets = FILING_CONSTANTS[status].ordinary;
+  const fmt = (n: number) => moneyCompact(n);
+  const showFuture = futureRate > fillRate + 1e-9; // only flag a future bracket that's actually higher
+  return (
+    <div className="mt-4 rounded-2xl border border-border p-3">
+      <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-foreground/50">
+        Your federal brackets ({status === "mfj" ? "married filing jointly" : "single"}, {year})
+      </div>
+      <div className="space-y-1">
+        {brackets.map((b, i) => {
+          const from = i === 0 ? 0 : brackets[i - 1].upTo;
+          const isFill = Math.abs(b.rate - fillRate) < 1e-9;
+          const isFuture = showFuture && Math.abs(b.rate - futureRate) < 1e-9;
+          const range = b.upTo === Infinity ? `${fmt(from)}+` : `${fmt(from)} – ${fmt(b.upTo)}`;
+          return (
+            <div
+              key={b.rate}
+              className={`flex items-center gap-2 rounded-lg px-2 py-1 text-[12px] ${isFill ? "bg-gain/10" : isFuture ? "bg-tax/[0.07]" : ""}`}
+            >
+              <span className={`w-9 shrink-0 font-semibold ${isFill ? "text-gain" : isFuture ? "text-tax" : "text-foreground/70"}`}>
+                {Math.round(b.rate * 100)}%
+              </span>
+              <span className="tabular text-foreground/55">{range}</span>
+              {isFill && <span className="ml-auto text-[10px] font-semibold text-gain">↑ we fill to here</span>}
+              {isFuture && (
+                <span className="ml-auto text-[10px] font-semibold text-tax">↑ big RMDs would reach here</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-foreground/50">
+        Each rollover fills only up to the top of your{" "}
+        <span className="font-semibold text-gain">{Math.round(fillRate * 100)}%</span> bracket
+        {showFuture ? (
+          <>
+            {" "}— we don&apos;t push you into the{" "}
+            <span className="font-semibold text-tax">{Math.round(futureRate * 100)}%</span> bracket your big forced RMDs
+            would otherwise reach.
+          </>
+        ) : (
+          " — already at or below where your future RMDs land, so there's little to gain from converting more."
+        )}
+      </p>
+    </div>
   );
 }
 

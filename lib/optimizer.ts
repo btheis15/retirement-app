@@ -384,16 +384,26 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
       targetOTI = ordinaryBracketCeiling(conv.toBracket, ctx.filingStatus) * ctx.inflationFactor;
       label = `filling the ${(conv.toBracket * 100).toFixed(0)}% bracket`;
     } else {
-      // Recommended (rate arbitrage): convert only the dollars that are STRICTLY
-      // cheaper now than later. We fill up to where the future RMD-era bracket
-      // BEGINS (its floor) — so every converted dollar is taxed today at a rate
-      // below that future rate. Dollars inside the future bracket itself are a
-      // rate "wash" and are left to the advanced fill-the-bracket option.
+      // Recommended (smoothing): convert only the dollars that are STRICTLY
+      // cheaper now than later — BUT keep it smooth by never filling past the
+      // user's comfort bracket (bracketTarget, e.g. 22%). The goal is steady,
+      // low-bracket rollovers, not a single huge conversion that itself jumps
+      // into a high bracket. So we fill up to whichever is LOWER:
+      //   • the floor of the future RMD-era bracket (rate-arbitrage ceiling), or
+      //   • the top of the comfort bracket (the "stay smooth" cap).
+      // Pushing higher than the comfort bracket is the advanced fill-the-bracket
+      // option, which the user opts into deliberately.
       const rNow = finalEval.tax.marginalOrdinaryRate;
       if (conv.futureRate > 0 && rNow < conv.futureRate - 1e-9) {
-        targetOTI = ordinaryBracketFloor(conv.futureRate, ctx.filingStatus) * ctx.inflationFactor;
+        const arbCeiling = ordinaryBracketFloor(conv.futureRate, ctx.filingStatus);
+        const comfortCeiling = ordinaryBracketCeiling(bracketTarget, ctx.filingStatus);
+        const fillTo = Math.min(arbCeiling, comfortCeiling);
+        targetOTI = fillTo * ctx.inflationFactor;
         if (conv.capOTI != null) targetOTI = Math.min(targetOTI, conv.capOTI);
-        label = `up to the ${Math.round(conv.futureRate * 100)}% bracket your future RMDs will reach (filling only the cheaper brackets below it)`;
+        const reachedBracket = Math.round(Math.min(bracketTarget, conv.futureRate) * 100);
+        label = `filling your low brackets up to about ${reachedBracket}% — staying well below the ${Math.round(
+          conv.futureRate * 100,
+        )}% your future RMDs would otherwise hit`;
       }
     }
 
