@@ -102,7 +102,7 @@ export function Legend({ segments, total }: { segments: Segment[]; total?: numbe
 export function AnimatedNumber({
   value,
   format = (n) => money(n),
-  duration = 800,
+  duration = 650,
   className = "",
 }: {
   value: number;
@@ -110,10 +110,21 @@ export function AnimatedNumber({
   duration?: number;
   className?: string;
 }) {
-  const [display, setDisplay] = useState(0);
-  const fromRef = useRef(0);
+  // Start AT the value (no count-up from 0 on mount/remount → no flicker when a
+  // parent memo recomputes or a step re-keys). Animate only real changes, from
+  // the last DISPLAYED number (captured before the RAF), and skip tiny deltas so
+  // dragging a slider doesn't re-roll the count.
+  const [display, setDisplay] = useState(value);
+  const fromRef = useRef(value);
   useEffect(() => {
     const from = fromRef.current;
+    fromRef.current = value;
+    const reduce =
+      typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduce || Math.abs(value - from) < 1) {
+      setDisplay(value);
+      return;
+    }
     const start = performance.now();
     let raf = 0;
     const tick = (now: number) => {
@@ -121,7 +132,6 @@ export function AnimatedNumber({
       const eased = 1 - Math.pow(1 - t, 3);
       setDisplay(from + (value - from) * eased);
       if (t < 1) raf = requestAnimationFrame(tick);
-      else fromRef.current = value;
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);

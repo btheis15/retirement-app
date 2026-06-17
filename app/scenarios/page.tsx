@@ -3,7 +3,7 @@
 import { useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useStore } from "@/components/HouseholdProvider";
-import { Card, PageTitle, SectionTitle, Pill, Disclaimer, Callout, Explainer, Info } from "@/components/ui";
+import { Card, PageTitle, SectionTitle, Pill, Disclaimer, Callout, Explainer, Info, PageSkeleton } from "@/components/ui";
 import { CompareBars } from "@/components/charts";
 import { projectLifetime } from "@/lib/projection";
 import { StrategyId, BracketTarget } from "@/lib/optimizer";
@@ -123,7 +123,7 @@ export default function ScenariosPage() {
     });
   }, [household, settings.returnRate, settings.inflationRate, settings.endAge, settings.convertUntilAge]);
 
-  if (!ready) return <div className="h-screen" />;
+  if (!ready) return <PageSkeleton />;
 
   const mostWealth = scn.reduce((a, b) => (b.netWealth > a.netWealth ? b : a));
   const lowestTax = scn.reduce((a, b) => (b.lifetimeTax < a.lifetimeTax ? b : a));

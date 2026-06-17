@@ -85,9 +85,16 @@ body {
   --ease-ios: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-ios-in: cubic-bezier(0.4, 0, 1, 1);
   --ease-spring: cubic-bezier(0.34, 1.46, 0.64, 1);
+  --ease-spring-soft: cubic-bezier(0.3, 1.2, 0.5, 1);
   --dur-page: 340ms;
   --dur-sheet: 440ms;
   --dur-tap: 140ms;
+  --dur-step: 380ms;
+  --dur-count: 650ms;
+  --dur-bar: 800ms;
+  /* Layered depth for a tactile, native-card feel. */
+  --shadow-card: 0 1px 2px rgba(15, 31, 36, 0.05), 0 6px 20px rgba(15, 31, 36, 0.05);
+  --shadow-card-hi: 0 2px 4px rgba(15, 31, 36, 0.06), 0 12px 32px rgba(15, 31, 36, 0.08);
 }
 
 @keyframes ro-page-in {
@@ -103,6 +110,26 @@ body {
   from { opacity: 0; transform: translate3d(0, 10px, 0); }
   to   { opacity: 1; transform: translate3d(0, 0, 0); }
 }
+/* Directional wizard step transitions — slide in the way you're navigating. */
+@keyframes ro-step-fwd {
+  from { opacity: 0; transform: translate3d(26px, 0, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes ro-step-back {
+  from { opacity: 0; transform: translate3d(-26px, 0, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+/* Spring "pop" for a celebratory reveal (e.g. the confidence %). */
+@keyframes ro-pop {
+  0%   { opacity: 0; transform: scale(0.6); }
+  60%  { transform: scale(1.06); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes ro-emoji-bounce {
+  0%   { transform: translateY(0) scale(0.8); opacity: 0; }
+  50%  { transform: translateY(-8px) scale(1.1); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
 
 @utility page-enter { animation: ro-page-in var(--dur-page) var(--ease-ios) backwards; }
 @utility scrim-in  { animation: ro-scrim-in 200ms ease-out both; }
@@ -112,6 +139,26 @@ body {
 @utility rise {
   animation: ro-rise 360ms var(--ease-ios) both;
   animation-delay: calc(var(--i, 0) * 45ms);
+}
+@utility step-fwd {
+  animation: ro-step-fwd var(--dur-step) var(--ease-ios) both;
+  contain: layout paint;
+  will-change: transform;
+}
+@utility step-back {
+  animation: ro-step-back var(--dur-step) var(--ease-ios) both;
+  contain: layout paint;
+  will-change: transform;
+}
+@utility pop {
+  animation: ro-pop 520ms var(--ease-spring-soft) both;
+  will-change: transform;
+}
+@utility emoji-bounce {
+  animation: ro-emoji-bounce 560ms var(--ease-spring-soft) both;
+}
+@utility tab-pop {
+  transition: transform 260ms var(--ease-spring);
 }
 
 /* Tactile tap. Press DOWN quick; RELEASE springs back with a small overshoot. */
@@ -126,9 +173,17 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .page-enter, .sheet-panel, .sheet-close, .scrim-in, .scrim-out, .rise {
+  .page-enter, .sheet-panel, .sheet-close, .scrim-in, .scrim-out, .rise,
+  .step-fwd, .step-back, .pop, .emoji-bounce {
     animation: ro-fade-in 1ms linear both;
   }
-  .press { transition: none; }
+  .press, .tab-pop { transition: none; }
   .press:active { transform: none; }
+}
+
+/* Native momentum scrolling + contained overscroll for an app-like feel. */
+html,
+body {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
 }

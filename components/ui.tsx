@@ -14,7 +14,21 @@ export function Card({
   as?: "div" | "section" | "li";
 }) {
   return (
-    <Tag className={`rounded-2xl border border-border bg-card p-4 shadow-sm ${className}`}>{children}</Tag>
+    <Tag className={`rounded-2xl border border-border bg-card p-4 ${className}`} style={{ boxShadow: "var(--shadow-card)" }}>
+      {children}
+    </Tag>
+  );
+}
+
+/** Layout-matched placeholder shown before localStorage hydration — avoids the
+ *  full-viewport white flash on cold load / route change. */
+export function PageSkeleton() {
+  return (
+    <div className="space-y-3 pt-4">
+      <div className="h-7 w-2/3 animate-pulse rounded-lg bg-foreground/5" />
+      <div className="h-44 animate-pulse rounded-2xl bg-foreground/5" />
+      <div className="h-28 animate-pulse rounded-2xl bg-foreground/5" />
+    </div>
   );
 }
 

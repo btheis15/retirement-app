@@ -3,7 +3,7 @@
 import { useMemo, useState, ReactNode } from "react";
 import Link from "next/link";
 import { useStore } from "@/components/HouseholdProvider";
-import { Card, PageTitle, SectionTitle, Pill, Stat, Disclaimer, Callout, Explainer, Info, StackedBar } from "@/components/ui";
+import { Card, PageTitle, SectionTitle, Pill, Stat, Disclaimer, Callout, Explainer, Info, StackedBar, PageSkeleton } from "@/components/ui";
 import { Donut, Legend, AnimatedNumber } from "@/components/charts";
 import { planYear, STRATEGY_META, StrategyId, BracketTarget } from "@/lib/optimizer";
 import { ordinaryBracketCeiling } from "@/lib/tax/engine";
@@ -54,7 +54,7 @@ export default function PlanPage() {
   const { ready, household, settings, updateSettings, updateHousehold } = useStore();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showAll, setShowAll] = useState(false);
-  const year = new Date().getFullYear();
+  const year = useMemo(() => new Date().getFullYear(), []);
 
   const plan = useMemo(
     () => planYear(household, { strategy: settings.strategy, bracketTarget: settings.bracketTarget, year }),
@@ -80,7 +80,7 @@ export default function PlanPage() {
   );
   const thisYearConversion = activeProj.rows[0]?.conversion ?? 0;
 
-  if (!ready) return <div className="h-screen" />;
+  if (!ready) return <PageSkeleton />;
 
   const w = plan.withdrawals;
   const totalDraw = w.pretax + w.taxable + w.roth;

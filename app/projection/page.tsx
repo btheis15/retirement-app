@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useStore } from "@/components/HouseholdProvider";
-import { Card, PageTitle, SectionTitle, Stat, Pill, Disclaimer, Callout, Explainer, Info } from "@/components/ui";
+import { Card, PageTitle, SectionTitle, Stat, Pill, Disclaimer, Callout, Explainer, Info, PageSkeleton } from "@/components/ui";
 import { StackedArea, Bars, CompareBars, AnimatedNumber, FanChart } from "@/components/charts";
 import { projectLifetime } from "@/lib/projection";
 import { detectMilestones } from "@/lib/milestones";
@@ -83,7 +83,7 @@ export default function ProjectionPage() {
     [rm],
   );
 
-  if (!ready) return <div className="h-screen" />;
+  if (!ready) return <PageSkeleton />;
 
   const { chosen, smart, conventional, milestones, conv } = result;
   const rows = chosen.rows;

@@ -35,7 +35,7 @@ export function TabBar() {
                     active ? "font-semibold text-primary" : "text-foreground/50"
                   }`}
                 >
-                  <span className={`text-lg leading-none transition-transform ${active ? "scale-110" : ""}`}>
+                  <span className={`tab-pop text-lg leading-none ${active ? "scale-110" : ""}`}>
                     {tab.icon}
                   </span>
                   {tab.label}

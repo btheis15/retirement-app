@@ -9,7 +9,7 @@
  * numbers"); this is the calm front door so nobody has to study the page.
  */
 
-import { useMemo, useState, ReactNode } from "react";
+import { useMemo, useState, useEffect, useDeferredValue, useTransition, ReactNode } from "react";
 import { useStore } from "@/components/HouseholdProvider";
 import { Card, Pill } from "@/components/ui";
 import { StackedBar } from "@/components/ui";
@@ -28,8 +28,28 @@ const SPEND_MAX = 400_000;
 
 export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   const { household, settings, updateSettings, updateHousehold } = useStore();
-  const year = new Date().getFullYear();
+  const year = useMemo(() => new Date().getFullYear(), []);
   const [step, setStep] = useState(0);
+  const [dir, setDir] = useState<"fwd" | "back">("fwd");
+  const [, startTransition] = useTransition();
+
+  // Step navigation: remember direction so the slide goes the way you're moving.
+  const go = (next: number) => {
+    const clamped = Math.max(0, Math.min(next, 99));
+    setDir(clamped >= step ? "fwd" : "back");
+    setStep(clamped);
+  };
+
+  // Spending slider tracks at 60fps on LOCAL state; the (heavy) recompute is
+  // committed to the store only ~250ms after you stop dragging — so a drag does
+  // zero lifetime-projection work per frame.
+  const [localSpend, setLocalSpend] = useState(household.annualSpending);
+  useEffect(() => setLocalSpend(household.annualSpending), [household.annualSpending]);
+  useEffect(() => {
+    if (localSpend === household.annualSpending) return;
+    const t = setTimeout(() => updateHousehold({ annualSpending: localSpend }), 250);
+    return () => clearTimeout(t);
+  }, [localSpend, household.annualSpending, updateHousehold]);
 
   const inputs = {
     returnRate: settings.returnRate,
@@ -65,12 +85,17 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       }),
     [household, settings, proj.futureRate, year],
   );
-  const confidence = useMemo(() => {
-    const rm = returnModel(household.accounts);
-    return runMonteCarlo(household, activeAssumptions, { expected: rm.expected, volatility: rm.volatility });
-  }, [household, activeAssumptions]);
   const lookAhead = useMemo(() => buildActionPlan(household, proj, 5), [household, proj]);
-  const rec = useMemo(() => recommendPlan(household, inputs, settings.goal), [household, settings]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The two heaviest computations (a 150-sim Monte Carlo and the 7-config plan
+  // grid) run off DEFERRED inputs at low priority, so they catch up a beat after
+  // a drag/goal change without ever blocking the slider, buttons, or animations.
+  const dHousehold = useDeferredValue(household);
+  const dAssumptions = useDeferredValue(activeAssumptions);
+  const confidence = useMemo(() => {
+    const rm = returnModel(dHousehold.accounts);
+    return runMonteCarlo(dHousehold, dAssumptions, { expected: rm.expected, volatility: rm.volatility, runs: 150 });
+  }, [dHousehold, dAssumptions]);
+  const rec = useMemo(() => recommendPlan(dHousehold, inputs, settings.goal), [dHousehold, settings]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Derived, plain-English values for this year ----
   const w = plan.withdrawals;
@@ -90,13 +115,15 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   const isIL = (household.state ?? "IL") === "IL";
 
   const applyGoal = (goal: GoalId) => {
-    const r = recommendPlan(household, inputs, goal);
-    updateSettings({
-      goal,
-      strategy: r.best.config.strategy,
-      bracketTarget: r.best.config.bracketTarget,
-      useConversions: r.best.config.useConversions,
-      convertMode: r.best.config.convertMode,
+    startTransition(() => {
+      const r = recommendPlan(household, inputs, goal);
+      updateSettings({
+        goal,
+        strategy: r.best.config.strategy,
+        bracketTarget: r.best.config.bracketTarget,
+        useConversions: r.best.config.useConversions,
+        convertMode: r.best.config.convertMode,
+      });
     });
   };
 
@@ -151,7 +178,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         </p>
         <div className="mt-5 text-center">
           <div className="tabular text-4xl font-bold text-primary">
-            <AnimatedNumber value={spending} format={(n) => money(n)} />
+            <AnimatedNumber value={localSpend} format={(n) => money(n)} />
           </div>
           <div className="text-[12px] text-foreground/50">per year, after tax</div>
         </div>
@@ -160,8 +187,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           min={0}
           max={SPEND_MAX}
           step={5_000}
-          value={Math.min(SPEND_MAX, household.annualSpending)}
-          onChange={(e) => updateHousehold({ annualSpending: Number(e.target.value) })}
+          value={Math.min(SPEND_MAX, localSpend)}
+          onChange={(e) => setLocalSpend(Number(e.target.value))}
           className="mt-4 w-full accent-primary"
           aria-label="Yearly spending"
         />
@@ -349,10 +376,10 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     eyebrow: "You're set",
     render: () => (
       <div className="text-center">
-        <div className="text-4xl">{confidence.successPct >= 0.8 ? "🎉" : confidence.successPct >= 0.6 ? "👍" : "⚠️"}</div>
+        <div className="emoji-bounce text-4xl">{confidence.successPct >= 0.8 ? "🎉" : confidence.successPct >= 0.6 ? "👍" : "⚠️"}</div>
         <h2 className="mt-2 text-xl font-bold leading-snug">How solid is this plan?</h2>
-        <div className="mt-3 tabular text-4xl font-bold" style={{ color: confidence.successPct >= 0.8 ? "var(--color-gain)" : confidence.successPct >= 0.6 ? "var(--color-accent)" : "var(--color-tax)" }}>
-          {Math.round(confidence.successPct * 100)}%
+        <div className="pop mt-3 tabular text-5xl font-bold" style={{ color: confidence.successPct >= 0.8 ? "var(--color-gain)" : confidence.successPct >= 0.6 ? "var(--color-accent)" : "var(--color-tax)" }}>
+          <AnimatedNumber value={confidence.successPct * 100} format={(n) => `${Math.round(n)}%`} />
         </div>
         <p className="mt-1 text-[13px] text-foreground/65">
           In {confidence.runs} simulations of random market returns, your money lasted to age {settings.endAge} this often.
@@ -372,8 +399,9 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     ),
   });
 
-  const current = steps[Math.min(step, steps.length - 1)];
-  const isLast = step >= steps.length - 1;
+  const safeStep = Math.min(step, steps.length - 1);
+  const current = steps[safeStep];
+  const isLast = safeStep >= steps.length - 1;
 
   return (
     <Card className="overflow-hidden">
@@ -382,37 +410,37 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         {steps.map((s, i) => (
           <button
             key={s.key}
-            onClick={() => setStep(i)}
+            onClick={() => go(i)}
             aria-label={`Step ${i + 1}`}
-            className={`h-1.5 flex-1 rounded-full transition-colors ${i <= step ? "bg-primary" : "bg-foreground/10"}`}
+            className={`press h-1.5 flex-1 rounded-full transition-colors ${i <= safeStep ? "bg-primary" : "bg-foreground/10"}`}
           />
         ))}
       </div>
       <div className="text-[11px] font-semibold uppercase tracking-wide text-primary">{current.eyebrow}</div>
 
-      {/* animated step body (re-keyed so the rise animation replays) */}
-      <div key={current.key} className="rise mt-1">
+      {/* animated step body — re-keyed so the directional slide replays each step */}
+      <div key={current.key} className={`mt-1 min-h-[360px] ${dir === "back" ? "step-back" : "step-fwd"}`}>
         {current.render()}
       </div>
 
       {/* nav */}
       <div className="mt-5 flex items-center justify-between gap-3 border-t border-border pt-3">
         <button
-          onClick={() => setStep((s) => Math.max(0, s - 1))}
-          disabled={step === 0}
+          onClick={() => go(safeStep - 1)}
+          disabled={safeStep === 0}
           className="press rounded-xl px-4 py-2 text-sm font-medium text-foreground/60 disabled:opacity-30"
         >
           ← Back
         </button>
         <span className="text-[12px] text-foreground/45">
-          {step + 1} / {steps.length}
+          {safeStep + 1} / {steps.length}
         </span>
         {isLast ? (
           <button onClick={onSeeDetails} className="press rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-white">
             Finish
           </button>
         ) : (
-          <button onClick={() => setStep((s) => Math.min(steps.length - 1, s + 1))} className="press rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-white">
+          <button onClick={() => go(safeStep + 1)} className="press rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-white">
             Next →
           </button>
         )}
