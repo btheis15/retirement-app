@@ -1,0 +1,26 @@
+{
+  "model": "Gompertz",
+  "source": "Fit to SSA 2021 period life table (survival from age 65)",
+  "sex": {
+    "male": {
+      "m": 85.07,
+      "b": 11.18,
+      "lifeExpectancyAt65": 82.7,
+      "pReach90from65": 0.249,
+      "pReach95from65": 0.104,
+      "fitRMSE": 0.0047
+    },
+    "female": {
+      "m": 88.26,
+      "b": 10.43,
+      "lifeExpectancyAt65": 84.9,
+      "pReach90from65": 0.342,
+      "pReach95from65": 0.165,
+      "fitRMSE": 0.0036
+    }
+  },
+  "blended": {
+    "m": 86.66,
+    "b": 10.8
+  }
+}

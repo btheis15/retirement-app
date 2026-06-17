@@ -1,5 +1,6 @@
 import { Household } from "./accounts";
 import { BracketTarget, StrategyId } from "./optimizer";
+import type { Sex } from "./mortality";
 
 /**
  * What the user is optimizing FOR. The robo-advisor turns a goal into a concrete
@@ -50,6 +51,10 @@ export interface PlannerSettings {
   /** Spending behavior: "constant" real (default) or "guardrails" (Guyton-Klinger
    *  dynamic spending — flex up/down with the markets). Advanced. */
   spendingStrategy: "constant" | "guardrails";
+  /** Sex used for the Gompertz longevity model (survival curve / plan-to age).
+   *  "blended" = unisex average; only affects the longevity display, not taxes. */
+  selfSex: Sex;
+  spouseSex: Sex;
   /** True once the user has manually adjusted the rollover (turned conversions
    *  on/off or switched smooth↔fill) away from the goal's recommendation. While
    *  false, the goal's recommended plan auto-applies — so the user never has to
@@ -81,5 +86,7 @@ export const DEFAULT_SETTINGS: PlannerSettings = {
   realDollars: false,
   heirTaxRate: 0.24,
   spendingStrategy: "constant",
+  selfSex: "blended",
+  spouseSex: "blended",
   planCustomized: false,
 };

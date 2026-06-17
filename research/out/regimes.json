@@ -1,0 +1,32 @@
+{
+  "model": "Regime-Switching Lognormal (Hardy RSLN-2)",
+  "source": "EM fit to annual S&P 500 total returns 1928-2024 (Damodaran)",
+  "regimes": [
+    {
+      "name": "bull",
+      "mean": 0.1603,
+      "vol": 0.1586,
+      "stay": 0.914,
+      "stationaryWeight": 0.882
+    },
+    {
+      "name": "bear",
+      "mean": -0.1973,
+      "vol": 0.1329,
+      "stay": 0.355,
+      "stationaryWeight": 0.118
+    }
+  ],
+  "transition": [
+    [
+      0.914,
+      0.645
+    ],
+    [
+      0.086,
+      0.355
+    ]
+  ],
+  "blendedMean": 0.1183,
+  "logLikelihood": -422.7
+}

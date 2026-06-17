@@ -9,11 +9,14 @@ import { detectMilestones } from "@/lib/milestones";
 import { analyzeConversions } from "@/lib/rothConversion";
 import { runMonteCarlo, MonteCarloResult } from "@/lib/monteCarlo";
 import { runHistoricalBootstrap } from "@/lib/returnsHistorical";
+import { runRegimeSwitching, REGIME_META } from "@/lib/returnsRegime";
 import { runStressTests } from "@/lib/stressTest";
 import { solveSafeSpending, SafeSpendResult } from "@/lib/spendingSolver";
 import { STRATEGY_META } from "@/lib/optimizer";
 import { returnModel } from "@/lib/returns";
-import { survivorFromSettings } from "@/lib/defaults";
+import { survivorFromSettings, PlannerSettings } from "@/lib/defaults";
+import { survivalCurve, planningHorizonAge, probReachAge, lifeExpectancy, paramsFor, MORTALITY_META, Sex } from "@/lib/mortality";
+import { Household } from "@/lib/accounts";
 import { ReturnMethodInfo } from "@/components/ReturnMethodInfo";
 import { SpendingPowerCard } from "@/components/SpendingPowerCard";
 import { money, moneyCompact, percent } from "@/lib/format";
@@ -28,6 +31,8 @@ export default function ProjectionPage() {
   const [solveProg, setSolveProg] = useState(0);
   const [boot, setBoot] = useState<MonteCarloResult | null>(null);
   const [bootLoading, setBootLoading] = useState(false);
+  const [regime, setRegime] = useState<MonteCarloResult | null>(null);
+  const [regimeLoading, setRegimeLoading] = useState(false);
 
   const result = useMemo(() => {
     const base = {
@@ -182,6 +187,30 @@ export default function ProjectionPage() {
     }, 30);
   };
 
+  const runRegime = () => {
+    setRegimeLoading(true);
+    setRegime(null);
+    setTimeout(() => {
+      const res = runRegimeSwitching(
+        household,
+        {
+          strategy: settings.strategy,
+          bracketTarget: settings.bracketTarget,
+          returnRate: settings.returnRate,
+          inflationRate: settings.inflationRate,
+          endAge: settings.endAge,
+          convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
+          survivor: survivorFromSettings(settings),
+          heirTaxRate: settings.heirTaxRate,
+          spendingStrategy: settings.spendingStrategy,
+        },
+        { model: rm, runs: 600 },
+      );
+      setRegime(res);
+      setRegimeLoading(false);
+    }, 30);
+  };
+
   // Stacked-area series (sample is fine — rows are annual).
   const areaRows = rows.map((r) => ({ x: r.year }));
   const series = [
@@ -259,12 +288,14 @@ export default function ProjectionPage() {
             value={settings.endAge}
             onChange={(e) => updateSettings({ endAge: Number(e.target.value) })}
           >
-            {[85, 90, 95, 100].map((v) => (
+            {[85, 90, 95, 100, 105].map((v) => (
               <option key={v} value={v}>{v}</option>
             ))}
           </select>
         </label>
       </div>
+
+      <LongevityCard household={household} settings={settings} updateSettings={updateSettings} real={real} />
 
       {/* Advanced assumptions — kept collapsed so the page stays approachable. */}
       <button
@@ -544,6 +575,44 @@ export default function ProjectionPage() {
           )}
         </div>
 
+        {/* Regime-switching — the actuarial-standard model with volatility clustering. */}
+        <div className="mt-3 rounded-xl border border-border p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[13px] font-semibold">Cross-check with regime-switching (actuarial standard)</span>
+            <button
+              onClick={runRegime}
+              disabled={regimeLoading}
+              className="press rounded-full border border-primary/40 bg-primary/5 px-3 py-1 text-[12px] font-semibold text-primary disabled:opacity-50"
+            >
+              {regimeLoading ? "Running…" : regime ? "Rerun" : "Run →"}
+            </button>
+          </div>
+          {!regime && !regimeLoading && (
+            <p className="mt-1 text-[11px] leading-relaxed text-foreground/55">
+              Re-runs your plan under a <strong>regime-switching model</strong> (Hardy&apos;s RSLN-2 — the standard
+              actuaries use for capital reserving). Equity alternates between a calm bull market and a turbulent bear
+              market that <em>persists</em>, so bad years <strong>cluster</strong> into multi-year drawdowns — the
+              real-world pattern a smooth model understates. Calibrated to 1928–2024 history.
+            </p>
+          )}
+          {regime && !regimeLoading && (
+            <p className="mt-2 text-[12px] leading-relaxed text-foreground/70">
+              Regime-switching: <strong className="text-foreground/90">{Math.round(regime.successPct * 100)}%</strong>{" "}
+              ({Math.round(regime.successCI[0] * 100)}–{Math.round(regime.successCI[1] * 100)}%) vs.{" "}
+              <strong>{Math.round(mc.successPct * 100)}%</strong> from the main model.{" "}
+              {regime.successPct < mc.successPct - 0.02
+                ? "Clustered bear markets stress the plan a bit more — exactly why professionals don't rely on a single i.i.d. model."
+                : Math.abs(regime.successPct - mc.successPct) <= 0.02
+                  ? "The two land in the same place — your result is robust to how returns are modeled."
+                  : "Comparable to the main model."}{" "}
+              <span className="text-foreground/45">
+                (Bull ≈ {percent(REGIME_META.bull.mean, 0)}/yr {percent(REGIME_META.bull.stationaryWeight, 0)} of the
+                time; bear ≈ {percent(REGIME_META.bear.mean, 0)}/yr.)
+              </span>
+            </p>
+          )}
+        </div>
+
         <Info q="Why percentiles instead of “average ± standard deviation”?" sources={[]}>
           <p className="mb-1.5">
             The randomness <em>input</em> is your portfolio&apos;s volatility — a standard deviation (~{percent(mc.volatility, 0)} a
@@ -559,9 +628,13 @@ export default function ProjectionPage() {
           </p>
           <p>
             It captures sequence-of-returns risk (a bad early stretch hurts more), fat tails (crash-sized years), and
-            stocks &amp; bonds falling together — but not serial correlation or regime shifts, so treat the percentage as a
-            directional confidence check, not a guarantee. A concentrated single-stock portfolio is riskier than the
-            volatility shown. Lowering spending, delaying Social Security, or holding more bonds raises the number.
+            stocks &amp; bonds falling together. The main model draws each year independently; for the two effects it
+            doesn&apos;t build in — serial correlation and regime shifts — use the <strong>real-history</strong> and{" "}
+            <strong>regime-switching</strong> cross-checks above, which re-run your exact plan under those dynamics. When
+            all three land in the same neighborhood (they typically do), the result is robust to how returns are
+            modeled — not an artifact of one model&apos;s shape. Treat the percentage as a directional confidence check,
+            not a guarantee; a concentrated single-stock portfolio is riskier than the volatility shown. Lowering
+            spending, delaying Social Security, or holding more bonds raises the number.
           </p>
         </Info>
       </Card>
@@ -846,6 +919,177 @@ function MiniBox({ label, value, tone }: { label: string; value: string; tone?: 
     <div className="rounded-xl border border-border bg-background/60 p-2 text-center">
       <div className="text-[10px] uppercase tracking-wide text-foreground/50">{label}</div>
       <div className={`tabular text-sm font-bold ${color}`}>{value}</div>
+    </div>
+  );
+}
+
+/**
+ * Longevity card — how long should you actually plan for? Uses the Gompertz
+ * survival model (calibrated to SSA 2021, see research/mortality.py) to show the
+ * couple's survival curve and recommend a "plan-to" age that covers all but the
+ * longest 10% longevity tail. Affects only this display + the chosen endAge —
+ * never the tax math.
+ */
+function LongevityCard({
+  household,
+  settings,
+  updateSettings,
+  real,
+}: {
+  household: Household;
+  settings: PlannerSettings;
+  updateSettings: (p: Partial<PlannerSettings>) => void;
+  real: boolean;
+}) {
+  void real;
+  const thisYear = new Date().getFullYear();
+  const selfAge = thisYear - household.self.birthYear;
+  const hasSpouse = !!household.spouse && household.spouse.birthYear > 1900;
+  const spouseAge = hasSpouse ? thisYear - household.spouse.birthYear : null;
+
+  const selfInfo = { currentAge: selfAge, sex: settings.selfSex };
+  const spouseInfo = hasSpouse && spouseAge != null ? { currentAge: spouseAge, sex: settings.spouseSex } : null;
+
+  const curve = survivalCurve(selfInfo, spouseInfo, 105);
+  const planAge = planningHorizonAge(selfInfo, spouseInfo, 0.1);
+  const pReach90 = probReachAge(selfInfo, spouseInfo, 90);
+  const pReach95 = probReachAge(selfInfo, spouseInfo, 95);
+  const pReachEnd = probReachAge(selfInfo, spouseInfo, settings.endAge);
+  const leSelf = lifeExpectancy(selfAge, paramsFor(settings.selfSex));
+  const leSpouse = spouseInfo ? lifeExpectancy(spouseAge!, paramsFor(settings.spouseSex)) : null;
+
+  // Chart geometry: x = self age across the curve, y = probability 0..1.
+  const W = 320, H = 120, padL = 6, padR = 6, padT = 8, padB = 16;
+  const a0 = curve[0].age, a1 = curve[curve.length - 1].age;
+  const xOf = (age: number) => padL + ((age - a0) / (a1 - a0)) * (W - padL - padR);
+  const yOf = (p: number) => padT + (1 - p) * (H - padT - padB);
+  const lineFor = (key: "self" | "spouse" | "either") =>
+    curve.map((pt, i) => `${i === 0 ? "M" : "L"}${xOf(pt.age).toFixed(1)},${yOf(pt[key]).toFixed(1)}`).join(" ");
+  const eitherArea =
+    `M${xOf(a0).toFixed(1)},${yOf(0).toFixed(1)} ` +
+    curve.map((pt) => `L${xOf(pt.age).toFixed(1)},${yOf(pt.either).toFixed(1)}`).join(" ") +
+    ` L${xOf(a1).toFixed(1)},${yOf(0).toFixed(1)} Z`;
+  const endX = xOf(Math.min(a1, Math.max(a0, settings.endAge)));
+  const y10 = yOf(0.1);
+
+  const endShortOfPlan = settings.endAge < planAge;
+  // Snap the suggestion to a value the "Plan to age" select can actually show.
+  const snapTo = [85, 90, 95, 100, 105].find((o) => o >= planAge) ?? 105;
+
+  return (
+    <Card className="mt-3">
+      <SectionTitle hint="Gompertz survival model">How long should you plan for?</SectionTitle>
+      <p className="mt-1 text-[13px] leading-snug text-foreground/70">
+        Picking a horizon is a longevity bet. Rather than guess, this models your odds of being alive at each age
+        from the official SSA life tables — and for a couple, the odds that <em>at least one</em> of you is, since the
+        money has to last until then.
+      </p>
+
+      {/* Sex selectors — affect only this longevity estimate, not the tax math. */}
+      <div className="mt-3 flex flex-wrap gap-4">
+        <SexPick label={household.self.label || "You"} value={settings.selfSex} onChange={(v) => updateSettings({ selfSex: v })} />
+        {spouseInfo && (
+          <SexPick label={household.spouse.label || "Spouse"} value={settings.spouseSex} onChange={(v) => updateSettings({ spouseSex: v })} />
+        )}
+      </div>
+
+      {/* Survival curve */}
+      <div className="mt-3 rounded-xl border border-border bg-background/40 p-2">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Survival probability by age">
+          {/* 10% tail reference line */}
+          <line x1={padL} y1={y10} x2={W - padR} y2={y10} stroke={HEX.tax} strokeDasharray="3 3" strokeOpacity={0.5} />
+          <text x={padL + 1} y={y10 - 2} fontSize="8" fill={HEX.tax} fillOpacity={0.8}>10% still alive</text>
+          {/* either-alive area + lines */}
+          <path d={eitherArea} fill={HEX.primary} fillOpacity={0.1} />
+          {spouseInfo && <path d={lineFor("self")} fill="none" stroke={HEX.ss} strokeWidth={1.2} strokeOpacity={0.7} />}
+          {spouseInfo && <path d={lineFor("spouse")} fill="none" stroke={HEX.roth} strokeWidth={1.2} strokeOpacity={0.7} />}
+          <path d={lineFor("either")} fill="none" stroke={HEX.primary} strokeWidth={2} />
+          {/* chosen plan-to age marker */}
+          <line x1={endX} y1={padT} x2={endX} y2={H - padB} stroke={HEX.accent} strokeWidth={1.5} />
+          <text x={endX} y={padT + 6} fontSize="8" fill={HEX.accent} textAnchor={endX > W / 2 ? "end" : "start"}>
+            plan to {settings.endAge}
+          </text>
+          {/* x-axis age ticks */}
+          {[a0, 80, 90, 100, a1].filter((v, i, arr) => arr.indexOf(v) === i && v >= a0 && v <= a1).map((age) => (
+            <text key={age} x={xOf(age)} y={H - 4} fontSize="8" fill="currentColor" fillOpacity={0.45} textAnchor="middle">
+              {age}
+            </text>
+          ))}
+        </svg>
+        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 px-1 text-[10px]">
+          <Key color={HEX.primary} label={spouseInfo ? "Either of you alive" : "Alive"} />
+          {spouseInfo && <Key color={HEX.ss} label={`${household.self.label || "You"} alive`} />}
+          {spouseInfo && <Key color={HEX.roth} label={`${household.spouse.label || "Spouse"} alive`} />}
+        </div>
+      </div>
+
+      {/* Headline stats */}
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <MiniBox label={spouseInfo ? "Either reaches 90" : "Reach 90"} value={percent(pReach90, 0)} />
+        <MiniBox label={spouseInfo ? "Either reaches 95" : "Reach 95"} value={percent(pReach95, 0)} />
+        <MiniBox label="Suggested plan-to" value={`${planAge}`} tone="roth" />
+      </div>
+
+      <p className="mt-3 text-[12px] leading-snug text-foreground/65">
+        Life expectancy is about <strong>{Math.round(leSelf)}</strong> for {household.self.label || "you"}
+        {leSpouse != null && (
+          <>
+            {" "}and <strong>{Math.round(leSpouse)}</strong> for {household.spouse.label || "your spouse"}
+          </>
+        )}
+        . There&apos;s a <strong>{percent(pReachEnd, 0)}</strong> chance {spouseInfo ? "at least one of you is" : "you are"}{" "}
+        alive at your current plan-to age of <strong>{settings.endAge}</strong>. To cover all but the longest{" "}
+        <strong>10%</strong> of the longevity range, plan to about <strong>age {planAge}</strong>.
+      </p>
+
+      {endShortOfPlan && (
+        <button
+          onClick={() => updateSettings({ endAge: snapTo })}
+          className="press mt-3 w-full rounded-xl border border-roth/40 bg-roth/10 px-4 py-2.5 text-[13px] font-semibold text-roth"
+        >
+          Plan to age {snapTo} → cover the longevity tail
+        </button>
+      )}
+
+      <Info q="Why this matters & how it's modeled" className="mt-3">
+        <p>
+          A plan that runs out of money at 92 looks fine on paper, but a 65-year-old couple has a real chance one
+          spouse lives well past that. Planning only to life expectancy means roughly a coin-flip of outliving the
+          plan — which is why advisors plan to a tail age, not the average.
+        </p>
+        <p className="mt-2">
+          Survival is modeled with the <strong>Gompertz law of mortality</strong>, fit to the{" "}
+          <strong>{MORTALITY_META.source}</strong>. &quot;Average&quot; uses a unisex blend; choosing a sex uses the
+          sex-specific curve. This affects only the suggested horizon and the survival chart — never your taxes or
+          balances.
+        </p>
+      </Info>
+    </Card>
+  );
+}
+
+function SexPick({ label, value, onChange }: { label: string; value: Sex; onChange: (v: Sex) => void }) {
+  const opts: { v: Sex; l: string }[] = [
+    { v: "blended", l: "Average" },
+    { v: "female", l: "Female" },
+    { v: "male", l: "Male" },
+  ];
+  return (
+    <div>
+      <div className="mb-1 text-[11px] font-medium text-foreground/55">{label}</div>
+      <div className="inline-flex overflow-hidden rounded-lg border border-border">
+        {opts.map((o) => (
+          <button
+            key={o.v}
+            onClick={() => onChange(o.v)}
+            className={`press px-2.5 py-1 text-[12px] ${
+              value === o.v ? "bg-primary/15 font-semibold text-primary" : "text-foreground/55"
+            }`}
+          >
+            {o.l}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

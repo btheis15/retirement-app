@@ -1,0 +1,51 @@
+{
+  "model": "4.5% initial real withdrawal, 30-yr horizon, single equity sleeve",
+  "calibration": {
+    "mu": 0.0794,
+    "sigma": 0.1647,
+    "geometricMean": 0.0658
+  },
+  "runs": 20000,
+  "engines": {
+    "normal_iid": {
+      "success": 0.865,
+      "endingP10": 0.0,
+      "endingP50": 2.47,
+      "endingP90": 11.34,
+      "cvar10": 0.0,
+      "medianDepletionAge": 22
+    },
+    "student_t_df6 (app engine)": {
+      "success": 0.863,
+      "endingP10": 0.0,
+      "endingP50": 2.49,
+      "endingP90": 10.95,
+      "cvar10": 0.0,
+      "medianDepletionAge": 22
+    },
+    "regime_switching": {
+      "success": 0.826,
+      "endingP10": 0.0,
+      "endingP50": 2.53,
+      "endingP90": 13.28,
+      "cvar10": 0.0,
+      "medianDepletionAge": 20
+    },
+    "historical_bootstrap": {
+      "success": 0.876,
+      "endingP10": 0.0,
+      "endingP50": 2.48,
+      "endingP90": 9.5,
+      "cvar10": 0.0,
+      "medianDepletionAge": 22
+    },
+    "deterministic_geometric (anchor)": {
+      "success": 1.0,
+      "endingP10": 2.57,
+      "endingP50": 2.57,
+      "endingP90": 2.57,
+      "cvar10": 2.57,
+      "medianDepletionAge": null
+    }
+  }
+}
