@@ -640,6 +640,13 @@ export default function ProjectionPage() {
             not a guarantee; a concentrated single-stock portfolio is riskier than the volatility shown. Lowering
             spending, delaying Social Security, or holding more bonds raises the number.
           </p>
+          <p className="pt-1 text-foreground/60">
+            Want the deeper &ldquo;how &amp; why&rdquo; on each model — and who in the industry uses it, with sources? See{" "}
+            <a href="/learn" className="font-semibold text-primary underline decoration-primary/30 underline-offset-2">
+              The models &amp; methods behind your forecast
+            </a>{" "}
+            on the Learn tab.
+          </p>
         </Info>
       </Card>
 

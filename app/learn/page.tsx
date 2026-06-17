@@ -11,6 +11,166 @@ interface Topic {
   sources: Source[];
 }
 
+/** A model/method behind the forecast, explained for both a retiree and a CFA:
+ *  how it works, why it's used, and who in the industry uses it (with sources). */
+interface Method {
+  icon: string;
+  name: string;
+  /** Plain-English "how it works" — grounded in how this app uses it. */
+  how: string;
+  /** Why the method is used (what problem it solves). */
+  why: string;
+  /** Who uses it in practice + whether it's industry-standard or emerging. */
+  who: string;
+  sources: Source[];
+}
+
+// Drafted and fact-checked (sources web-verified, attribution and "how" checked
+// against the real implementation) by the methods-education-content workflow.
+const METHODS: Method[] = [
+  {
+    icon: "📈",
+    name: "Forward capital-market assumptions",
+    how: `Instead of assuming your savings grow at the roughly 10% a year stocks averaged in the past, this app starts from “forward” estimates of what stocks, bonds, and cash are likely to earn over the next 10–15 years given today's prices: about 7.9% a year for stocks, 4.9% for bonds, and 3.1% for cash (J.P. Morgan's 2026 figures, cross-checked against Vanguard and Morningstar). The app sorts each of your actual holdings into stocks, bonds, or cash, blends those rates by how much you own of each, and uses the result both for a single “expected return” and for the thousands of what-if market simulations. It also assumes stocks and bonds can fall together in a bad year (a +0.16 correlation), as they did in 2022.`,
+    why: `Stock prices are high relative to earnings today, so most professional forecasters expect lower returns ahead than long-run history suggests; planning on the old 10% would likely overstate how much you can safely spend. Using honest forward estimates gives you a more realistic, and slightly cautious, picture of whether your money lasts.`,
+    who: `Forward capital-market assumptions are an industry standard for serious retirement and institutional planning: J.P. Morgan, Vanguard (its VCMM model), BlackRock, and Morningstar all publish them, and the CFA Institute teaches the method to charterholders as “capital market expectations.” Morningstar's retirement researchers (including David Blanchett, now at PGIM) use forward returns to set a safe withdrawal rate that has run well below the old 4% rule — dipping to 3.3% in 2021 and landing near 3.9% for 2026. This app's use of J.P. Morgan's published figures mirrors what a careful advisor or CFA would do.`,
+    sources: [
+      { label: "J.P. Morgan 2026 Long-Term Capital Market Assumptions", url: "https://am.jpmorgan.com/content/dam/jpm-am-aem/americas/us/en/institutional/insights/portfolio-insights/ltcma-full-report.pdf" },
+      { label: "CFA Institute — Capital Market Expectations: Forecasting Asset-Class Returns", url: "https://www.cfainstitute.org/insights/professional-learning/refresher-readings/2026/capital-market-expectations-part-ii" },
+      { label: "Vanguard Capital Markets Model (VCMM) return forecasts", url: "https://corporate.vanguard.com/content/corporatesite/us/en/corp/vemo/vemo-return-forecasts.html" },
+      { label: "Morningstar — What's a Safe Retirement Withdrawal Rate for 2026?", url: "https://www.morningstar.com/retirement/whats-safe-retirement-withdrawal-rate-2026" },
+    ],
+  },
+  {
+    icon: "🎲",
+    name: "Monte Carlo simulation",
+    how: `This app plays out your whole retirement 1,000 times, and in each run it “rolls the dice” on the markets every single year instead of assuming one steady average return. It doesn't pick returns out of thin air: stocks, bonds, cash, and inflation move together the way they really do (so a 2022-style year where stocks AND bonds fall while inflation spikes can actually happen), and it deliberately allows more big crashes and booms than a simple bell curve would (“fat tails”). It then reports the share of those 1,000 runs where your money lasted to the end — your “probability of success,” shown as an honest range like “90% (88–92%)” rather than a single falsely precise number — plus how deep the shortfalls were in the bad runs.`,
+    why: `A single “average return” hides the real danger: a few bad years early in retirement, while you're withdrawing, can sink a plan even if the long-run average looks fine. Running 1,000 varied futures shows you the odds and the range of outcomes, not one tidy guess.`,
+    who: `Monte Carlo is the most common method in retirement planning, built into the major tools advisors use (eMoney, MoneyGuidePro, RightCapital) and run by firms like T. Rowe Price and Morningstar (whose retirement-research head, David Blanchett, CFA, publishes on it). “Probability of success” is the usual headline number, though it is actively debated: Blanchett and others argue it ignores how badly a plan falls short — which is why this app also reports failure depth.`,
+    sources: [
+      { label: "T. Rowe Price — How a Monte Carlo analysis could help your retirement plan", url: "https://www.troweprice.com/personal-investing/resources/insights/how-monte-carlo-analysis-could-improve-your-retirement-plan.html" },
+      { label: "CFA Institute (David Blanchett, CFA) — Rethinking Retirement Planning Outcome Metrics", url: "https://rpc.cfainstitute.org/blogs/enterprising-investor/2023/rethinking-outcome-metrics-for-financial-planning" },
+      { label: "Kitces.com — Probability-of-Success-Driven Guardrails", url: "https://www.kitces.com/blog/probability-of-success-driven-guardrails-advantages-monte-carlo-simulations-analysis-communication/" },
+      { label: "eMoney Advisor — Monte Carlo Simulations for Retirement Planning", url: "https://emoneyadvisor.com/blog/monte-carlo-simulations-for-retirement-sparking-conversations-that-matter/" },
+    ],
+  },
+  {
+    icon: "🐡",
+    name: "Fat tails & correlated assets (Student-t + Cholesky)",
+    how: `Instead of assuming your investments earn a smooth average each year, the app rolls the dice 1,000 times to see how your money holds up. First, “fat tails”: rather than a tidy bell curve, each year's market shock is drawn from a Student-t distribution (set to about 6 “degrees of freedom”), which makes big crashes and big booms happen far more often than a bell curve allows. Second, “correlated assets”: stocks, bonds, cash, and inflation are drawn together using a correlation matrix and a math step called Cholesky decomposition, so a nasty year where stocks AND bonds fall while inflation spikes (like 2022) can actually show up. Each year the same fat-tail “amplifier” is shared across all the asset classes, so when one tail disaster hits, it tends to hit everything at once — the way real crises do.`,
+    why: `Ordinary bell-curve models quietly underestimate disasters, treating a 1987- or 2022-style event as nearly impossible, and they wrongly assume bonds always cushion a stock drop. Modeling fat tails and linked assets gives you an honest picture of the bad years that matter most when you are drawing down savings.`,
+    who: `Cholesky-correlated draws and Student-t fat tails are well-established quantitative techniques: they are taught in the CFA Institute curriculum and used in bank risk models (such as Value-at-Risk). Among consumer retirement calculators this is more rigorous than the norm, since many mass-market tools still rely on plain bell curves or fixed historical scenarios. Worth noting honestly: experts disagree on how much fat tails change retirement results, so treat it as a thoughtful refinement, not a settled standard.`,
+    sources: [
+      { label: "CFA Institute — Backtesting and Simulation (notes fat tails; multivariate skewed-t)", url: "https://www.cfainstitute.org/insights/professional-learning/refresher-readings/2026/backtesting-and-simulation" },
+      { label: "Burgess (2022) — Correlated Monte Carlo Simulation using Cholesky Decomposition (SSRN)", url: "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4066115" },
+      { label: "Callan — Stock and Bond Declines at the Same Time in 2022", url: "https://www.callan.com/blog/stock-and-bond-declines/" },
+      { label: "IMF — Stock-Bond Diversification Offers Less Protection From Selloffs", url: "https://www.imf.org/en/blogs/articles/2026/02/18/stock-bond-diversification-offers-less-protection-from-market-selloffs" },
+    ],
+  },
+  {
+    icon: "🔀",
+    name: "Regime-switching returns (Hardy RSLN-2)",
+    how: `This app runs a separate “what-if” simulation where the stock market flips between two moods: a calm, mostly-rising state and an occasional bad-news state with a negative average year. Each simulated year it draws a return based on the current mood, then decides whether next year stays put or switches — and because a bad year is more likely to be followed by another bad one (clustering), it produces deeper, more realistic crashes than a model that treats every year as independent. Importantly, the app re-tunes the two moods so this simulation's long-run average return and overall ups-and-downs exactly match its main forecast; the only thing that changes is the SHAPE — losses bunching together. It then runs your plan 1,000 times through this rougher market and reports how often the money lasts. It's flagged as an educational cross-check, since the bad-mood pattern is pieced together from only about 11 of 97 historical years (S&P 500, 1928–2024), so its numbers carry wide error bars.`,
+    why: `A retirement is most vulnerable to a run of bad years bunched early on, and ordinary simulations that scatter good and bad years independently tend to understate that danger. This model deliberately makes downturns cluster, giving you a tougher, more honest stress test of whether your savings survive a rough patch.`,
+    who: `This is a recognized actuarial approach. The two-state regime-switching lognormal model (RSLN-2) comes from Professor Mary Hardy (University of Waterloo), and it is one of the equity models U.S. actuaries are explicitly allowed to use to meet the official capital-setting rules for variable-annuity guarantees (the American Academy of Actuaries' C3 Phase II / AG 43 calibration criteria — though the regulators' own benchmark scenarios use a related “stochastic volatility” model, not RSLN itself). It builds on economist James Hamilton's widely used Markov-switching method for modeling business cycles.`,
+    sources: [
+      { label: "Hardy (2001) — A Regime-Switching Model of Long-Term Stock Returns, North American Actuarial Journal", url: "https://www.tandfonline.com/doi/abs/10.1080/10920277.2001.10595984" },
+      { label: "American Academy of Actuaries — C3 Phase II Risk-Based Capital for Variable Annuities (2005)", url: "https://www.actuary.org/wp-content/uploads/2024/10/c3supp_march05.pdf" },
+      { label: "American Academy of Actuaries — Equity Return Calibration Criteria (2013)", url: "https://www.actuary.org/sites/default/files/files/VAREQ_Equity_Calibration_Criteria_Analysis_6-4-13.pdf" },
+      { label: "Hamilton — Regime-Switching Models (the Markov-switching foundation)", url: "https://econweb.ucsd.edu/~jhamilto/palgrav1.pdf" },
+    ],
+  },
+  {
+    icon: "🕰️",
+    name: "Historical block bootstrap",
+    how: `This is the app's “second-opinion” engine. Instead of inventing returns from a formula, it grabs random stretches of REAL U.S. market history (1928–2024) and stitches them together to build each what-if lifetime. Crucially, it copies 8 consecutive years at a time — a “block” — rather than single scrambled years, so the actual run-of-play is preserved: the way a bad 1973–74 tends to be followed by a recovery, or how a rough start (like the 1966 stagflation retiree) can dig a hole that haunts a plan for decades. To stay a fair comparison to the main forecast, every historical return is nudged up or down by a fixed amount so the long-run average matches today's 2026 outlook, while history's real ups, downs, and rare shocks stay intact. The app runs 1,000 of these stitched lifetimes and reports how often your money lasts.`,
+    why: `It tests your plan against history roughly as it unfolded — including the gut-punch combinations of bad stocks, bad bonds, and high inflation happening together (like 2022) — rather than treating each year as independent. Keeping years in their real order is what captures “sequence risk”: the danger that a market slump in your first retirement years does far more damage than the same slump later.`,
+    who: `Running a plan through actual market history is a common “second opinion” in popular retirement tools like FIRECalc, cFIREsim, and FI Calc. This app goes one step further by reshuffling history in 8-year blocks — a technique known in statistics as the “circular block bootstrap,” related to Politis and Romano's well-cited bootstrap work; it's a recognized academic method but less common in consumer calculators than plain historical replay. The underlying return data is the widely cited dataset from Professor Aswath Damodaran at NYU Stern.`,
+    sources: [
+      { label: "Aswath Damodaran (NYU Stern) — Historical Returns on Stocks, Bonds and Bills 1928–2024", url: "https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/histretSP.html" },
+      { label: "Politis & Romano (1994) — The Stationary Bootstrap, JASA", url: "https://www.tandfonline.com/doi/abs/10.1080/01621459.1994.10476870" },
+      { label: "Kitces.com — Understanding Sequence of Return Risk & Safe Withdrawal Rates", url: "https://www.kitces.com/blog/understanding-sequence-of-return-risk-safe-withdrawal-rates-bear-market-crashes-and-bad-decades/" },
+      { label: "FI Calc — historical-simulation retirement calculator", url: "https://ficalc.app/" },
+    ],
+  },
+  {
+    icon: "🛟",
+    name: "Dynamic spending guardrails (Guyton-Klinger)",
+    how: `Instead of giving yourself the same paycheck every year (just bumped for inflation), this setting lets your spending breathe with your portfolio. Each year the app compares your current withdrawal rate (this year's spending divided by your portfolio) to the rate you started with, then applies three rules. After a down-market year it skips that year's inflation raise, but only if your withdrawal rate has already crept above your starting rate (the “freeze”). It trims spending 10% if your rate has drifted more than 20% above where you started (the “cut”), and gives you a 10% raise if the rate falls more than 20% below your starting point (the “raise”). To avoid pointless belt-tightening near the end, the app switches off the cut rule once you have about 15 years or fewer left.`,
+    why: `Being willing to flex your spending a little — trimming in bad years and enjoying more in good ones — lets your money last longer than rigidly spending the same inflation-adjusted amount no matter what. It materially raises the odds you don't run out.`,
+    who: `This is a well-known, widely taught approach named after planner Jonathan Guyton and William Klinger, who published it in the March 2006 Journal of Financial Planning. It's offered as a dynamic-spending option in advisor software such as RightCapital, and the broader “flexible spending” idea is studied by Morningstar's retirement researchers. It's popular but not the only flavor: planner Michael Kitces argues newer “risk-based” guardrails (built into tools like Income Lab) can soften the deepest spending cuts.`,
+    sources: [
+      { label: "Guyton & Klinger (2006) — Decision Rules and Maximum Initial Withdrawal Rates, Journal of Financial Planning", url: "https://www.financialplanningassociation.org/sites/default/files/2021-11/2006%20-%20Guyton%20and%20Klinger%20-%20Decision%20Rules%20and%20SWR%20(1).PDF" },
+      { label: "Kitces.com — Why Guyton-Klinger Guardrails Can Be Too Risky (and risk-based guardrails)", url: "https://www.kitces.com/blog/guyton-klinger-guardrails-retirement-income-rules-risk-based/" },
+      { label: "Morningstar (Christine Benz) — When It Comes to Retirement Spending, Flexibility Pays", url: "https://www.morningstar.com/retirement/when-it-comes-retirement-spending-flexibility-pays" },
+    ],
+  },
+  {
+    icon: "💧",
+    name: "Safe / sustainable withdrawal rate",
+    how: `A “safe withdrawal rate” answers a simple question: how much can you pull from your savings each year and still have a strong chance of never running out? This app skips the old rule-of-thumb and instead runs a Monte Carlo simulation (many pretend market futures, about 120 per test by default), then homes in on the spending level that hits a chosen success rate using a fast narrowing-in search called bisection. It reports two numbers: a cautious “plan-with” amount (about a 90% chance of lasting) and a “best-guess” amount (about 50%, the middle of the road).`,
+    why: `Spending too much risks outliving your money; spending too little means an unnecessarily thin retirement you can't get back. Showing both a careful figure and a realistic middle estimate gives you a concrete dollar amount to plan around instead of a vague guess.`,
+    who: `The 90% “plan-with” figure is common practice: the leading advisor platforms MoneyGuidePro and eMoney both center on a “probability of success” score, and Morningstar's annual research targets 90% success over a 30-year retirement. The 50% “best-guess” view is a newer, still-debated idea argued by planner Michael Kitces; many advisors still treat odds below 70% as worrying, and Kitces ties a 50% target to adjusting your spending over time — which this app does not assume in the safe-spending solver.`,
+    sources: [
+      { label: "Bengen (1994) — Determining Withdrawal Rates Using Historical Data (the 4% rule)", url: "https://en.wikipedia.org/wiki/William_Bengen" },
+      { label: "Cooley, Hubbard & Walz (1998) — the “Trinity Study”, AAII Journal", url: "https://www.aaii.com/journal/199802/feature.pdf" },
+      { label: "Morningstar — What's a Safe Retirement Withdrawal Rate? (90% success over 30 years)", url: "https://www.morningstar.com/retirement/whats-safe-retirement-withdrawal-rate-2026" },
+      { label: "Kitces.com — A Monte Carlo 50% Success Probability Can Work", url: "https://www.kitces.com/blog/monte-carlo-retirement-projection-probability-success-adjustment-minimum-odds/" },
+    ],
+  },
+  {
+    icon: "⏳",
+    name: "Longevity modeling (Gompertz mortality)",
+    how: `The app uses a Gompertz mortality curve — a long-established formula showing that the chance of dying rises steadily with age — to estimate the odds you (and a spouse) are still alive at every future age, instead of just assuming everyone lives to a fixed “plan to 95.” Its two dials, m (the most likely age at death) and b (how spread out deaths are), were fit ahead of time to the Social Security Administration's 2021 life table. For a couple it computes “last survivor” odds — the chance at least one of you is still alive — because the money has to last until both have passed. It then suggests a defensible planning age: the age at which the last survivor has only a 10% chance of still being alive.`,
+    why: `Outliving your savings is the central risk in retirement, and a single guessed age either wastes money by being too cautious or runs you dry by being too optimistic. Modeling the full probability of reaching each age — especially the “at least one of us survives” odds for couples — sizes the plan to a realistic, defensible horizon instead of a round number.`,
+    who: `Planning around survival probabilities (rather than a single round age) is widely recommended in the profession — championed by Morningstar's David Blanchett and the planning research site Kitces.com. The specific Gompertz formula this app uses is a well-established method tied to finance professor Moshe Milevsky; it's common in research and some tools, though many planners instead use raw life tables or Monte Carlo software. The free Actuaries Longevity Illustrator — from the Society of Actuaries and the American Academy of Actuaries — does something very similar for consumers.`,
+    sources: [
+      { label: "Milevsky (2020) — Calibrating Gompertz in reverse (Insurance: Mathematics and Economics)", url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC7339829/" },
+      { label: "SSA — Actuarial Life Table (death probabilities & life expectancy by age and sex)", url: "https://www.ssa.gov/oact/STATS/table4c6.html" },
+      { label: "Kitces.com — Life Expectancy Assumptions: Singles, Couples, and Survivors", url: "https://www.kitces.com/blog/life-expectancy-assumptions-in-retirement-plans-singles-couples-and-survivors/" },
+      { label: "Actuaries Longevity Illustrator (Society of Actuaries & American Academy of Actuaries)", url: "https://www.longevityillustrator.org/" },
+    ],
+  },
+  {
+    icon: "📉",
+    name: "Tail-risk metrics (CVaR / Expected Shortfall)",
+    how: `After running 1,000 simulated lifetimes of your plan, the app lines up every run's ending nest egg from worst to best, takes the worst 10% of those outcomes, and averages them. That single average is the “tail-risk” number — also called CVaR or Expected Shortfall — in plain terms, “if things go badly, here's roughly how much you'd be left with on average.” It reports this both in future dollars and in today's dollars, so you can read it in money you understand.`,
+    why: `A plan can look fine “on average” yet still hide ugly worst cases; this number answers “how bad is bad?” rather than just “how often do I fall short?” It focuses on the depth of the rough outcomes — exactly the scenarios a retiree most needs protection against.`,
+    who: `This is a well-established, industry-standard risk measure. Global bank regulators (the Basel Committee's FRTB rules) now require Expected Shortfall at the 97.5% level instead of plain Value-at-Risk for market-risk capital, and the CFA Institute's research describes it as a “coherent” risk measure that fixes VaR's blind spot in the tail. In retirement work it's less universal: researchers like Morningstar's David Blanchett have pushed the field beyond simple pass/fail success rates toward measuring how deep shortfalls go — the same idea this metric captures.`,
+    sources: [
+      { label: "Rockafellar & Uryasev (2000) — Optimization of Conditional Value-at-Risk, Journal of Risk", url: "https://sites.math.washington.edu/~rtr/papers/rtr179-CVaR1.pdf" },
+      { label: "Artzner, Delbaen, Eber & Heath (1999) — Coherent Measures of Risk", url: "https://onlinelibrary.wiley.com/doi/10.1111/1467-9965.00068" },
+      { label: "Basel Committee (2019) — Minimum capital requirements for market risk (FRTB, 97.5% ES)", url: "https://www.bis.org/bcbs/publ/d457_note.pdf" },
+      { label: "CFA Institute Research Foundation — Risk Management: A Review (VaR, ES, CVaR)", url: "https://www.cfainstitute.org/sites/default/files/-/media/documents/book/rf-lit-review/2009/rflr-v4-n1-1-pdf.pdf" },
+    ],
+  },
+  {
+    icon: "🔥",
+    name: "Stochastic inflation (AR-1)",
+    how: `Instead of assuming inflation sits at one fixed number forever, this app lets it drift and wander year to year, the way real inflation does. It uses an AR(1) process (“autoregressive” — a fancy term for “this year's inflation remembers last year's”). Each simulated year, inflation pulls back toward the rate you assumed but carries about 60% of last year's gap forward, then gets a random nudge — so a high-inflation year tends to be followed by another high one, and the figure is kept inside a sane band (−2% to +12%). Crucially, that nudge is tied to bond returns: inflation is given a negative correlation with bonds, so a year when inflation spikes tends to be a year when bonds fall — recreating a 2022-style stretch where stocks and bonds dropped together, the single biggest threat to someone just entering retirement.`,
+    why: `Inflation is the quiet force that decides whether your money still buys groceries in 20 years, and it tends to come in sticky stretches, not one-off blips. Modeling it as a persistent, wandering series — rather than a flat guess — gives an honest picture of the years when rising prices and falling bonds gang up at the worst possible time.`,
+    who: `Modeling inflation as a mean-reverting AR(1) series is the standard approach in actuarial economic scenario generators — the Wilkie-style models documented in the joint Casualty Actuarial Society / Society of Actuaries framework by Ahlgrim, D'Arcy and Gorvett do exactly this. It's still uncommon in everyday consumer retirement calculators, which usually draw each year's inflation independently; retirement researcher David Blanchett (PGIM, formerly Morningstar) and co-authors have used autoregressive models for precisely this reason. So this app's method is best described as research- and actuarial-grade, not a consumer-tool norm.`,
+    sources: [
+      { label: "Ahlgrim, D'Arcy & Gorvett — Modeling Financial Scenarios (Casualty Actuarial Society / SOA)", url: "https://www.casact.org/abstract/modeling-financial-scenarios-framework-actuarial-profession" },
+      { label: "Blanchett, Finke & Pfau (2013) — Low Bond Yields and Safe Portfolio Withdrawal Rates (SSRN)", url: "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2286146" },
+      { label: "Actuarial Standard of Practice No. 27 — Selection of Economic Assumptions", url: "http://www.actuarialstandardsboard.org/asops/selection-of-economic-assumptions-for-measuring-pension-obligations-effective-august-1-2021/" },
+      { label: "J.P. Morgan Private Bank (2025) — how 2022 broke the usual stock-bond relationship", url: "https://privatebank.jpmorgan.com/nam/en/insights/markets-and-investing/tmt/beyond-bonds-how-to-protect-against-inflation-led-shocks" },
+    ],
+  },
+  {
+    icon: "🧮",
+    name: "Geometric vs. arithmetic returns (volatility drag)",
+    how: `Your money's “average” return can be told two ways, and this app uses both on purpose. The arithmetic average is the simple year-to-year average (the app's “expected” return — for example, the 7.94% it assumes for U.S. stocks); the geometric average is the rate your balance actually compounds at after good and bad years partly cancel out, and it's always lower. The app gets the compound rate by subtracting “volatility drag” — roughly half the variance — from the arithmetic average. It uses the higher arithmetic mean in the random year-by-year Monte-Carlo simulation (the correct single-year expectation) but compounds the lower geometric rate as the steady “Moderate” straight-line scenario, so it never overstates your likely ending balance.`,
+    why: `Using the simple average to project decades of compounding quietly inflates the forecast, because a 20% loss needs a 25% gain just to break even — losses hurt more than equal gains help. Splitting the two keeps the app honest: optimistic where randomness belongs, conservative where compounding does.`,
+    who: `This split is a long-established, mainstream practice. The CFA Institute curriculum teaches the geometric mean as the right measure of multi-year compounded growth, and the “subtract about half the variance” shortcut is the same one used by planner-educator Michael Kitces and the Bogleheads investing community. Professional forecasters report it too: J.P. Morgan's Long-Term Capital Market Assumptions — the source this app's stock and bond figures come from — publish both arithmetic and compound (geometric) returns.`,
+    sources: [
+      { label: "Jacquier, Kane & Marcus (2003) — Geometric or Arithmetic Mean: A Reconsideration (CFA Institute)", url: "https://rpc.cfainstitute.org/research/financial-analysts-journal/2003/geometric-or-arithmetic-mean-a-reconsideration" },
+      { label: "Kitces.com — Volatility Drag: How Variance Drains Investment Returns", url: "https://www.kitces.com/blog/volatility-drag-variance-drain-mean-arithmetic-vs-geometric-average-investment-returns/" },
+      { label: "Bogleheads Wiki — Variance drain", url: "https://www.bogleheads.org/wiki/Variance_drain" },
+    ],
+  },
+];
+
 const TOPICS: Topic[] = [
   {
     icon: "🪣",
@@ -241,6 +401,7 @@ const TOPICS: Topic[] = [
 
 export default function LearnPage() {
   const [open, setOpen] = useState<number | null>(0);
+  const [openMethod, setOpenMethod] = useState<number | null>(null);
   return (
     <div>
       <PageTitle title="How the rules work" subtitle="Plain-English explanations behind every recommendation — with sources." />
@@ -283,9 +444,67 @@ export default function LearnPage() {
         })}
       </div>
 
+      {METHODS.length > 0 && (
+        <div className="mt-8">
+          <h2 className="text-lg font-bold">The models &amp; methods behind your forecast</h2>
+          <p className="mb-3 mt-0.5 text-[13px] leading-relaxed text-foreground/60">
+            The forecast and Monte Carlo lean on techniques from professional financial planning, investment risk, and
+            actuarial science. Here&apos;s each one in plain English — what it does, why it&apos;s used, and who in the
+            industry relies on it — with sources.
+          </p>
+          <div className="space-y-2 lg:grid lg:grid-cols-2 lg:items-start lg:gap-3 lg:space-y-0">
+            {METHODS.map((m, i) => {
+              const isOpen = openMethod === i;
+              return (
+                <Card as="div" key={i} className="overflow-hidden">
+                  <button
+                    onClick={() => setOpenMethod(isOpen ? null : i)}
+                    className="press flex w-full items-center justify-between text-left"
+                  >
+                    <span className="flex items-center gap-2 font-semibold">
+                      <span className="text-lg">{m.icon}</span> {m.name}
+                    </span>
+                    <span className={`text-foreground/40 transition-transform ${isOpen ? "rotate-180" : ""}`}>⌄</span>
+                  </button>
+                  {isOpen && (
+                    <div className="rise mt-3 space-y-3 border-t border-border pt-3">
+                      <MethodBlock label="How it works" text={m.how} />
+                      <MethodBlock label="Why it's used" text={m.why} />
+                      <MethodBlock label="Who uses it" text={m.who} />
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 pt-1">
+                        {m.sources.map((s, j) => (
+                          <a
+                            key={j}
+                            href={s.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[11px] text-primary underline decoration-primary/30 underline-offset-2"
+                          >
+                            {s.label} ↗
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="mt-6">
         <Disclaimer />
       </div>
+    </div>
+  );
+}
+
+function MethodBlock({ label, text }: { label: string; text: string }) {
+  return (
+    <div>
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-primary/70">{label}</div>
+      <p className="mt-0.5 text-[13px] leading-relaxed text-foreground/75">{text}</p>
     </div>
   );
 }
