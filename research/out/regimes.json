@@ -6,15 +6,19 @@
       "name": "bull",
       "mean": 0.1603,
       "vol": 0.1586,
+      "meanSE": 0.0265,
       "stay": 0.914,
-      "stationaryWeight": 0.882
+      "stationaryWeight": 0.882,
+      "expectedSpellYears": 11.6
     },
     {
       "name": "bear",
       "mean": -0.1973,
       "vol": 0.1329,
+      "meanSE": 0.0766,
       "stay": 0.355,
-      "stationaryWeight": 0.118
+      "stationaryWeight": 0.118,
+      "expectedSpellYears": 1.6
     }
   ],
   "transition": [
@@ -28,5 +32,7 @@
     ]
   ],
   "blendedMean": 0.1183,
+  "mixtureVol": 0.1937,
+  "bearYearsIdentified": 11.4,
   "logLikelihood": -422.7
 }

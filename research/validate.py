@@ -53,16 +53,23 @@ def run(paths):
     success = float(np.mean(bal > 0))
     ending = bal
     p10, p50, p90 = np.percentile(ending, [10, 50, 90])
-    # CVaR(10): mean terminal wealth in the worst 10% of outcomes.
-    cutoff = np.percentile(ending, 10)
-    cvar = float(np.mean(ending[ending <= cutoff]))
+    # Expected Shortfall at 25% (mean terminal in the worst quartile). We use 25%,
+    # not 10%, because at this 4.5% withdrawal rate >10% of paths deplete to exactly
+    # 0, so a worst-10% mean would be a degenerate constant 0 for every engine and
+    # carry no discriminating information. The worst quartile still includes some
+    # surviving (positive) paths, so it varies meaningfully across engines.
+    es25_cut = np.percentile(ending, 25)
+    es25 = float(np.mean(ending[ending <= es25_cut]))
+    failed = depleted_year[depleted_year <= YEARS]
     return {
         "success": round(success, 3),
+        "failureRate": round(1 - success, 3),
         "endingP10": round(float(p10), 2),
         "endingP50": round(float(p50), 2),
         "endingP90": round(float(p90), 2),
-        "cvar10": round(cvar, 2),
-        "medianDepletionAge": int(np.median(depleted_year[depleted_year <= YEARS])) if np.any(depleted_year <= YEARS) else None,
+        "es25": round(es25, 2),
+        # Among paths that failed: median 1-based YEAR (not age) the money ran out.
+        "medianDepletionYear": int(np.median(failed)) + 1 if failed.size else None,
     }
 
 
@@ -95,10 +102,10 @@ def engine_regimes():
 
 
 def engine_bootstrap():
-    # Circular block bootstrap of historical equity returns, detrended so the
-    # block-mean matches the forward CMA (same approach as the TS engine).
+    # Circular block bootstrap of historical equity returns. The block ORDERING
+    # (serial correlation) is what we're testing; the level/vol are set later by
+    # standardize() to the common forward target, so no recenter is needed here.
     hist = STOCK.copy()
-    hist = hist - hist.mean() + GEO   # recenter to forward geometric mean
     n = len(hist)
     block = 8
     out = np.empty((N, YEARS))
@@ -142,15 +149,20 @@ def main():
         json.dump(report, f, indent=2)
 
     print(f"=== Engine validation: {W:.1%} real withdrawal, {YEARS}yr, equity mu={MU:.2%} sd={SIGMA:.2%} ===")
-    print(f"{'engine':<32} {'success':>8} {'endP10':>8} {'endP50':>8} {'endP90':>8} {'CVaR10':>8}")
+    print(f"{'engine':<32} {'success':>8} {'endP50':>8} {'endP90':>8} {'ES25':>8} {'deplYr':>7}")
     for name, r in results.items():
-        print(f"{name:<32} {r['success']:>8.1%} {r['endingP10']:>8.2f} {r['endingP50']:>8.2f} "
-              f"{r['endingP90']:>8.2f} {r['cvar10']:>8.2f}")
-    succ = [r["success"] for n, r in results.items() if "anchor" not in n]
+        dy = r["medianDepletionYear"]
+        print(f"{name:<32} {r['success']:>8.1%} {r['endingP50']:>8.2f} {r['endingP90']:>8.2f} "
+              f"{r['es25']:>8.2f} {('—' if dy is None else dy):>7}")
+    stoch = [(n, r) for n, r in results.items() if "anchor" not in n]
+    succ = [r["success"] for _, r in stoch]
     spread = max(succ) - min(succ)
-    print(f"\nStochastic success-rate spread across 4 engines: {spread:.1%} "
+    es = [r["es25"] for _, r in stoch]
+    print(f"\nStochastic success-rate spread across {len(stoch)} engines: {spread:.1%} "
           f"({'TIGHT — models agree' if spread <= 0.06 else 'WIDE — investigate'})")
-    print("Ending wealth in multiples of the starting balance. Written to research/out/validation.json")
+    print(f"Worst-quartile expected terminal (ES25) ranges {min(es):.2f}–{max(es):.2f}× start across engines.")
+    print("Ending wealth in multiples of the starting balance; deplYr = median year of depletion among failures.")
+    print("Written to research/out/validation.json")
 
 
 if __name__ == "__main__":

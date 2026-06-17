@@ -5,7 +5,7 @@
     "male": {
       "m": 85.07,
       "b": 11.18,
-      "lifeExpectancyAt65": 82.7,
+      "lifeExpectancyAt65": 83.2,
       "pReach90from65": 0.249,
       "pReach95from65": 0.104,
       "fitRMSE": 0.0047
@@ -13,14 +13,15 @@
     "female": {
       "m": 88.26,
       "b": 10.43,
-      "lifeExpectancyAt65": 84.9,
+      "lifeExpectancyAt65": 85.4,
       "pReach90from65": 0.342,
       "pReach95from65": 0.165,
       "fitRMSE": 0.0036
     }
   },
   "blended": {
-    "m": 86.66,
-    "b": 10.8
+    "m": 86.67,
+    "b": 10.92,
+    "lifeExpectancyAt65": 84.3
   }
 }

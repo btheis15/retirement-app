@@ -58,11 +58,14 @@ export function jointSurvivalToAge(
   return 1 - (1 - sa) * (1 - sb);
 }
 
-/** Curtate life expectancy from `age` (Σ survival probabilities), capped at 120. */
+/** COMPLETE life expectancy (age + remaining years) under Gompertz(m, b), capped
+ *  at 120. The curtate sum of annual survival probabilities understates the
+ *  complete value by ~0.5yr (deaths fall mid-year), so we add the standard
+ *  half-year correction — matching SSA's published period life expectancy. */
 export function lifeExpectancy(age: number, p: GompertzParams): number {
   let e = 0;
   for (let t = 1; age + t <= 120; t++) e += survival(age, t, p);
-  return age + e;
+  return age + e + 0.5;
 }
 
 export interface SurvivalPoint {
@@ -76,9 +79,10 @@ export interface SurvivalPoint {
 }
 
 /**
- * Build the survival curve for a couple from `currentYear` out to age 105 of the
- * younger spouse. Each point is indexed by the SELF age for charting alongside
- * the projection.
+ * Build the survival curve for a couple from today out to SELF age `maxAge`
+ * (default 105). Each point is indexed by the SELF age for charting alongside the
+ * projection; the spouse's probability at that point is the spouse's survival over
+ * the SAME calendar span (self.currentAge + t ↔ spouse.currentAge + t).
  */
 export function survivalCurve(
   self: { currentAge: number; sex?: Sex },

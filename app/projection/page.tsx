@@ -9,7 +9,7 @@ import { detectMilestones } from "@/lib/milestones";
 import { analyzeConversions } from "@/lib/rothConversion";
 import { runMonteCarlo, MonteCarloResult } from "@/lib/monteCarlo";
 import { runHistoricalBootstrap } from "@/lib/returnsHistorical";
-import { runRegimeSwitching, REGIME_META } from "@/lib/returnsRegime";
+import { runRegimeSwitching } from "@/lib/returnsRegime";
 import { runStressTests } from "@/lib/stressTest";
 import { solveSafeSpending, SafeSpendResult } from "@/lib/spendingSolver";
 import { STRATEGY_META } from "@/lib/optimizer";
@@ -590,9 +590,11 @@ export default function ProjectionPage() {
           {!regime && !regimeLoading && (
             <p className="mt-1 text-[11px] leading-relaxed text-foreground/55">
               Re-runs your plan under a <strong>regime-switching model</strong> (Hardy&apos;s RSLN-2 — the standard
-              actuaries use for capital reserving). Equity alternates between a calm bull market and a turbulent bear
-              market that <em>persists</em>, so bad years <strong>cluster</strong> into multi-year drawdowns — the
-              real-world pattern a smooth model understates. Calibrated to 1928–2024 history.
+              actuaries use for capital reserving). Equity flips between a calm bull market and a sharply negative bear
+              market, and a down year is far more likely to be followed by another, so bad years{" "}
+              <strong>cluster</strong> — the real-world pattern a smooth model understates. We hold the average return
+              <em> and</em> volatility identical to the main model, so any difference is the <em>clustering</em> alone.
+              Calibrated to 1928–2024 history.
             </p>
           )}
           {regime && !regimeLoading && (
@@ -601,14 +603,16 @@ export default function ProjectionPage() {
               ({Math.round(regime.successCI[0] * 100)}–{Math.round(regime.successCI[1] * 100)}%) vs.{" "}
               <strong>{Math.round(mc.successPct * 100)}%</strong> from the main model.{" "}
               {regime.successPct < mc.successPct - 0.02
-                ? "Clustered bear markets stress the plan a bit more — exactly why professionals don't rely on a single i.i.d. model."
+                ? "Clustered down-years stress the plan a bit more — at the same average return and volatility — which is exactly why professionals don't rely on a single i.i.d. model."
                 : Math.abs(regime.successPct - mc.successPct) <= 0.02
-                  ? "The two land in the same place — your result is robust to how returns are modeled."
+                  ? "The two land in the same place — your result is robust to how returns are modeled, not an artifact of the smooth model's shape."
                   : "Comparable to the main model."}{" "}
-              <span className="text-foreground/45">
-                (Bull ≈ {percent(REGIME_META.bull.mean, 0)}/yr {percent(REGIME_META.bull.stationaryWeight, 0)} of the
-                time; bear ≈ {percent(REGIME_META.bear.mean, 0)}/yr.)
-              </span>
+              {regime.regimeInfo && (
+                <span className="text-foreground/45">
+                  (Bull ≈ {percent(regime.regimeInfo.bullMean, 0)}/yr {percent(regime.regimeInfo.bullWeight, 0)} of the
+                  time; bear ≈ {percent(regime.regimeInfo.bearMean, 0)}/yr — retargeted to your forward assumptions.)
+                </span>
+              )}
             </p>
           )}
         </div>
@@ -995,7 +999,7 @@ function LongevityCard({
 
       {/* Survival curve */}
       <div className="mt-3 rounded-xl border border-border bg-background/40 p-2">
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Survival probability by age">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={`Survival probability by ${household.self.label || "your"} age`}>
           {/* 10% tail reference line */}
           <line x1={padL} y1={y10} x2={W - padR} y2={y10} stroke={HEX.tax} strokeDasharray="3 3" strokeOpacity={0.5} />
           <text x={padL + 1} y={y10 - 2} fontSize="8" fill={HEX.tax} fillOpacity={0.8}>10% still alive</text>
@@ -1021,6 +1025,10 @@ function LongevityCard({
           {spouseInfo && <Key color={HEX.ss} label={`${household.self.label || "You"} alive`} />}
           {spouseInfo && <Key color={HEX.roth} label={`${household.spouse.label || "Spouse"} alive`} />}
         </div>
+        <p className="mt-0.5 px-1 text-[10px] text-foreground/40">
+          Horizontal axis is {household.self.label || "your"} age; all lines share the same calendar timeline
+          {spouseInfo && `, so a point on ${household.spouse.label || "the spouse"}'s line is their age at that same year`}.
+        </p>
       </div>
 
       {/* Headline stats */}
@@ -1063,6 +1071,15 @@ function LongevityCard({
           sex-specific curve. This affects only the suggested horizon and the survival chart — never your taxes or
           balances.
         </p>
+        {spouseInfo && (
+          <p className="mt-2">
+            For a couple, the &quot;either of you alive&quot; curve treats the two lives as{" "}
+            <strong>independent</strong> (no &quot;broken-heart&quot; correlation, where one spouse&apos;s death raises
+            the other&apos;s near-term risk). Real couples&apos; lifespans are mildly correlated, so this slightly
+            overstates the odds at least one of you is alive at the oldest ages — and nudges the suggested plan-to age a
+            touch older, i.e. it errs on the conservative side.
+          </p>
+        )}
       </Info>
     </Card>
   );

@@ -51,9 +51,12 @@ def fit_gompertz(survival_from_65):
 
 
 def life_expectancy(age, m, b, cap=120):
-    """Curtate life expectancy from `age` = sum of survival probabilities."""
+    """COMPLETE life expectancy (remaining years) from `age`. The curtate sum of
+    annual survival probabilities understates the complete value by ~0.5yr (deaths
+    occur mid-year), so we add the standard half-year correction — matching how SSA
+    reports period life expectancy."""
     ts = np.arange(1, cap - age + 1)
-    return float(np.sum(gompertz_survival(age, ts, m, b)))
+    return float(np.sum(gompertz_survival(age, ts, m, b))) + 0.5
 
 
 def main():
@@ -71,11 +74,13 @@ def main():
             "pReach95from65": round(float(gompertz_survival(65, 30, m, b)), 3),
             "fitRMSE": round(rmse, 4),
         }
-    # Blended (unisex) params = average of male/female fits — used when sex isn't entered.
-    out["blended"] = {
-        "m": round((out["sex"]["male"]["m"] + out["sex"]["female"]["m"]) / 2, 2),
-        "b": round((out["sex"]["male"]["b"] + out["sex"]["female"]["b"]) / 2, 2),
-    }
+    # Blended (unisex) params — used when sex isn't entered. Fit Gompertz to the
+    # actual 50/50 survival MIXTURE of the male & female curves (not an average of
+    # the two (m,b) pairs, which has no distributional meaning).
+    surv_blend = 0.5 * SSA_2021["male"] + 0.5 * SSA_2021["female"]
+    mb, bb = fit_gompertz(surv_blend)
+    out["blended"] = {"m": round(mb, 2), "b": round(bb, 2),
+                      "lifeExpectancyAt65": round(65 + life_expectancy(65, mb, bb), 1)}
     os.makedirs("research/out", exist_ok=True)
     os.makedirs("lib/calibrated", exist_ok=True)
     for path in ("research/out/mortality.json", "lib/calibrated/mortality.json"):
@@ -86,8 +91,9 @@ def main():
     for sex, v in out["sex"].items():
         print(f"  {sex:6s}: m={v['m']:.2f} b={v['b']:.2f} | LE@65={v['lifeExpectancyAt65']:.1f} "
               f"P(reach90)={v['pReach90from65']:.0%} P(reach95)={v['pReach95from65']:.0%} RMSE={v['fitRMSE']:.4f}")
-    print(f"  blended: m={out['blended']['m']:.2f} b={out['blended']['b']:.2f}")
-    print("  SSA check: LE@65 should be ~83-86; P(reach 90)≈25%/34% (M/F). Written to lib/calibrated/mortality.json")
+    print(f"  blended (fit to 50/50 survival mixture): m={out['blended']['m']:.2f} b={out['blended']['b']:.2f} "
+          f"LE@65={out['blended']['lifeExpectancyAt65']:.1f}")
+    print("  LE@65 is COMPLETE (curtate + 0.5), matching SSA reporting. Written to lib/calibrated/mortality.json")
 
 
 if __name__ == "__main__":

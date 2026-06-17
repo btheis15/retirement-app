@@ -2,32 +2,40 @@
  * Regime-Switching Lognormal (Hardy RSLN-2) Monte-Carlo engine — the
  * actuarial-reserving standard for long-horizon equity (used in CIA/AAA capital
  * work). Equity returns are drawn from a 2-state hidden Markov chain: a calm
- * BULL regime (high mean, moderate vol) most of the time, punctuated by a
- * turbulent BEAR regime (sharply negative mean) that PERSISTS — so bad years
- * cluster into multi-year drawdowns. That volatility clustering is what an
- * i.i.d. normal draw misses, and it's the dominant driver of sequence-of-returns
- * risk in retirement.
+ * BULL regime most of the time, punctuated by a sharply NEGATIVE-mean BEAR regime.
+ * A down year is markedly more likely to be followed by another down year than
+ * chance would imply (P(bear|bear) ≈ 0.36 vs an 0.12 unconditional rate), so bad
+ * years CLUSTER — and that mean-shift clustering, plus the fat left tail it
+ * creates, is what an i.i.d. draw misses. (Note: the fitted within-regime vols
+ * are similar — bull ~15.9%, bear ~13.3% — so the bear's danger is its negative
+ * mean and persistence, NOT higher single-year volatility.)
  *
  * Regime parameters are CALIBRATED OFFLINE by EM to S&P 500 annual returns
  * 1928–2024 (statsmodels MarkovRegression; see research/regimes.py) and stored in
- * lib/calibrated/regimes.json. To stay comparable to the forward-looking
- * parametric engine, the regime means are SHIFTED so the blended long-run mean
- * equals the same 2026 capital-market equity assumption — preserving the regime
- * SHAPE (the bull/bear spread + clustering) while matching the level. Bonds &
- * cash are drawn from their CMA mean/vol.
+ * lib/calibrated/regimes.json. To make this a clean apples-to-apples cross-check
+ * of the MAIN engine — isolating regime SHAPE, not a different risk level — the
+ * equity process is retargeted to the SAME forward capital-market assumptions:
+ * the regime means are shifted so the blended long-run mean equals the CMA equity
+ * mean, AND the regime dispersion is scaled so the long-run (stationary mixture)
+ * equity volatility equals the CMA equity vol. Bonds, cash and inflation are then
+ * drawn exactly as the main engine does — correlated (Cholesky) with the equity
+ * shock, with the same AR(1) inflation — so the ONLY difference from the headline
+ * Monte-Carlo is that equity switches regimes (clustering) instead of being i.i.d.
  *
- * ⚠️ Educational estimates only.
+ * ⚠️ Educational estimates only. The bear regime is identified from only ~11 of
+ * 97 historical years, so its parameters carry wide error bars.
  */
 
 import { Household } from "./accounts";
 import { projectLifetime, ProjectionAssumptions } from "./projection";
 import { ReturnModel } from "./returns";
-import { MonteCarloResult, wilsonInterval } from "./monteCarlo";
+import { MonteCarloResult, wilsonInterval, cholesky, randn } from "./monteCarlo";
 import regimeData from "./calibrated/regimes.json";
 
 export const REGIME_META = {
   model: regimeData.model as string,
   source: regimeData.source as string,
+  blendedMean: regimeData.blendedMean as number,
   bull: regimeData.regimes[0],
   bear: regimeData.regimes[1],
 };
@@ -70,32 +78,44 @@ export function runRegimeSwitching(
   const wb = m.assets.bonds.weight;
   const wc = m.assets.cash.weight;
 
-  // Regime params, shifted so the blended equity mean == forward CMA equity mean.
   const bull = regimeData.regimes[0];
   const bear = regimeData.regimes[1];
+  // 1) Shift so the stationary blended equity mean == forward CMA equity mean.
   const shift = m.assets.equity.mean - regimeData.blendedMean;
-  const mu = [bull.mean + shift, bear.mean + shift];
-  const sd = [bull.vol, bear.vol];
+  const wBull = bull.stationaryWeight;
+  const wBear = bear.stationaryWeight;
+  const muShift = [bull.mean + shift, bear.mean + shift];
+  const overallMean = wBull * muShift[0] + wBear * muShift[1]; // == CMA equity mean
+  // 2) Scale dispersion so the stationary MIXTURE vol == forward CMA equity vol.
+  //    Mixture var = E[within-regime var] + Var(regime means).
+  const mixVar =
+    wBull * (bull.vol * bull.vol + (muShift[0] - overallMean) ** 2) +
+    wBear * (bear.vol * bear.vol + (muShift[1] - overallMean) ** 2);
+  const k = Math.sqrt(mixVar) > 0 ? m.assets.equity.vol / Math.sqrt(mixVar) : 1;
+  // Retargeted per-regime mean/sd actually simulated (mean & vol now match the CMA).
+  const mu = [overallMean + k * (muShift[0] - overallMean), overallMean + k * (muShift[1] - overallMean)];
+  const sd = [k * bull.vol, k * bear.vol];
+
   // Column-stochastic transition P[next][now]; P(next=bull | now=s) = P[0][s].
   const P = regimeData.transition as number[][];
   const pNextBull = [P[0][0], P[0][1]];
-  const startBullProb = bull.stationaryWeight;
 
-  // Standard normal via Box–Muller (cached pair) on the seeded RNG.
-  let spare: number | null = null;
-  const randn = (): number => {
-    if (spare !== null) {
-      const v = spare;
-      spare = null;
-      return v;
-    }
-    let u = 0, v = 0;
-    while (u === 0) u = rng();
-    while (v === 0) v = rng();
-    const r = Math.sqrt(-2 * Math.log(u));
-    spare = r * Math.sin(2 * Math.PI * v);
-    return r * Math.cos(2 * Math.PI * v);
-  };
+  // 4×4 correlation over [equity, bonds, cash, inflation] — identical to the main
+  // engine, so the regime engine keeps the advertised cross-asset co-movement.
+  const INFL_CORR = { eq: -0.01, bonds: -0.24, cash: -0.03 };
+  const c3 = m.corr;
+  const L = cholesky([
+    [c3[0][0], c3[0][1], c3[0][2], INFL_CORR.eq],
+    [c3[1][0], c3[1][1], c3[1][2], INFL_CORR.bonds],
+    [c3[2][0], c3[2][1], c3[2][2], INFL_CORR.cash],
+    [INFL_CORR.eq, INFL_CORR.bonds, INFL_CORR.cash, 1],
+  ]);
+
+  // Stochastic inflation: the same sticky AR(1) the main engine uses.
+  const pibar = assumptions.inflationRate;
+  const PHI = 0.6;
+  const SIGMA_INFL = 0.0177;
+  const sigmaEps = SIGMA_INFL * Math.sqrt(1 - PHI * PHI);
 
   const det = projectLifetime(household, assumptions);
   const futureRateOverride = det.futureRate;
@@ -110,14 +130,27 @@ export function runRegimeSwitching(
 
   for (let r = 0; r < runs; r++) {
     const rets: number[] = [];
-    let state = rng() < startBullProb ? 0 : 1; // 0 bull, 1 bear
+    const infls: number[] = [];
+    let prevInfl = pibar;
+    let state = rng() < wBull ? 0 : 1; // 0 bull, 1 bear (from the stationary mix)
     const ensure = (i: number) => {
       while (rets.length <= i) {
-        const equity = mu[state] + sd[state] * randn();
-        const bond = m.assets.bonds.mean + m.assets.bonds.vol * randn();
-        const cash = m.assets.cash.mean + m.assets.cash.vol * randn();
+        // Correlated standard-normal vector for [equity, bonds, cash, inflation].
+        const nv = [randn(rng), randn(rng), randn(rng), randn(rng)];
+        const z = [0, 0, 0, 0];
+        for (let a = 0; a < 4; a++) {
+          let s = 0;
+          for (let b = 0; b <= a; b++) s += L[a][b] * nv[b];
+          z[a] = s;
+        }
+        const equity = mu[state] + sd[state] * z[0];
+        const bond = m.assets.bonds.mean + m.assets.bonds.vol * z[1];
+        const cash = m.assets.cash.mean + m.assets.cash.vol * z[2];
         rets.push(Math.max(-0.99, we * equity + wb * bond + wc * cash));
-        // Advance the hidden state.
+        const infl = Math.max(-0.02, Math.min(0.12, pibar + PHI * (prevInfl - pibar) + sigmaEps * z[3]));
+        prevInfl = infl;
+        infls.push(infl);
+        // Advance the hidden regime AFTER drawing this year's return.
         state = rng() < pNextBull[state] ? 0 : 1;
       }
     };
@@ -125,7 +158,11 @@ export function runRegimeSwitching(
       ensure(i);
       return rets[i];
     };
-    const proj = projectLifetime(household, { ...assumptions, returnFor, futureRateOverride });
+    const inflationFor = (i: number) => {
+      ensure(i);
+      return infls[i];
+    };
+    const proj = projectLifetime(household, { ...assumptions, returnFor, inflationFor, futureRateOverride });
     endings.push(proj.endingEstate);
     endingsReal.push(proj.endingEstateReal);
     cuts.push(Math.max(0, 1 - proj.minRealSpendRatio));
@@ -182,7 +219,10 @@ export function runRegimeSwitching(
     spendCut: { p50: pctl(cuts, 0.5), p90: pctl(cuts, 0.9) },
     band: pctlBand(cols),
     bandReal: pctlBand(colsReal),
+    // Mean & vol now MATCH the main engine (we retargeted both), so reporting the
+    // parametric blended figures is honest — the difference is shape only.
     expectedReturn: m.expected,
     volatility: m.volatility,
+    regimeInfo: { bullMean: mu[0], bearMean: mu[1], bullWeight: wBull },
   };
 }

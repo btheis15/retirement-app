@@ -9,43 +9,48 @@
   "engines": {
     "normal_iid": {
       "success": 0.865,
+      "failureRate": 0.135,
       "endingP10": 0.0,
       "endingP50": 2.47,
       "endingP90": 11.34,
-      "cvar10": 0.0,
-      "medianDepletionAge": 22
+      "es25": 0.16,
+      "medianDepletionYear": 23
     },
     "student_t_df6 (app engine)": {
       "success": 0.863,
+      "failureRate": 0.137,
       "endingP10": 0.0,
       "endingP50": 2.49,
       "endingP90": 10.95,
-      "cvar10": 0.0,
-      "medianDepletionAge": 22
+      "es25": 0.15,
+      "medianDepletionYear": 23
     },
     "regime_switching": {
       "success": 0.826,
+      "failureRate": 0.174,
       "endingP10": 0.0,
       "endingP50": 2.53,
       "endingP90": 13.28,
-      "cvar10": 0.0,
-      "medianDepletionAge": 20
+      "es25": 0.07,
+      "medianDepletionYear": 21
     },
     "historical_bootstrap": {
       "success": 0.876,
+      "failureRate": 0.124,
       "endingP10": 0.0,
       "endingP50": 2.48,
       "endingP90": 9.5,
-      "cvar10": 0.0,
-      "medianDepletionAge": 22
+      "es25": 0.19,
+      "medianDepletionYear": 23
     },
     "deterministic_geometric (anchor)": {
       "success": 1.0,
+      "failureRate": 0.0,
       "endingP10": 2.57,
       "endingP50": 2.57,
       "endingP90": 2.57,
-      "cvar10": 2.57,
-      "medianDepletionAge": null
+      "es25": 2.57,
+      "medianDepletionYear": null
     }
   }
 }

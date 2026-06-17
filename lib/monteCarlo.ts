@@ -58,6 +58,10 @@ export interface MonteCarloResult {
   expectedReturn: number;
   /** Blended annual return volatility (1 standard deviation) assumed. */
   volatility: number;
+  /** Regime-switching engine only: the equity regime means/weight ACTUALLY
+   *  simulated (after retargeting to the forward CMA mean & vol), so the UI can
+   *  show the true assumptions rather than the raw historical fit. */
+  regimeInfo?: { bullMean: number; bearMean: number; bullWeight: number };
 }
 
 /** Deterministic mulberry32 RNG (seeded) so the headline is stable per inputs. */
@@ -73,7 +77,7 @@ function makeRng(seed: number): () => number {
 }
 
 /** Standard-normal sample via Box–Muller. */
-function randn(rng: () => number): number {
+export function randn(rng: () => number): number {
   let u = 0;
   let v = 0;
   while (u === 0) u = rng();
@@ -83,7 +87,7 @@ function randn(rng: () => number): number {
 
 /** Lower-triangular Cholesky factor of a (small) correlation matrix. Clamps tiny
  *  negative diagonals to 0 so a hand-entered, near-singular matrix can't NaN. */
-function cholesky(m: number[][]): number[][] {
+export function cholesky(m: number[][]): number[][] {
   const n = m.length;
   const L = Array.from({ length: n }, () => new Array(n).fill(0));
   for (let i = 0; i < n; i++) {
