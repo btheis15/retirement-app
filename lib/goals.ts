@@ -23,21 +23,21 @@ export const GOAL_META: Record<GoalId, { label: string; short: string; blurb: st
     label: "Maximum capital",
     short: "Most money left",
     blurb:
-      "Leave the largest after-tax nest egg — for you to spend later or pass on. Pays tax now only when doing so grows what you keep. The default for most people.",
+      "End up with the biggest pile after all taxes — to enjoy or pass on. Pays a little tax now only when that grows what you ultimately keep. Best for most people.",
     icon: "💰",
   },
   lowestTax: {
     label: "Lowest total tax",
     short: "Smallest tax bill",
     blurb:
-      "Minimize the total federal tax paid across your whole life. Simple and satisfying — but remember the smallest tax bill isn't always the most money kept.",
+      "Pay the least total tax over your lifetime. Simple and satisfying — but the smallest tax bill isn't always the most money kept.",
     icon: "🧾",
   },
   lowestRate: {
     label: "Lowest tax rate",
-    short: "Smoothest rate",
+    short: "Low & steady rate",
     blurb:
-      "Keep your average tax rate as low and steady as possible — smoothing income to avoid spikes, high brackets, and Medicare (IRMAA) surcharges.",
+      "Keep your tax rate low and even year to year — no sudden spikes that raise your taxes or Medicare costs. Lowest average rate, not necessarily the most money.",
     icon: "📉",
   },
 };
@@ -171,6 +171,14 @@ function buildRationale(goal: GoalId, best: Candidate, ranked: Candidate[]): str
         best.metrics.taxPct,
       )})${best.metrics.lifetimeIrmaa > 0 ? "" : " and avoids Medicare IRMAA surcharges"}.`;
   }
+}
+
+/** Ultra-short, jargon-free gist of what a plan actually DOES — for goal-compare
+ *  hints and at-a-glance summaries. (describePlan is the fuller, more technical
+ *  one-liner.) */
+export function planGist(config: PlanConfig): string {
+  if (!config.useConversions) return "No Roth conversions — just tax-smart withdrawals";
+  return `Roll some pre-tax → Roth each year, up to the ${Math.round(config.bracketTarget * 100)}% bracket`;
 }
 
 /** Human description of a resolved plan, e.g. for a "your plan" summary line. */

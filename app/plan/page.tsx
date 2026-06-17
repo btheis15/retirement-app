@@ -9,7 +9,7 @@ import { planYear, STRATEGY_META, StrategyId, BracketTarget } from "@/lib/optimi
 import { ordinaryBracketCeiling } from "@/lib/tax/engine";
 import { detectOpportunities } from "@/lib/opportunities";
 import { projectLifetime } from "@/lib/projection";
-import { recommendPlan, describePlan, configMatches, GOAL_META } from "@/lib/goals";
+import { recommendPlan, describePlan, planGist, configMatches, GOAL_META } from "@/lib/goals";
 import { analyzeConversions } from "@/lib/rothConversion";
 import { buildActionPlan, PlanAction } from "@/lib/actionPlan";
 import {
@@ -387,8 +387,8 @@ export default function PlanPage() {
           <Pill tone="ss">
             SS taxable {plan.fixed.socialSecurity > 0 ? percent(plan.tax.taxableSocialSecurity / plan.fixed.socialSecurity, 0) : "0%"}
           </Pill>
-          <Pill tone="taxable">Cap-gains rate {percent(plan.tax.capitalGainsRate, 0)}</Pill>
-          {plan.tax.niit > 0 && <Pill tone="tax">NIIT {money(plan.tax.niit)}</Pill>}
+          <Pill tone="taxable">Investment-gains tax {percent(plan.tax.capitalGainsRate, 0)}</Pill>
+          {plan.tax.niit > 0 && <Pill tone="tax">Extra 3.8% tax {money(plan.tax.niit)}</Pill>}
           <Pill tone={plan.tax.irmaa.perPerson > 0 ? "tax" : "gain"}>{plan.tax.irmaa.label}</Pill>
         </div>
         <Info q="Effective vs. marginal rate — what's the difference?" sources={[SOURCES.brackets2026]}>
@@ -401,8 +401,8 @@ export default function PlanPage() {
         <Info q="What do these colored tags mean?" sources={[SOURCES.ssTax, SOURCES.capGains, SOURCES.niit, SOURCES.irmaa]}>
           <ul className="space-y-1">
             <li><strong>SS taxable</strong>: the share of your Social Security that counts as taxable income (0–85%).</li>
-            <li><strong>Cap-gains rate</strong>: the rate on your long-term investment gains (0%, 15%, or 20%).</li>
-            <li><strong>NIIT</strong>: an extra 3.8% tax on investment income once income tops $250k (joint).</li>
+            <li><strong>Investment-gains tax</strong>: the rate on your long-term investment gains (0%, 15%, or 20%).</li>
+            <li><strong>Extra 3.8% tax</strong> (NIIT): an extra 3.8% on investment income once income tops $250k (joint).</li>
             <li><strong>IRMAA</strong>: which Medicare premium tier this income lands in — higher income = higher Part B/D premiums two years later.</li>
           </ul>
         </Info>
@@ -916,11 +916,14 @@ function GoalAndRecommendation() {
 
       <Callout tone="good" icon="🤖" title="Your recommended plan" className="mt-2">
         <div className="mb-1 flex flex-wrap items-center gap-2">
-          <span className="font-medium text-foreground/85">{describePlan(rec.best.config, settings.convertUntilAge)}</span>
+          <span className="font-medium text-foreground/85">{planGist(rec.best.config)}</span>
           <Pill tone={confidence.successPct >= 0.8 ? "gain" : confidence.successPct >= 0.6 ? "ss" : "tax"}>
             {Math.round(confidence.successPct * 100)}% confidence
           </Pill>
         </div>
+        <p className="-mt-0.5 mb-1 text-[11px] text-foreground/45">
+          Technical version: {describePlan(rec.best.config, settings.convertUntilAge)}.
+        </p>
         <p className="mt-1">{rec.rationale}</p>
         <div className="mt-3 grid grid-cols-3 gap-2">
           <MiniStat label="After-tax wealth" value={moneyCompact(rec.best.metrics.netWealth)} tone="gain" />

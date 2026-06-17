@@ -20,7 +20,7 @@ import { planYear } from "@/lib/optimizer";
 import { ltcgZeroCeiling } from "@/lib/tax/engine";
 import { FILING_CONSTANTS, FilingStatus } from "@/lib/tax/constants";
 import { projectLifetime, ProjectionAssumptions } from "@/lib/projection";
-import { recommendPlan, GOAL_META } from "@/lib/goals";
+import { recommendPlan, planGist, configMatches, GOAL_META } from "@/lib/goals";
 import { runMonteCarlo } from "@/lib/monteCarlo";
 import { returnModel } from "@/lib/returns";
 import { buildActionPlan, PlanYear, PlanAction } from "@/lib/actionPlan";
@@ -105,6 +105,19 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   // two can momentarily disagree (the 22% vs 24% the user saw). The grid is light
   // and household edits are already debounced upstream.
   const rec = useMemo(() => recommendPlan(household, inputs, settings.goal), [household, settings]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // What plan EACH goal would pick — so the goal step can show the tradeoff (or
+  // reassure when all three agree). Deferred + display-only, so it never blocks.
+  const recAll = useMemo(
+    () => ({
+      maxCapital: recommendPlan(dHousehold, inputs, "maxCapital").best.config,
+      lowestTax: recommendPlan(dHousehold, inputs, "lowestTax").best.config,
+      lowestRate: recommendPlan(dHousehold, inputs, "lowestRate").best.config,
+    }),
+    [dHousehold, settings], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const goalsAgree =
+    configMatches(recAll.maxCapital, recAll.lowestTax) && configMatches(recAll.maxCapital, recAll.lowestRate);
 
   // Pre-tax share decides whether the rollover step is even relevant.
   const pretaxShare = useMemo(() => {
@@ -282,23 +295,38 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               <button
                 key={g}
                 onClick={() => applyGoal(g)}
-                className={`press flex items-center gap-3 rounded-2xl border p-3 text-left ${
+                className={`press flex items-start gap-3 rounded-2xl border p-3 text-left ${
                   active ? "border-primary bg-primary/10" : "border-border"
                 }`}
               >
-                <span className="text-2xl">{GOAL_META[g].icon}</span>
+                <span className="text-2xl leading-none">{GOAL_META[g].icon}</span>
                 <span className="min-w-0">
                   <span className={`block font-semibold ${active ? "text-primary" : ""}`}>{GOAL_META[g].short}</span>
-                  <span className="block text-[12px] leading-snug text-foreground/60">{GOAL_META[g].blurb}</span>
+                  <span className={`mt-0.5 block text-[12px] font-medium leading-snug ${active ? "text-foreground/70" : "text-foreground/45"}`}>
+                    {planGist(recAll[g])}
+                  </span>
+                  {active && (
+                    <span className="mt-1 block text-[12px] leading-snug text-foreground/55">{GOAL_META[g].blurb}</span>
+                  )}
                 </span>
-                {active && <span className="ml-auto text-primary">✓</span>}
+                {active && <span className="ml-auto shrink-0 text-primary">✓</span>}
               </button>
             );
           })}
         </div>
-        <p className="mt-3 rounded-xl bg-gain/5 px-3 py-2 text-[12px] text-foreground/70">
-          🤖 For this goal, the planner recommends <strong>{rec.best.config.useConversions ? "rolling some pre-tax to Roth" : "your current withdrawal order"}</strong>
-          {" "}— we&apos;ll walk through exactly what that means next.
+        <p className="mt-3 rounded-xl bg-gain/5 px-3 py-2 text-[12px] leading-relaxed text-foreground/70">
+          {goalsAgree ? (
+            <>
+              🤖 Good news — for your numbers, all three goals lead to the <strong>same plan</strong> (the line under each
+              is identical). Moving some money to a Roth wins on every measure here, so you can&apos;t go wrong. Next
+              we&apos;ll show exactly what it means.
+            </>
+          ) : (
+            <>
+              🤖 Your goals would lead to <strong>different plans</strong> — the one-line summary under each button shows
+              how. You picked <strong>{GOAL_META[settings.goal].short}</strong>; next we&apos;ll walk through what to do.
+            </>
+          )}
         </p>
       </div>
     ),
@@ -500,7 +528,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           "A Roth is a retirement account you've already paid the tax on. It grows tax-free, you owe nothing when you take money out, and you are never forced to withdraw from your own Roth — there are no RMDs on it during your life.";
         const explain = [
           {
-            q: "⬜ Do nothing — the IRS pulls the money out for you, on its schedule",
+            q: "⬜ Do nothing — and let big forced withdrawals push you into higher taxes later",
             body: `In this path you never move a dollar on purpose. Your pre-tax retirement accounts — a traditional IRA or workplace 401(k), money you set aside before paying tax — just keep growing. The catch is that starting at age 73 the IRS makes you take a minimum amount out every year (that's an RMD, a required minimum distribution) and taxes it the same way a paycheck is taxed. Because the forced withdrawal is a share of an account that keeps growing, the dollar amount you're made to take out gets bigger over time — in your case the largest one reaches about ${moneyCompact(compare.none.peakRmd)}, and the top of your income in those years lands in the ${pctNonePeak} bracket. Nothing is wrong with the money — it's all still yours — but you don't get to pick the years you pay the tax; the IRS decides for you. And whatever pre-tax money is left when you pass still owes income tax: whoever inherits it pays it. That's why your family keeps about ${moneyCompact(compare.none.endingEstateAfterTax)} after every tax is paid — about ${moneyCompact(gainVsNothing)} less than the smoothing plan would leave.`,
             upside: "Nothing to do and no tax you chose to trigger — your money keeps growing untouched until it's withdrawn or inherited.",
             downside: `You don't control when the tax hits, the leftover pre-tax money still owes income tax for your heirs, and your family keeps about ${moneyCompact(gainVsNothing)} less than with smoothing.`,
@@ -685,12 +713,12 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       <div>
         <h2 className="text-xl font-bold leading-snug">Set aside {money(totalTax)} for tax</h2>
         <p className="mt-1 text-[13px] text-foreground/60">
-          Here&apos;s exactly why it&apos;s that much — federal + {isIL ? "Illinois" : "state"}, at a{" "}
-          {percent(plan.tax.effectiveRate)} average rate.
+          Here&apos;s exactly why it&apos;s that much — federal + {isIL ? "Illinois" : "state"}. That&apos;s about{" "}
+          {percent(plan.tax.effectiveRate)} of your total income.
         </p>
         <div className="mt-4 space-y-1 rounded-2xl border border-border p-3 text-[13px]">
           <Row label="Taxable income this year" value={money(plan.tax.taxableIncome)} bold />
-          <Row label={`Top bracket it reaches`} value={percent(plan.tax.marginalOrdinaryRate, 0)} />
+          <Row label={`Highest tax rate you hit`} value={percent(plan.tax.marginalOrdinaryRate, 0)} />
           <div className="my-1 border-t border-border/60" />
           {ssNow > 0 && <Row label="…from taxable Social Security" value={money(plan.tax.taxableSocialSecurity)} sub />}
           {w.pretax > 0.5 && <Row label="…from pre-tax withdrawals (incl. RMD)" value={money(w.pretax)} sub />}
