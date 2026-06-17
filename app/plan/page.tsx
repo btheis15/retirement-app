@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useRef, ReactNode } from "react";
+import { useMemo, useState, ReactNode } from "react";
 import Link from "next/link";
 import { useStore } from "@/components/HouseholdProvider";
 import { Card, PageTitle, SectionTitle, Pill, Stat, Disclaimer, Callout, Explainer, Info, StackedBar, PageSkeleton } from "@/components/ui";
@@ -24,7 +24,6 @@ import { ageInYear, Household } from "@/lib/accounts";
 import { GoalId, PlannerSettings, survivorFromSettings } from "@/lib/defaults";
 import { runMonteCarlo } from "@/lib/monteCarlo";
 import { returnModel } from "@/lib/returns";
-import { GuidedPlan } from "@/components/GuidedPlan";
 import { money, moneyCompact, percent } from "@/lib/format";
 import { HEX } from "@/lib/palette";
 import { SOURCES } from "@/lib/sources";
@@ -53,16 +52,7 @@ const STRATEGY_SHORT: Record<StrategyId, string> = {
 export default function PlanPage() {
   const { ready, household, settings, updateSettings, updateHousehold } = useStore();
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showAll, setShowAll] = useState(false);
-  const detailsRef = useRef<HTMLDivElement>(null);
   const year = useMemo(() => new Date().getFullYear(), []);
-
-  // Reveal the full dashboard AND scroll to it, so tapping "see all the numbers"
-  // (or Finish) obviously does something instead of silently expanding below.
-  const revealDetails = () => {
-    setShowAll(true);
-    setTimeout(() => detailsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
-  };
 
   const plan = useMemo(
     () => planYear(household, { strategy: settings.strategy, bracketTarget: settings.bracketTarget, year }),
@@ -183,22 +173,9 @@ export default function PlanPage() {
 
   return (
     <div>
-      <PageTitle title={`What to do in ${year}`} subtitle="A step-by-step walkthrough — one thing at a time, in plain English." />
+      <PageTitle title={`Your ${year} plan — the full picture`} subtitle="Every number and chart behind the walkthrough. New here? Start on the Start tab." />
 
-      {/* ---------- GUIDED WALKTHROUGH (the calm front door) ---------- */}
-      <GuidedPlan onSeeDetails={revealDetails} />
-
-      <button
-        onClick={() => (showAll ? setShowAll(false) : revealDetails())}
-        aria-expanded={showAll}
-        className="press mt-3 flex w-full items-center justify-between rounded-xl border border-border bg-card px-4 py-3 text-sm font-semibold text-foreground/70"
-      >
-        <span>📋 {showAll ? "Hide the full dashboard" : "Prefer the full dashboard? Show all the numbers & charts"}</span>
-        <span className={`transition-transform ${showAll ? "rotate-180" : ""}`}>⌄</span>
-      </button>
-
-      {showAll && (
-      <div ref={detailsRef} className="rise mt-2 scroll-mt-4">
+      <div className="mt-1">
       {/* ---------- ROBO-ADVISOR: goal → recommended plan ---------- */}
       <GoalAndRecommendation />
 
@@ -616,7 +593,6 @@ export default function PlanPage() {
       </div>
       )}
       </div>
-      )}
 
       <div className="mt-6">
         <Disclaimer />

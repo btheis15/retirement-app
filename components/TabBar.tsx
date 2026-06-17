@@ -5,9 +5,9 @@ import { usePathname } from "next/navigation";
 
 // Single source of truth for routes + labels + icons.
 const TABS = [
-  { href: "/", label: "Home", icon: "🏠" },
+  { href: "/", label: "Start", icon: "🎯" },
   { href: "/accounts", label: "Accounts", icon: "💼" },
-  { href: "/plan", label: "Plan", icon: "🎯" },
+  { href: "/plan", label: "Plan", icon: "📋" },
   { href: "/projection", label: "Forecast", icon: "📊" },
   { href: "/scenarios", label: "Compare", icon: "⚖️" },
   { href: "/learn", label: "Learn", icon: "📖" },
