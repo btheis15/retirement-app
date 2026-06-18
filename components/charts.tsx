@@ -240,10 +240,14 @@ export function FanChart({
   const n = band.length;
   if (n === 0) return null;
   const rawMax = Math.max(1, ...band.map((b) => b.p90));
-  // Round the top of the axis up to a "nice" number so the gridlines read cleanly.
-  const pow = Math.pow(10, Math.floor(Math.log10(rawMax)));
-  const f = rawMax / pow;
-  const maxY = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * pow;
+  // Auto-size the y-axis: pick a "nice" gridline step targeting ~5 lines, then set
+  // the top to the nearest step at or above the data. (The old ladder jumped 5→10×,
+  // so a $51M peak ballooned the axis to $100M — half the chart was empty.)
+  const rawStep = rawMax / 5;
+  const stepPow = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const sf = rawStep / stepPow;
+  const niceStep = (sf <= 1 ? 1 : sf <= 1.5 ? 1.5 : sf <= 2 ? 2 : sf <= 2.5 ? 2.5 : sf <= 3 ? 3 : sf <= 5 ? 5 : 10) * stepPow;
+  const maxY = Math.ceil(rawMax / niceStep) * niceStep;
   const fmt = yLabel ?? ((x: number) => `${Math.round(x)}`);
   const xAt = (i: number) => padL + (i / Math.max(1, n - 1)) * (width - padL - padR);
   const yAt = (v: number) => padT + (1 - v / maxY) * (height - padT - padB);
@@ -257,7 +261,8 @@ export function FanChart({
   const hasInner = band.every((b) => b.p25 != null && b.p75 != null);
   const inner = hasInner ? areaBetween((b) => b.p75!, (b) => b.p25!) : null; // 25–75 likely range
   const median = line((b) => b.p50);
-  const gridVals = [0, 0.25, 0.5, 0.75, 1].map((g) => g * maxY);
+  const gridVals: number[] = [];
+  for (let v = 0; v <= maxY + niceStep * 1e-6; v += niceStep) gridVals.push(v);
   const tickCount = Math.min(5, n);
   const tickIdx =
     tickCount <= 1 ? [0] : Array.from({ length: tickCount }, (_, k) => Math.round((k * (n - 1)) / (tickCount - 1)));
