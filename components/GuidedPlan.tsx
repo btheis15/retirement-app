@@ -130,11 +130,33 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       cancelled = true;
     };
   }, [dHousehold, dAssumptions]);
-  // Use the FRESH household (not the deferred one) so the bracket this flow picks
-  // always matches what the full dashboard picks for the same goal — otherwise the
-  // two can momentarily disagree (the 22% vs 24% the user saw). The grid is light
-  // and household edits are already debounced upstream.
-  const rec = useMemo(() => recommendPlan(household, inputs, settings.goal), [household, settings]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The plan-type recommendation (withdrawal order, bracket target, whether/how to
+  // roll over) is chosen at a STABLE reference spending — the ~4% pace, NOT the live
+  // slider value. Otherwise dragging the spend slider silently re-optimizes the
+  // WHOLE plan: at low spend it aggressively fills the 24% bracket (huge conversion →
+  // big tax + a high IRMAA tier), and at high spend it turns rollovers off entirely.
+  // That made this year's tax/Medicare read-outs lurch and run BACKWARDS as you
+  // spent more, and the quick-amount chips appear and vanish. The plan is a property
+  // of the household, not of the spend you're trying on; the user explores spending
+  // against a FIXED plan, and tunes the rollover on its own step.
+  const recRefSpend = useMemo(() => {
+    const total = household.accounts.reduce((s, a) => s + a.balance, 0);
+    return total > 0 ? Math.min(SPEND_MAX, Math.round(0.04 * total)) : household.annualSpending;
+  }, [household.accounts, household.annualSpending]);
+  // Pinned-spending households for the recommender, keyed on the household's
+  // STRUCTURAL facts (accounts, people, fixed income) so a spend change neither
+  // changes the recommendation nor re-runs the search.
+  const recHousehold = useMemo(
+    () => ({ ...household, annualSpending: recRefSpend }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [household.accounts, household.self, household.spouse, household.pensionAnnual, household.brokerageDividendsAnnual, household.ordinaryDividendsAnnual, household.taxableInterestAnnual, household.taxExemptInterestAnnual, household.state, recRefSpend],
+  );
+  const dRecHousehold = useMemo(
+    () => ({ ...dHousehold, annualSpending: recRefSpend }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dHousehold.accounts, dHousehold.self, dHousehold.spouse, dHousehold.pensionAnnual, dHousehold.brokerageDividendsAnnual, dHousehold.ordinaryDividendsAnnual, dHousehold.taxableInterestAnnual, dHousehold.taxExemptInterestAnnual, dHousehold.state, recRefSpend],
+  );
+  const rec = useMemo(() => recommendPlan(recHousehold, inputs, settings.goal), [recHousehold, settings.goal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // What plan EACH goal would pick — so the goal step can show the tradeoff (or
   // reassure when all three agree). Deferred + display-only, and run in LIGHT mode
@@ -143,11 +165,11 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   const LIGHT = { searchWindow: false, optimizeClaimAge: false } as const;
   const recAll = useMemo(
     () => ({
-      maxCapital: recommendPlan(dHousehold, inputs, "maxCapital", LIGHT).best.config,
-      lowestTax: recommendPlan(dHousehold, inputs, "lowestTax", LIGHT).best.config,
-      lowestRate: recommendPlan(dHousehold, inputs, "lowestRate", LIGHT).best.config,
+      maxCapital: recommendPlan(dRecHousehold, inputs, "maxCapital", LIGHT).best.config,
+      lowestTax: recommendPlan(dRecHousehold, inputs, "lowestTax", LIGHT).best.config,
+      lowestRate: recommendPlan(dRecHousehold, inputs, "lowestRate", LIGHT).best.config,
     }),
-    [dHousehold, settings], // eslint-disable-line react-hooks/exhaustive-deps
+    [dRecHousehold], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const goalsAgree =
     configMatches(recAll.maxCapital, recAll.lowestTax) && configMatches(recAll.maxCapital, recAll.lowestRate);
@@ -225,14 +247,42 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   // is chosen, since spending drives the withdrawals that drive MAGI. ----
   const medicareEnrollees = (plan.selfAge >= 65 ? 1 : 0) + (plan.spouseAge >= 65 ? 1 : 0);
 
+  // The Roth rollover this plan does, sized at a SPEND-INDEPENDENT reference (the
+  // ~4% recommended spend). The spend-impact sweep holds the rollover at THIS fixed
+  // dollar amount across every spending level — so the slider isolates the SPENDING
+  // decision. If the sweep instead let the rollover re-solve per spend level (a
+  // bracket-fill rule), it would SHRINK as spending rose and drag MAGI down with it,
+  // making the tax/Medicare read-outs move BACKWARDS as you spend more (and the
+  // cliff markers jump around / vanish as you drag). Anchoring to a fixed reference
+  // also keeps the cliffs and quick-amount chips stable while you explore. The
+  // rollover is still fully reflected (its tax + IRMAA show), just as a constant
+  // baseline you tune on the rollover step.
+  const baselineConv = useMemo(() => {
+    if (!settings.useConversions) return 0;
+    const refSpend = portfolioTotal > 0 ? Math.min(SPEND_MAX, Math.round(0.04 * portfolioTotal)) : household.annualSpending;
+    return planYear(
+      { ...household, annualSpending: refSpend },
+      {
+        strategy: settings.strategy,
+        bracketTarget: settings.bracketTarget,
+        year,
+        conversion:
+          settings.convertMode === "recommended"
+            ? { mode: "recommended", futureRate: proj.futureRate }
+            : { mode: "fillBracket", toBracket: settings.bracketTarget },
+        inflationFactor: plan.inflationFactor,
+      },
+    ).conversion;
+  }, [portfolioTotal, household.accounts, household.self, household.spouse, settings.useConversions, settings.strategy, settings.bracketTarget, settings.convertMode, proj.futureRate, year, plan.inflationFactor]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Per-spend "impact" sweep — this year's MAGI, marginal bracket, IRMAA tier, and
   // savings draw at EVERY spending level — so the slider shows what the chosen
   // number ACTUALLY means (and where the cliffs sit) live, before it's committed.
-  // It mirrors the active year's FULL plan, INCLUDING the Roth rollover, because
-  // the rollover is part of the income the user actually files — leaving it out
-  // made the card claim "no IRMAA" when the real plan crosses a tier. The combined
-  // MAGI is still monotonic in spending (the recommended rollover fills a low
-  // bracket and spending adds on top), so the slider stays intuitive.
+  // It mirrors the FULL plan, INCLUDING the Roth rollover (held FIXED at baselineConv
+  // above), because the rollover is part of the income the user actually files —
+  // leaving it out made the card claim "no IRMAA" when the real plan crosses a tier.
+  // With the rollover held constant, MAGI is strictly monotonic in spending, so the
+  // slider stays intuitive (more spend → more tax / higher tier, never the reverse).
   const impact = useMemo(
     () =>
       spendImpact(
@@ -241,18 +291,14 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           strategy: settings.strategy,
           bracketTarget: settings.bracketTarget,
           year,
-          conversion: settings.useConversions
-            ? settings.convertMode === "recommended"
-              ? { mode: "recommended", futureRate: proj.futureRate }
-              : { mode: "fillBracket", toBracket: settings.bracketTarget }
-            : null,
+          conversion: settings.useConversions && baselineConv > 0 ? { mode: "fixed", amount: baselineConv } : null,
           inflationFactor: plan.inflationFactor,
         },
         FILING_CONSTANTS[plan.filingStatus].irmaaTiers,
         medicareEnrollees,
         SPEND_MAX,
       ),
-    [dHousehold, settings.strategy, settings.bracketTarget, settings.useConversions, settings.convertMode, proj.futureRate, year, plan.inflationFactor, plan.filingStatus, medicareEnrollees],
+    [dHousehold, settings.strategy, settings.bracketTarget, settings.useConversions, baselineConv, year, plan.inflationFactor, plan.filingStatus, medicareEnrollees],
   );
   // The picture at the CURRENT slider position — interpolated, so it updates every
   // frame of a drag without re-running the planner.
@@ -268,7 +314,9 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
   const applyGoal = (goal: GoalId) => {
     startTransition(() => {
-      const r = recommendPlan(household, inputs, goal);
+      // Recommend at the stable reference spending (see recHousehold) so picking a
+      // goal never bakes in the spend the slider happens to sit at.
+      const r = recommendPlan(recHousehold, inputs, goal);
       updateSettings({
         goal,
         planCustomized: false, // picking a goal = use its recommended plan
