@@ -26,6 +26,9 @@ export interface SpendImpactPoint {
   marginalRate: number;
   /** Total tax (federal + state) this year at this spending level. */
   totalTax: number;
+  /** Dollars pulled FROM savings this year to fund spending (pretax + taxable +
+   *  roth withdrawals, incl. the RMD). Drives the withdrawal-rate read. */
+  draw: number;
 }
 
 /** An IRMAA tier ceiling expressed in SPENDING terms: the yearly spend at which
@@ -110,12 +113,13 @@ export function spendImpact(
       magi: yp.tax.magi,
       marginalRate: yp.tax.marginalOrdinaryRate,
       totalTax: yp.tax.totalTax,
+      draw: yp.withdrawals.pretax + yp.withdrawals.taxable + yp.withdrawals.roth,
     });
   }
 
   const step = max / steps;
   const at = (spend: number): SpendImpactPoint => {
-    if (points.length === 0) return { spend, magi: 0, marginalRate: 0, totalTax: 0 };
+    if (points.length === 0) return { spend, magi: 0, marginalRate: 0, totalTax: 0, draw: 0 };
     const clamped = Math.max(0, Math.min(spend, max));
     const lo = Math.min(points.length - 1, Math.floor(clamped / step));
     const hi = Math.min(points.length - 1, lo + 1);
@@ -129,6 +133,7 @@ export function spendImpact(
       // a marginal rate is a step, not a slope — report the level you're actually in
       marginalRate: t < 1 ? a.marginalRate : b.marginalRate,
       totalTax: a.totalTax + (b.totalTax - a.totalTax) * t,
+      draw: a.draw + (b.draw - a.draw) * t,
     };
   };
 
