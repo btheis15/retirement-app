@@ -897,13 +897,13 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               {pendingSS > 0.5 && Number.isFinite(nextClaimAge) && (
                 <p className="mt-2 rounded-xl bg-primary/5 px-3 py-2 text-[13px] leading-relaxed text-foreground/75">
                   📅 This is the heavy-lifting phase: <strong>Social Security hasn&apos;t started yet</strong>. Once you claim
-                  at {nextClaimAge}, about <strong>{money(pendingSS)}/yr</strong> more becomes guaranteed income — so you&apos;ll
-                  pull noticeably less from savings, and these early years are the most you&apos;ll lean on your accounts.
+                  at {nextClaimAge}, about <strong>{money(pendingSS)}/yr</strong>{" "}more becomes guaranteed income — so
+                  you&apos;ll pull noticeably less from savings, and these early years are the most you&apos;ll lean on your accounts.
                 </p>
               )}
               <p className="mt-2 rounded-xl bg-foreground/[0.03] px-3 py-2 text-[13px] text-foreground/70">
-                So this year you need <strong>{money(totalDraw)}</strong> from savings — next we&apos;ll show exactly which
-                accounts it comes from, and why that order keeps your lifetime tax lowest.
+                So this year you need <strong>{money(totalDraw)}</strong>{" "}from savings — next we&apos;ll show exactly
+                which accounts it comes from, and why that order keeps your lifetime tax lowest.
               </p>
             </>
           )}
@@ -928,7 +928,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     <strong>{ca.delayWho === "spouse" ? ca.spouse : ca.self}</strong>
                     {ca.delayWho === "both" ? ` / ${ca.spouse}` : ""} instead of {ca.currentSelf}
                     {ca.delayWho === "both" ? ` / ${ca.currentSpouse}` : ""} is projected to leave about{" "}
-                    <strong>{money(ca.lift)}</strong> more over your lifetime — partly because delaying the higher earner
+                    <strong>{money(ca.lift)}</strong>{" "}more over your lifetime — partly because delaying the higher earner
                     also locks in a larger benefit for whoever lives longer. It&apos;s a personal decision (health, cash
                     needs); you can set claim ages on the Accounts page. This estimate already reflects your plan-to age.
                   </>
@@ -1004,8 +1004,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           {/* The rollover is SEPARATE money movement, not spending — connect the two. */}
           {conversion > 0.5 && (
             <p className="mt-2 rounded-xl bg-roth/[0.08] px-3 py-2 text-[12px] leading-relaxed text-foreground/75">
-              🔄 Separately, you&apos;ll move about <strong>{money(conversion)}</strong> from pre-tax into your Roth (the
-              next step). That&apos;s <em>not</em> spending — it lands in your Roth and grows tax-free; its tax is best paid
+              🔄 Separately, you&apos;ll move about <strong>{money(conversion)}</strong>{" "}from pre-tax into your Roth
+              (the next step). That&apos;s <em>not</em> spending — it lands in your Roth and grows tax-free; its tax is best paid
               from cash.
             </p>
           )}
@@ -1231,8 +1231,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               <p className="mt-1.5 rounded-xl bg-ss/[0.06] px-3 py-2 text-[11px] leading-relaxed text-foreground/65">
                 🩺 Converting aggressively pushes your income into higher Medicare (IRMAA) tiers — about{" "}
                 <strong>{moneyCompact(compare.aggressive.lifetimeIrmaa)}</strong> in lifetime Part B/D surcharges vs.{" "}
-                <strong>{moneyCompact(compare.smooth.lifetimeIrmaa)}</strong> with smoothing. That extra premium cost is
-                already counted in &ldquo;money you keep&rdquo; above — it&apos;s part of why bigger isn&apos;t always
+                <strong>{moneyCompact(compare.smooth.lifetimeIrmaa)}</strong>{" "}with smoothing. That extra premium cost
+                is already counted in &ldquo;money you keep&rdquo; above — it&apos;s part of why bigger isn&apos;t always
                 better.
               </p>
             )}
