@@ -106,6 +106,15 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       }),
     [household, settings, proj.futureRate, year, filingStatus],
   );
+  // Same year WITHOUT the rollover — its ordinary taxable income is the spending-
+  // and-other-income "base" that fills the low brackets before any conversion. The
+  // bracket ladder uses it to split each bracket into the part your spending fills
+  // vs. the part the rollover tops off. (Gross conversion can't be subtracted from
+  // taxable income directly — the standard deduction sits between them.)
+  const planNoConv = useMemo(
+    () => planYear(household, { strategy: settings.strategy, bracketTarget: settings.bracketTarget, year, filingStatus, conversion: null }),
+    [household, settings.strategy, settings.bracketTarget, year, filingStatus],
+  );
   const lookAhead = useMemo(() => buildActionPlan(household, proj, 5), [household, proj]);
   // The two heaviest computations (a 150-sim Monte Carlo and the 7-config plan
   // grid) run off DEFERRED inputs at low priority, so they catch up a beat after
@@ -1272,7 +1281,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           <div>
             <h2 className="text-xl font-bold leading-snug">Smooth your future tax bill</h2>
             <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
-              RMDs aren&apos;t the enemy — a steady withdrawal is fine. The trap is one <strong>big</strong> forced
+              RMDs aren&apos;t the enemy — a steady withdrawal is fine. The trap is one <strong>big</strong>{" "}forced
               withdrawal that lands in a high bracket. The fix: move a little to Roth each year, only up to the top of a
               low bracket, so the balance that drives future RMDs shrinks gently. We never convert a dollar at a higher
               rate than you&apos;d pay later.
@@ -1285,6 +1294,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               futureRate={compare.none.peakMarginalRate}
               year={year}
               ordinaryIncome={plan.tax.ordinaryTaxableIncome}
+              baseOrdinary={planNoConv.tax.ordinaryTaxableIncome}
+              conversion={plan.conversion}
             />
 
             {/* Proof: three approaches on YOUR numbers */}
@@ -1816,31 +1827,53 @@ function BracketLadder({
   futureRate,
   year,
   ordinaryIncome,
+  baseOrdinary: baseOrdinaryProp = 0,
+  conversion = 0,
 }: {
   status: FilingStatus;
   fillRate: number;
   futureRate: number;
   year: number;
   /** This year's ordinary taxable income (after deductions, excludes preferential
-   *  gains/dividends) — what actually fills these brackets. */
+   *  gains/dividends) — what actually fills these brackets. INCLUDES the rollover. */
   ordinaryIncome: number;
+  /** Ordinary taxable income WITHOUT the rollover — the spending/other-income base
+   *  that fills the low brackets first. The rollover taxable footprint is the rest. */
+  baseOrdinary?: number;
+  /** Gross pre-tax rolled over to Roth this year. 0 if no rollover. */
+  conversion?: number;
 }) {
   const brackets = FILING_CONSTANTS[status].ordinary;
   const fmt = (n: number) => moneyCompact(n);
   const showFuture = futureRate > fillRate + 1e-9; // only flag a future bracket that's actually higher
   const hasIncome = ordinaryIncome > 0.5;
-  // How this year's ordinary income fills each bracket: the slice inside it and
-  // the tax on just that slice (slice × rate). This is the whole point — a bracket
-  // taxes only the dollars that land in it, not your whole income.
+  const clampN = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
+  // Split this year's ordinary income into the SPENDING/other-income base (fills the
+  // low brackets first) and the ROLLOVER taxable footprint that sits on top of it.
+  // baseOrdinary comes from a no-conversion plan, so it's in the same TAXABLE terms
+  // as ordinaryIncome (can't just subtract gross conversion — the deduction is between).
+  const baseOrdinary = clampN(baseOrdinaryProp, 0, ordinaryIncome);
+  const hasRollover = conversion > 0.5;
+  // How this year's ordinary income fills each bracket: the slice inside it (split
+  // spending vs rollover) and the tax on just that slice. A bracket taxes only the
+  // dollars that land IN it, not your whole income.
   const rows = brackets.map((b, i) => {
     const from = i === 0 ? 0 : brackets[i - 1].upTo;
     const slice = Math.max(0, Math.min(ordinaryIncome, b.upTo) - from);
+    const spendSlice = Math.max(0, Math.min(baseOrdinary, b.upTo) - from);
+    const rollSlice = Math.max(0, Math.min(ordinaryIncome, b.upTo) - Math.max(from, baseOrdinary));
+    const width = b.upTo === Infinity ? null : b.upTo - from;
     return {
       rate: b.rate,
       from,
       upTo: b.upTo,
       slice,
+      spendSlice,
+      rollSlice,
       tax: slice * b.rate,
+      pctFull: width ? clampN(slice / width, 0, 1) : null,
+      spendPct: width ? clampN(spendSlice / width, 0, 1) : 0,
+      rollPct: width ? clampN(rollSlice / width, 0, 1) : 0,
       isFill: Math.abs(b.rate - fillRate) < 1e-9,
       isFuture: showFuture && Math.abs(b.rate - futureRate) < 1e-9,
     };
@@ -1848,7 +1881,9 @@ function BracketLadder({
   const totalTax = rows.reduce((s, r) => s + r.tax, 0);
   const effective = ordinaryIncome > 0 ? totalTax / ordinaryIncome : 0;
   const topRow = [...rows].reverse().find((r) => r.slice > 0); // highest bracket actually reached
-  const cols = "grid grid-cols-[2.2rem_1fr_auto_auto] items-center gap-x-2";
+  const fillBracket = rows.find((r) => r.isFill);
+  const fillTop = fillBracket && fillBracket.upTo !== Infinity ? fillBracket.upTo : ordinaryIncome;
+  const cols = "grid grid-cols-[2.1rem_minmax(0,1fr)_4.75rem_auto_auto] items-center gap-x-2";
   return (
     <div className="mt-4 rounded-2xl border border-border p-3">
       <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-foreground/50">
@@ -1858,6 +1893,7 @@ function BracketLadder({
         <div className={`${cols} px-2 pb-1 text-[9px] uppercase tracking-wide text-foreground/40`}>
           <span>Rate</span>
           <span>Income range</span>
+          <span>Filled</span>
           <span className="text-right">Yours</span>
           <span className="text-right">Tax</span>
         </div>
@@ -1874,9 +1910,20 @@ function BracketLadder({
               <span className={`font-semibold ${r.isFill ? "text-gain" : r.isFuture ? "text-tax" : "text-foreground/70"}`}>
                 {Math.round(r.rate * 100)}%
               </span>
-              <span className="tabular text-foreground/55">{range}</span>
+              <span className="tabular truncate text-foreground/55">{range}</span>
               {hasIncome ? (
                 <>
+                  {/* "How full" bar — spending fills first (blue), the rollover tops
+                      it off (green). The top, open-ended bracket has no width. */}
+                  <span className="flex items-center gap-1">
+                    <span className="relative h-2 w-9 shrink-0 overflow-hidden rounded-full bg-foreground/10">
+                      <span className="absolute inset-y-0 left-0 bg-ss/70" style={{ width: `${r.spendPct * 100}%` }} />
+                      <span className="absolute inset-y-0 bg-gain" style={{ left: `${r.spendPct * 100}%`, width: `${r.rollPct * 100}%` }} />
+                    </span>
+                    <span className="tabular w-6 text-right text-[9px] text-foreground/45">
+                      {r.pctFull == null ? "" : `${Math.round(r.pctFull * 100)}%`}
+                    </span>
+                  </span>
                   <span className={`tabular text-right ${filled ? "font-semibold text-foreground/85" : "text-foreground/25"}`}>
                     {filled ? fmt(r.slice) : "—"}
                   </span>
@@ -1887,6 +1934,7 @@ function BracketLadder({
               ) : (
                 <>
                   <span />
+                  <span />
                   <span className="text-right text-[10px] font-semibold">
                     {r.isFill ? <span className="text-gain">↑ fill</span> : r.isFuture ? <span className="text-tax">↑ RMDs</span> : ""}
                   </span>
@@ -1896,6 +1944,23 @@ function BracketLadder({
           );
         })}
       </div>
+      {hasIncome && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 px-2 text-[9px] text-foreground/45">
+          <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-sm bg-ss/70" /> from spending &amp; other income</span>
+          {hasRollover && <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-sm bg-gain" /> from the Roth rollover</span>}
+        </div>
+      )}
+      {hasIncome && hasRollover && fillBracket && (
+        <p className="mt-2 rounded-lg bg-gain/[0.06] px-2 py-1.5 text-[11px] leading-relaxed text-foreground/75">
+          💡 Your spending &amp; other income add about <strong>{money(baseOrdinary)}</strong> of ordinary taxable income
+          {baseOrdinary > fillBracket.from + 0.5 ? <> — partway up your <strong className="text-gain">{Math.round(fillRate * 100)}%</strong> bracket</> : <>, so your low brackets start nearly empty</>}. The rollover then moves{" "}
+          <strong>{money(conversion)}</strong> to Roth; after your standard deduction that&apos;s about{" "}
+          <strong>{money(Math.max(0, ordinaryIncome - baseOrdinary))}</strong> of taxable income — just enough to fill your{" "}
+          <strong className="text-gain">{Math.round(fillRate * 100)}%</strong> bracket to about its <strong>{fmt(fillTop)}</strong>{" "}
+          top, and it stops there
+          {showFuture ? <>, staying well below the <strong className="text-tax">{Math.round(futureRate * 100)}%</strong> rate your future RMDs would otherwise hit</> : ""}. That&apos;s the whole idea.
+        </p>
+      )}
       {hasIncome && topRow && (
         <p className="mt-2 rounded-lg bg-foreground/[0.03] px-2 py-1.5 text-[11px] leading-relaxed text-foreground/70">
           The <strong>{money(ordinaryIncome)}</strong> of your income taxed at these rates this year owes about{" "}
@@ -1989,6 +2054,12 @@ function DividendInterestDetail({
   return (
     <Info q="See where this comes from">
       <p>Here&apos;s the makeup of this income and exactly which holdings throw it off:</p>
+      <p className="mt-2 rounded-lg bg-ss/[0.06] px-2 py-1.5 text-foreground/70">
+        Only your <strong>taxable (brokerage)</strong> dividends count as income here — those are the ones you actually
+        receive and pay tax on each year. Dividends inside your <strong>IRA / 401(k) / Roth</strong> automatically reinvest
+        and compound <em>inside</em>{" "}the account (they&apos;re part of its growth, not spendable income), so they&apos;re
+        not counted in this figure.
+      </p>
       <div className="mt-2 space-y-1">
         {cats.map((c) => (
           <div key={c.label} className="flex items-baseline justify-between gap-2">
