@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import { useStore } from "@/components/HouseholdProvider";
-import { Card, PageTitle, SectionTitle, Stat, Pill, Disclaimer, Callout, Explainer, Info, PageSkeleton } from "@/components/ui";
+import { Card, PageTitle, SectionTitle, Stat, Pill, Disclaimer, Callout, Explainer, Info, PageSkeleton, DesktopOnly } from "@/components/ui";
 import { StackedArea, Bars, CompareBars, AnimatedNumber, FanChart } from "@/components/charts";
 import { projectLifetime } from "@/lib/projection";
 import { detectMilestones } from "@/lib/milestones";
@@ -10,7 +10,7 @@ import { analyzeConversions } from "@/lib/rothConversion";
 import { MonteCarloResult } from "@/lib/monteCarlo";
 import { computeMonteCarlo } from "@/lib/mcClient";
 import { runStressTests } from "@/lib/stressTest";
-import { solveSafeSpending, SafeSpendResult } from "@/lib/spendingSolver";
+import { solveSafeSpending } from "@/lib/spendingSolver";
 import { STRATEGY_META } from "@/lib/optimizer";
 import { returnModel } from "@/lib/returns";
 import { survivorFromSettings, PlannerSettings } from "@/lib/defaults";
@@ -28,7 +28,10 @@ const MC_RUNS = 1000;
 export default function ProjectionPage() {
   const { ready, household, settings, updateSettings } = useStore();
   const [showAdv, setShowAdv] = useState(false);
-  const [safe, setSafe] = useState<SafeSpendResult[] | null>(null);
+  // The safe-spending RANGE: the most you can spend at 90% confidence if you NEVER
+  // cut (flat), and if you're willing to FLEX (trim in down years, guardrails). The
+  // two ends turn the old "$290k vs $451k" contradiction into one honest spectrum.
+  const [safe, setSafe] = useState<{ flat: number; flex: number } | null>(null);
   const [solving, setSolving] = useState(false);
   const [solveProg, setSolveProg] = useState(0);
   const [boot, setBoot] = useState<MonteCarloResult | null>(null);
@@ -188,7 +191,7 @@ export default function ProjectionPage() {
     setSolving(true);
     setSafe(null);
     setSolveProg(0);
-    const assumptions = {
+    const baseA = {
       strategy: settings.strategy,
       bracketTarget: settings.bracketTarget,
       returnRate: settings.returnRate,
@@ -197,13 +200,18 @@ export default function ProjectionPage() {
       convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
       survivor: survivorFromSettings(settings),
       heirTaxRate: settings.heirTaxRate,
-      spendingStrategy: settings.spendingStrategy,
     } as const;
-    const res = await solveSafeSpending(household, assumptions, [0.9, 0.5], {
+    // Both ends at the SAME 90% confidence — they differ only by whether you flex
+    // spending in downturns, so the comparison is honest (apples to apples).
+    const flatRes = await solveSafeSpending(household, { ...baseA, spendingStrategy: "constant" }, [0.9], {
       model: rm,
-      onProgress: (d, t) => setSolveProg(d / t),
+      onProgress: (d, t) => setSolveProg((d / t) * 0.5),
     });
-    setSafe(res);
+    const flexRes = await solveSafeSpending(household, { ...baseA, spendingStrategy: "guardrails" }, [0.9], {
+      model: rm,
+      onProgress: (d, t) => setSolveProg(0.5 + (d / t) * 0.5),
+    });
+    setSafe({ flat: flatRes[0]?.spend ?? 0, flex: Math.max(flatRes[0]?.spend ?? 0, flexRes[0]?.spend ?? 0) });
     setSolving(false);
   };
 
@@ -471,7 +479,9 @@ export default function ProjectionPage() {
         {mc && mcLoading && (
           <p className="mt-2 text-center text-[11px] text-foreground/45">↻ Updating with your latest numbers…</p>
         )}
-        {/* Sustainable-spending solver — "how much can I safely spend?" */}
+        {/* Safe-spending RANGE — the same 90% confidence, flat vs. flexible. Turns
+            the old contradiction (one widget said "$X runs short," another "$Y is
+            safe") into one honest spectrum. */}
         <div className="mt-3 rounded-xl border border-border p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-[13px] font-semibold">How much could you safely spend?</span>
@@ -480,13 +490,13 @@ export default function ProjectionPage() {
               disabled={solving}
               className="press rounded-full bg-primary px-3 py-1 text-[12px] font-semibold text-white disabled:opacity-50"
             >
-              {solving ? `Solving… ${Math.round(solveProg * 100)}%` : safe ? "Recompute" : "Find it →"}
+              {solving ? `Solving… ${Math.round(solveProg * 100)}%` : safe ? "Recompute" : "Find my range →"}
             </button>
           </div>
           {!safe && !solving && (
             <p className="mt-1 text-[11px] leading-relaxed text-foreground/55">
-              Solves for the yearly spend that hits a target confidence level — the &ldquo;plan-with&rdquo; (90%) and
-              &ldquo;coin-flip&rdquo; (50%) numbers advisors quote. Runs a few hundred simulations; takes a few seconds.
+              Solves for your safe yearly spend at <strong>90% confidence</strong> two ways: spending the same amount
+              every year, vs. trimming a little in down markets. Runs a few hundred simulations; takes a few seconds.
             </p>
           )}
           {solving && (
@@ -496,25 +506,30 @@ export default function ProjectionPage() {
           )}
           {safe && !solving && (
             <div className="mt-2">
-              <div className="grid grid-cols-2 gap-2">
-                {safe.map((s) => (
-                  <div key={s.target} className="rounded-xl border border-border bg-background/60 p-2 text-center">
-                    <div className="text-[10px] uppercase tracking-wide text-foreground/50">
-                      {Math.round(s.target * 100)}% confidence {s.target >= 0.9 ? "(plan-with)" : "(coin-flip)"}
-                    </div>
-                    <div className="tabular text-base font-bold text-gain">{moneyCompact(s.spend)}/yr</div>
-                  </div>
-                ))}
+              <div className="rounded-xl border border-gain/30 bg-gain/[0.06] p-3 text-center">
+                <div className="text-[10px] uppercase tracking-wide text-foreground/50">Safe to spend (90% confidence)</div>
+                <div className="tabular text-xl font-bold text-gain">
+                  {moneyCompact(safe.flat)} – {moneyCompact(safe.flex)}/yr
+                </div>
+                <div className="mt-0.5 text-[10px] text-foreground/45">in today&apos;s dollars</div>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
+                <div className="rounded-xl border border-border bg-background/60 p-2">
+                  <div className="tabular font-bold text-foreground/85">{moneyCompact(safe.flat)}/yr</div>
+                  <div className="text-foreground/55">if you spend the <strong>same every year</strong>, never cutting</div>
+                </div>
+                <div className="rounded-xl border border-border bg-background/60 p-2">
+                  <div className="tabular font-bold text-foreground/85">{moneyCompact(safe.flex)}/yr</div>
+                  <div className="text-foreground/55">if you&apos;ll <strong>trim a little</strong> in down markets (guardrails)</div>
+                </div>
               </div>
               <p className="mt-1.5 text-[11px] leading-relaxed text-foreground/55">
-                These are in today&apos;s dollars. You&apos;re currently planning{" "}
-                <strong>{moneyCompact(household.annualSpending)}/yr</strong>
-                {safe[0] && household.annualSpending <= safe[0].spend
-                  ? " — comfortably within the 90% level."
-                  : safe[0] && household.annualSpending > safe[0].spend && safe[1] && household.annualSpending <= safe[1].spend
-                    ? " — above the 90% level but under the coin-flip; doable if you can stay flexible."
-                    : " — above even the coin-flip level; consider trimming, working longer, or turning on guardrails."}
-                {" "}Aiming far above 90% mostly buys unspent legacy.
+                You&apos;re currently planning <strong>{moneyCompact(household.annualSpending)}/yr</strong>
+                {household.annualSpending <= safe.flat
+                  ? " — within even the never-cut level, so you have real room."
+                  : household.annualSpending <= safe.flex
+                    ? " — above the never-cut level but safe if you can flex in bad years."
+                    : " — above both; consider trimming, working longer, or leaning on guardrails."}
               </p>
             </div>
           )}
@@ -629,7 +644,8 @@ export default function ProjectionPage() {
         </Info>
       </Card>
 
-      {/* ---------- Stress tests: sequence-of-returns "what ifs" ---------- */}
+      {/* ---------- Stress tests: sequence-of-returns "what ifs" (desktop-only) ---------- */}
+      <DesktopOnly>
       <SectionTitle hint="sequence-of-returns">Stress tests — what if it goes wrong early?</SectionTitle>
       <Explainer>
         Monte Carlo asks &ldquo;how often does it work?&rdquo; These ask the opposite: what if a crash or a lost decade hits
@@ -651,6 +667,7 @@ export default function ProjectionPage() {
           </Card>
         ))}
       </div>
+      </DesktopOnly>
 
       {chosen.survivorYear > 0 && (
         <Callout tone="warn" icon="🕊️" title={`Survivor years modeled from ${chosen.survivorYear}`} className="mt-2">
@@ -664,6 +681,21 @@ export default function ProjectionPage() {
       {/* Spending power (shared with Home) */}
       <SpendingPowerCard />
 
+      {/* ---------- Deep analytics — desktop-only. On a phone the Forecast stays
+           focused on "will it last / how much can I spend"; the full charts, the
+           rollover comparison, milestones, and the year-by-year table live on the
+           larger screen where there's room to study them. ---------- */}
+      <DesktopOnly
+        mobileNote={
+          <Card className="mt-2">
+            <p className="text-[13px] leading-relaxed text-foreground/65">
+              📊 The full detail — balances over time, your RMD schedule, the rollover comparison, smart-vs-conventional,
+              key milestones, and the year-by-year table — is on the <strong>desktop version</strong>, where there&apos;s room
+              to lay it out. Open this on a laptop to dig in.
+            </p>
+          </Card>
+        }
+      >
       {/* Balances over time */}
       <SectionTitle>Account balances over time</SectionTitle>
       <Card>
@@ -882,6 +914,7 @@ export default function ProjectionPage() {
           </tbody>
         </table>
       </Card>
+      </DesktopOnly>
 
       <div className="mt-6">
         <Disclaimer />
