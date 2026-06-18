@@ -667,6 +667,25 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </p>
           )}
 
+          {/* Withdrawal-rate guide — the classic "4% rule" yardstick, live at the
+              chosen spend, so the user has a second anchor (besides the safe
+              ceilings) for picking a number. Mirrors the "what pays for it" step. */}
+          {portfolioTotal > 0 && liveImpact.draw > 0.5 && (() => {
+            const liveWR = liveImpact.draw / portfolioTotal;
+            const wrTone = liveWR <= 0.045 ? "gain" : liveWR <= 0.06 ? "accent" : "tax";
+            return (
+              <p className={`mt-2 rounded-xl px-3 py-2 text-[12px] leading-relaxed bg-${wrTone}/[0.07] text-foreground/80`}>
+                💡 At this spending you&apos;d pull about <strong className={`text-${wrTone}`}>{(liveWR * 100).toFixed(1)}%</strong> of your{" "}
+                <strong>{money(portfolioTotal)}</strong> in savings this year.{" "}
+                {liveWR <= 0.045
+                  ? "That's at or below the ~4–4.5% pace planners treat as sustainable for a long retirement — a comfortable draw."
+                  : liveWR <= 0.06
+                    ? "That's a bit above the classic ~4% pace — workable, but worth watching, especially before Social Security starts."
+                    : "That's a steep pace versus the ~4% rule of thumb — the market-risk range below shows whether it holds up."}
+              </p>
+            );
+          })()}
+
           {/* Portfolio value over time, as a confidence interval — the standard
               high-end "fan", not a single line. Reads off the off-thread Monte
               Carlo, which lags a drag; while it catches up we show "updating…"
@@ -802,7 +821,20 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             <div className="mt-3 space-y-1 text-[13px]">
               <Row label="Guaranteed income (doesn't depend on markets)" value={money(guaranteed)} tone="ss" bold />
               {gItems.map((g) => (
-                <Row key={g.label} label={`…${g.label}`} value={money(g.value)} sub />
+                <div key={g.label}>
+                  <Row label={`…${g.label}`} value={money(g.value)} sub />
+                  {g.label === "Dividends & interest" && (
+                    <div className="pl-2">
+                      <DividendInterestDetail
+                        household={household}
+                        qualified={plan.fixed.dividends}
+                        ordinary={plan.fixed.ordinaryDividends}
+                        taxableInt={plan.fixed.taxableInterest}
+                        taxExemptInt={plan.fixed.taxExemptInterest}
+                      />
+                    </div>
+                  )}
+                </div>
               ))}
               <div className="my-1 border-t border-border/60" />
               <Row label="You pull this from savings" value={money(totalDraw)} tone="taxable" bold />
@@ -1708,6 +1740,108 @@ function BracketLadder({
         )}
       </p>
     </div>
+  );
+}
+
+/** "See where this comes from" for the Dividends & interest line. The category
+ *  totals are exact (the user enters them per type on the Accounts page); the
+ *  per-asset attribution is by holding TYPE (dividend-paying vs interest-bearing),
+ *  since we don't track each fund's individual payout — so we show which assets
+ *  generate each, the amount of those assets, and the implied yield, without
+ *  inventing per-fund dollar figures. */
+function DividendInterestDetail({
+  household,
+  qualified,
+  ordinary,
+  taxableInt,
+  taxExemptInt,
+}: {
+  household: Household;
+  qualified: number;
+  ordinary: number;
+  taxableInt: number;
+  taxExemptInt: number;
+}) {
+  const totalDiv = qualified + ordinary;
+  const totalInt = taxableInt + taxExemptInt;
+  if (totalDiv + totalInt < 0.5) return null;
+
+  const cats = [
+    { label: "Qualified dividends", value: qualified, note: "preferential 0/15/20% rate" },
+    { label: "Ordinary dividends", value: ordinary, note: "taxed as ordinary income (REITs, some funds)" },
+    { label: "Taxable interest", value: taxableInt, note: "ordinary income (CDs, Treasuries, savings)" },
+    { label: "Tax-exempt interest", value: taxExemptInt, note: "federal-tax-free (munis) — still counts for IRMAA" },
+  ].filter((c) => c.value > 0.5);
+
+  // Map taxable holdings to what they throw off, by type. Cash & bond funds →
+  // interest; stocks/ETFs/mutual funds → dividends. No line items → by account kind.
+  const taxable = household.accounts.filter((a) => bucketOf(a.kind) === "taxable");
+  let divAssets = 0;
+  let intAssets = 0;
+  const divNames: string[] = [];
+  const intNames: string[] = [];
+  for (const a of taxable) {
+    if (a.holdings && a.holdings.length > 0) {
+      for (const h of a.holdings) {
+        const v = h.shares * h.price;
+        if (h.type === "cash" || h.type === "bond_fund") {
+          intAssets += v;
+          intNames.push(h.name);
+        } else {
+          divAssets += v;
+          divNames.push(h.name);
+        }
+      }
+    } else if (a.kind === "cash") {
+      intAssets += a.balance;
+      intNames.push(a.label);
+    } else {
+      divAssets += a.balance;
+      divNames.push(a.label);
+    }
+  }
+  const namesList = (names: string[]) =>
+    names.length ? `${names.slice(0, 4).join(", ")}${names.length > 4 ? `, +${names.length - 4} more` : ""}` : "";
+
+  return (
+    <Info q="See where this comes from">
+      <p>These are figures you entered for your taxable accounts. Here&apos;s the makeup and what generates each:</p>
+      <div className="mt-2 space-y-1">
+        {cats.map((c) => (
+          <div key={c.label} className="flex items-baseline justify-between gap-2">
+            <span className="text-foreground/75">
+              {c.label} <span className="text-foreground/45">· {c.note}</span>
+            </span>
+            <span className="tabular shrink-0 font-medium">{money(c.value)}</span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 space-y-1.5 border-t border-border/50 pt-2">
+        {totalDiv > 0.5 && (
+          <p>
+            <strong>{money(totalDiv)} in dividends</strong> comes from your dividend-paying holdings
+            {namesList(divNames) ? <> ({namesList(divNames)})</> : null}
+            {divAssets > 0 ? (
+              <> — about {money(divAssets)} of assets, an implied <strong>{percent(totalDiv / divAssets, 1)}</strong> yield</>
+            ) : null}
+            .
+          </p>
+        )}
+        {totalInt > 0.5 && (
+          <p>
+            <strong>{money(totalInt)} in interest</strong> comes from your cash &amp; bonds
+            {namesList(intNames) ? <> ({namesList(intNames)})</> : null}
+            {intAssets > 0 ? (
+              <> — about {money(intAssets)}, an implied <strong>{percent(totalInt / intAssets, 1)}</strong> rate</>
+            ) : null}
+            .
+          </p>
+        )}
+      </div>
+      <p className="mt-2 text-foreground/50">
+        We track these as totals by type, not per fund — adjust them anytime on the Accounts page.
+      </p>
+    </Info>
   );
 }
 
