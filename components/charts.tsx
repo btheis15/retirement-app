@@ -6,7 +6,7 @@
  * Colors are passed as CSS-variable hex via the theme tokens (see globals.css).
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { money, moneyCompact } from "@/lib/format";
 
 export interface Segment {
@@ -212,57 +212,136 @@ export function StackedArea({
  */
 export function FanChart({
   band,
-  height = 170,
+  height = 200,
   color = "var(--color-gain)",
   lineColor = "var(--color-primary)",
   yLabel,
+  startAge,
 }: {
   band: { year: number; p10: number; p50: number; p90: number; p25?: number; p75?: number }[];
   height?: number;
   color?: string;
   lineColor?: string;
   yLabel?: (n: number) => string;
+  /** Age at the FIRST band year — when given, the x-axis shows age under the year. */
+  startAge?: number;
 }) {
   const [shown, setShown] = useState(false);
+  const [hoverI, setHoverI] = useState<number | null>(null);
   useEffect(() => {
     const t = requestAnimationFrame(() => setShown(true));
     return () => cancelAnimationFrame(t);
   }, []);
-  const width = 340;
-  const padL = 6;
-  const padR = 6;
-  const padB = 18;
+  const width = 360;
+  const padL = 40;
+  const padR = 10;
+  const padT = 10;
+  const padB = startAge != null ? 32 : 22;
   const n = band.length;
   if (n === 0) return null;
-  const maxY = Math.max(1, ...band.map((b) => b.p90));
+  const rawMax = Math.max(1, ...band.map((b) => b.p90));
+  // Round the top of the axis up to a "nice" number so the gridlines read cleanly.
+  const pow = Math.pow(10, Math.floor(Math.log10(rawMax)));
+  const f = rawMax / pow;
+  const maxY = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * pow;
+  const fmt = yLabel ?? ((x: number) => `${Math.round(x)}`);
   const xAt = (i: number) => padL + (i / Math.max(1, n - 1)) * (width - padL - padR);
-  const yAt = (v: number) => height - padB - (v / maxY) * (height - padB - 6);
+  const yAt = (v: number) => padT + (1 - v / maxY) * (height - padT - padB);
   const areaBetween = (hi: (b: (typeof band)[number]) => number, lo: (b: (typeof band)[number]) => number) => {
     const top = band.map((b, i) => `${xAt(i)},${yAt(hi(b))}`).join(" L ");
     const bot = band.map((b, i) => `${xAt(i)},${yAt(lo(b))}`).reverse().join(" L ");
     return `M ${top} L ${bot} Z`;
   };
+  const line = (sel: (b: (typeof band)[number]) => number) => `M ${band.map((b, i) => `${xAt(i)},${yAt(sel(b))}`).join(" L ")}`;
   const outer = areaBetween((b) => b.p90, (b) => b.p10); // 10–90 full range
   const hasInner = band.every((b) => b.p25 != null && b.p75 != null);
   const inner = hasInner ? areaBetween((b) => b.p75!, (b) => b.p25!) : null; // 25–75 likely range
-  const median = `M ${band.map((b, i) => `${xAt(i)},${yAt(b.p50)}`).join(" L ")}`;
+  const median = line((b) => b.p50);
+  const gridVals = [0, 0.25, 0.5, 0.75, 1].map((g) => g * maxY);
+  const tickCount = Math.min(5, n);
+  const tickIdx =
+    tickCount <= 1 ? [0] : Array.from({ length: tickCount }, (_, k) => Math.round((k * (n - 1)) / (tickCount - 1)));
+  const ageAt = (i: number) => (startAge != null ? startAge + (band[i].year - band[0].year) : null);
+
+  const onMove = (e: ReactPointerEvent<SVGSVGElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const vbX = ((e.clientX - r.left) / r.width) * width;
+    const frac = (vbX - padL) / (width - padL - padR);
+    const i = Math.max(0, Math.min(n - 1, Math.round(frac * (n - 1))));
+    setHoverI(i);
+  };
+  const hb = hoverI != null ? band[hoverI] : null;
+  const hoverLeftPct = hoverI != null ? (xAt(hoverI) / width) * 100 : 0;
+  const hoverNearRight = hoverLeftPct > 62;
+
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ opacity: shown ? 1 : 0, transition: "opacity 500ms ease" }}>
-      <path d={outer} fill={color} fillOpacity={0.13} />
-      {inner && <path d={inner} fill={color} fillOpacity={0.28} />}
-      <path d={median} fill="none" stroke={lineColor} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-      {yLabel && (
-        <text x={padL} y={12} fontSize="9" fill="var(--color-foreground)" opacity="0.4">
-          {yLabel(maxY)}
-        </text>
+    <div className="relative">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="w-full touch-none"
+        style={{ opacity: shown ? 1 : 0, transition: "opacity 500ms ease" }}
+        onPointerMove={onMove}
+        onPointerDown={onMove}
+        onPointerLeave={() => setHoverI(null)}
+      >
+        {/* y-axis dollar gridlines + labels */}
+        {gridVals.map((v, k) => (
+          <g key={k}>
+            <line x1={padL} y1={yAt(v)} x2={width - padR} y2={yAt(v)} stroke="var(--color-foreground)" strokeOpacity={k === 0 ? 0.18 : 0.08} strokeWidth="1" />
+            <text x={padL - 4} y={yAt(v) + 3} fontSize="8.5" textAnchor="end" fill="var(--color-foreground)" opacity="0.45">
+              {fmt(v)}
+            </text>
+          </g>
+        ))}
+        <path d={outer} fill={color} fillOpacity={0.13} />
+        {inner && <path d={inner} fill={color} fillOpacity={0.28} />}
+        {/* boundary percentile lines (more reference lines) */}
+        <path d={line((b) => b.p90)} fill="none" stroke={color} strokeWidth="1" strokeOpacity={0.5} strokeDasharray="3 3" />
+        <path d={line((b) => b.p10)} fill="none" stroke={color} strokeWidth="1" strokeOpacity={0.5} strokeDasharray="3 3" />
+        <path d={median} fill="none" stroke={lineColor} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        {/* x-axis ticks: year (+ age). First/last anchored inward so edge labels don't clip. */}
+        {tickIdx.map((i, k) => {
+          const anchor = k === 0 ? "start" : k === tickIdx.length - 1 ? "end" : "middle";
+          const tx = k === 0 ? xAt(i) - 2 : k === tickIdx.length - 1 ? xAt(i) + 2 : xAt(i);
+          return (
+            <g key={i}>
+              <line x1={xAt(i)} y1={height - padB} x2={xAt(i)} y2={height - padB + 3} stroke="var(--color-foreground)" strokeOpacity={0.3} strokeWidth="1" />
+              <text x={tx} y={height - padB + 12} fontSize="8.5" textAnchor={anchor} fill="var(--color-foreground)" opacity="0.5">
+                {band[i].year}
+              </text>
+              {startAge != null && (
+                <text x={tx} y={height - padB + 22} fontSize="8" textAnchor={anchor} fill="var(--color-foreground)" opacity="0.38">
+                  age {ageAt(i)}
+                </text>
+              )}
+            </g>
+          );
+        })}
+        {/* hover crosshair + dots */}
+        {hb && hoverI != null && (
+          <g>
+            <line x1={xAt(hoverI)} y1={padT} x2={xAt(hoverI)} y2={height - padB} stroke="var(--color-foreground)" strokeOpacity={0.35} strokeWidth="1" />
+            <circle cx={xAt(hoverI)} cy={yAt(hb.p90)} r="2.5" fill={color} />
+            <circle cx={xAt(hoverI)} cy={yAt(hb.p50)} r="3" fill={lineColor} />
+            <circle cx={xAt(hoverI)} cy={yAt(hb.p10)} r="2.5" fill={color} />
+          </g>
+        )}
+      </svg>
+      {hb && (
+        <div
+          className="pointer-events-none absolute top-1 z-10 rounded-lg border border-border bg-card/95 px-2 py-1 text-[10px] leading-tight shadow-sm backdrop-blur"
+          style={{ left: `${hoverLeftPct}%`, transform: hoverNearRight ? "translateX(-100%)" : "translateX(8px)" }}
+        >
+          <div className="font-semibold text-foreground/80">
+            {band[hoverI!].year}
+            {startAge != null ? ` · age ${ageAt(hoverI!)}` : ""}
+          </div>
+          <div className="mt-0.5 flex items-center gap-1 text-foreground/60"><span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color }} /> best 10%: {fmt(hb.p90)}</div>
+          <div className="flex items-center gap-1 font-semibold" style={{ color: lineColor }}><span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: lineColor }} /> typical: {fmt(hb.p50)}</div>
+          <div className="flex items-center gap-1 text-foreground/60"><span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color }} /> worst 10%: {fmt(hb.p10)}</div>
+        </div>
       )}
-      <text x={padL} y={height - 4} fontSize="9" fill="var(--color-foreground)" opacity="0.45">
-        {band[0].year}
-      </text>
-      <text x={width - padR} y={height - 4} fontSize="9" textAnchor="end" fill="var(--color-foreground)" opacity="0.45">
-        {band[n - 1].year}
-      </text>
-    </svg>
+    </div>
   );
 }
 

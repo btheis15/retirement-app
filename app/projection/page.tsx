@@ -329,6 +329,7 @@ export default function ProjectionPage() {
             hasPension={household.pensionAnnual > 0}
             guaranteedMonthly={guaranteedMonthly}
             spendingStrategy={settings.spendingStrategy}
+            selfBirthYear={household.self.birthYear}
           />
         ) : (
           <MCResultsLoading />
@@ -980,6 +981,7 @@ function MonteCarloResults({
   hasPension,
   guaranteedMonthly,
   spendingStrategy,
+  selfBirthYear,
 }: {
   mc: MonteCarloResult;
   real: boolean;
@@ -987,6 +989,7 @@ function MonteCarloResults({
   hasPension: boolean;
   guaranteedMonthly: number;
   spendingStrategy: "constant" | "guardrails";
+  selfBirthYear: number;
 }) {
   const band = real ? mc.bandReal : mc.band;
   const ending = real ? mc.endingWealthReal : mc.endingWealth;
@@ -1004,7 +1007,7 @@ function MonteCarloResults({
         </div>
       </div>
       <div className="mt-4">
-        <FanChart band={band} yLabel={(n) => moneyCompact(n)} />
+        <FanChart band={band} yLabel={(n) => moneyCompact(n)} startAge={band.length ? band[0].year - selfBirthYear : undefined} />
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-foreground/55">
           <span className="inline-flex items-center gap-1">
             <span className="inline-block h-2 w-3 rounded-sm" style={{ background: HEX.gain, opacity: 0.28 }} /> 25th–75th (likely range)

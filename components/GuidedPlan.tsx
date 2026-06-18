@@ -631,6 +631,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             <div className="text-[12px] text-foreground/50">
               per year, after tax{" "}
               <span className="text-foreground/40">(≈ {money(Math.round(localSpend / 12))}/mo)</span>
+              {plan.filingStatus === "mfj" ? <span className="text-foreground/40"> · total for both of you</span> : ""}
             </div>
           </div>
 
@@ -737,8 +738,11 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 <>
                   <div className="tabular text-lg font-bold text-tax">+{moneyCompact(irmaaCliff.curSurcharge)}/yr</div>
                   <div className="text-[10px] leading-snug text-foreground/45">
-                    {shortTier(irmaaCliff.curLabel)} · {money(Math.round(irmaaCliff.curSurcharge / 12 / irmaaCliff.enrollees))}/mo per person
-                    {irmaaCliff.enrollees > 1 ? ` × ${irmaaCliff.enrollees}` : ""}
+                    {shortTier(irmaaCliff.curLabel)} · {money(Math.round(irmaaCliff.curPerPersonMo))}/mo per person
+                    {irmaaCliff.enrollees > 1 ? ` × ${irmaaCliff.enrollees} on Medicare` : ""}
+                  </div>
+                  <div className="mt-0.5 text-[10px] leading-snug text-foreground/40">
+                    = {money(Math.round(irmaaCliff.curPartB))} Part B + {money(Math.round(irmaaCliff.curPartD))} Part D
                   </div>
                 </>
               ) : (
@@ -772,6 +776,29 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 {medicareEnrollees > 1 ? `${medicareEnrollees} of you` : "one of you"}{" "}on Medicare. So Medicare&apos;s own
                 table looks bigger because it shows the <em>whole</em> monthly premium (standard + surcharge), each part on its own
                 line — this shows just the added yearly cost.
+              </p>
+              {irmaaCliff?.inSurcharge && (
+                <p className="mt-2 rounded-lg bg-tax/[0.06] px-2 py-1.5">
+                  In your tier ({shortTier(irmaaCliff.curLabel)}) that&apos;s about{" "}
+                  <strong>{money(Math.round(irmaaCliff.curPartB))}/mo Part&nbsp;B</strong> +{" "}
+                  <strong>{money(Math.round(irmaaCliff.curPartD))}/mo Part&nbsp;D</strong> ≈{" "}
+                  <strong>{money(Math.round(irmaaCliff.curPerPersonMo))}/mo per person</strong>. Part&nbsp;D alone tops out near{" "}
+                  <strong>$91/mo</strong>{" "}even at the highest income — so the big piece is always Part&nbsp;B (that&apos;s why
+                  this is far more than the ~$91 max on the Part&nbsp;D table).{" "}
+                  {irmaaCliff.enrollees > 1 ? (
+                    <>With <strong>{irmaaCliff.enrollees} of you</strong> on Medicare, the household pays{" "}
+                    {money(Math.round(irmaaCliff.curPerPersonMo))} × 12 × {irmaaCliff.enrollees} ={" "}
+                    <strong>{money(irmaaCliff.curSurcharge)}/yr</strong>.</>
+                  ) : (
+                    <>For the one of you on Medicare so far, that&apos;s {money(Math.round(irmaaCliff.curPerPersonMo))} × 12 ={" "}
+                    <strong>{money(irmaaCliff.curSurcharge)}/yr</strong> (it doubles once both of you are enrolled).</>
+                  )}
+                </p>
+              )}
+              <p className="mt-2">
+                The spending number above is your <strong>whole household&apos;s</strong>{" "}take-home — not per person. The
+                IRMAA surcharge is the opposite: it&apos;s billed to <strong>each person</strong> on Medicare, so the yearly
+                household cost is the per-person amount × the number of you enrolled.
               </p>
               <p className="mt-2">
                 Your tier is set by your{" "}
@@ -846,7 +873,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 </div>
                 {haveFan && fanFresh ? (
                   <>
-                    <FanChart band={band!} height={150} yLabel={(n) => moneyCompact(n)} />
+                    <FanChart band={band!} height={180} yLabel={(n) => moneyCompact(n)} startAge={plan.selfAge} />
                     <p className="mt-1 text-[12px] leading-relaxed text-foreground/70">
                       At age {settings.endAge}, in today&apos;s dollars, your savings are likely worth between{" "}
                       <strong>{moneyCompact(cw!.p10)}</strong> and <strong>{moneyCompact(cw!.p90)}</strong> — typically around{" "}
@@ -1655,7 +1682,7 @@ function CashFlowBar({
  * distance to the next cliff, and the jump if you cross it — so the UI can warn
  * before spending/withdrawals push the household over a line.
  */
-type IrmaaTier = { upTo: number; monthlyPerPerson: number; label: string };
+type IrmaaTier = { upTo: number; monthlyPerPerson: number; partB?: number; partD?: number; label: string };
 function irmaaCliffInfo(magi: number, factor: number, tiers: IrmaaTier[], enrollees: number) {
   if (enrollees <= 0) return null; // nobody on Medicare yet → IRMAA doesn't apply
   let idx = tiers.findIndex((t) => magi <= t.upTo * factor);
@@ -1670,6 +1697,9 @@ function irmaaCliffInfo(magi: number, factor: number, tiers: IrmaaTier[], enroll
     inSurcharge: cur.monthlyPerPerson > 0,
     curLabel: cur.label,
     curSurcharge: cur.monthlyPerPerson * 12 * enrollees,
+    curPerPersonMo: cur.monthlyPerPerson,
+    curPartB: cur.partB ?? 0,
+    curPartD: cur.partD ?? 0,
     atTop,
     nextThreshold,
     distance: nextThreshold - magi,
