@@ -48,6 +48,9 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     const clamped = Math.max(0, Math.min(next, 99));
     setDir(clamped >= step ? "fwd" : "back");
     setStep(clamped);
+    // Each step can be tall (esp. on mobile); always land the user at the top of
+    // the new step rather than wherever they'd scrolled on the previous one.
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   // Spending slider tracks at 60fps on LOCAL state; the (heavy) recompute is
