@@ -1111,8 +1111,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   }
 
   steps.push({
-    key: "cover",
-    eyebrow: "what pays for it",
+    key: "fund",
+    eyebrow: "what pays for it — and from where",
     render: () => {
       const pct = Math.round(coverageRatio * 100);
       const heading = coveredByIncome
@@ -1133,11 +1133,32 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       // Withdrawal-rate read: is the savings draw a sustainable pace?
       const wrPct = (withdrawalRate * 100).toFixed(1);
       const wrTone = withdrawalRate <= 0.045 ? "gain" : withdrawalRate <= 0.06 ? "accent" : "tax";
+
+      // Where that savings draw comes from: required first, then the order that keeps
+      // the most after lifetime tax. (Same money as "From savings" above — this is its breakdown.)
+      const items: { label: string; amount: number; why: string }[] = [];
+      if (rmd > 0.5) items.push({ label: "Take your required withdrawal (RMD)", amount: rmd, why: "The IRS forces this out of pre-tax accounts first; it's taxed as ordinary income." });
+      if (voluntaryPretax > 0.5) items.push({ label: "Withdraw from pre-tax (IRA/401k)", amount: voluntaryPretax, why: "Taxed as ordinary income — but done now, in a low bracket, so less is forced out at higher rates later." });
+      if (w.taxable > 0.5) items.push({ label: "Spend taxable savings (cash first, then brokerage)", amount: w.taxable, why: "Cash is spent first (no tax); then brokerage, where only the gain is taxed at the lower capital-gains rate." });
+      if (w.roth > 0.5) items.push({ label: "Tap your Roth (tax-free)", amount: w.roth, why: "Used last — tax-free and never forced out, so it keeps compounding the longest." });
+      const keep = (p: typeof orderCompare.conventional) =>
+        Math.max(0, p.endingEstateAfterTax - p.endingBuckets.taxableGain * 0.15);
+      const orders = [
+        { key: "conventional", name: "Brokerage & cash first", v: keep(orderCompare.conventional) },
+        { key: "smart", name: "Pre-tax first (fill low brackets)", v: keep(orderCompare.smart) },
+        { key: "proportional", name: "A little from everything", v: keep(orderCompare.proportional) },
+      ];
+      const ranked = [...orders].sort((a, b) => b.v - a.v);
+      const chosen = orders.find((o) => o.key === settings.strategy) ?? ranked[0];
+      const runnerUp = ranked.find((o) => o.key !== chosen.key) ?? ranked[1];
+      const edge = chosen.v - (runnerUp?.v ?? chosen.v);
+      const usesBrokerageFirst = settings.strategy === "conventional";
       return (
         <div>
           <h2 className="text-xl font-bold leading-snug">{heading}</h2>
           <p className="mt-1 text-[13px] text-foreground/60">
-            Your guaranteed income comes in first; you only pull from savings to fill the gap. Here&apos;s the split for {year}.
+            Your guaranteed income comes in first; you only pull from savings to fill the gap. Here&apos;s the split for {year} —
+            and exactly which accounts that draw comes from.
           </p>
           <div className="mt-4">
             <StackedBar
@@ -1199,10 +1220,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   you&apos;ll pull noticeably less from savings, and these early years are the most you&apos;ll lean on your accounts.
                 </p>
               )}
-              <p className="mt-2 rounded-xl bg-foreground/[0.03] px-3 py-2 text-[13px] text-foreground/70">
-                So this year you need <strong>{money(totalDraw)}</strong>{" "}from savings — next we&apos;ll show exactly
-                which accounts it comes from, and why that order keeps your lifetime tax lowest.
-              </p>
             </>
           )}
 
@@ -1234,153 +1251,119 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               })()}
             </Callout>
           )}
-        </div>
-      );
-    },
-  });
 
-  steps.push({
-    key: "pull",
-    eyebrow: "where to pull it",
-    render: () => {
-      const items: { label: string; amount: number; why: string }[] = [];
-      if (rmd > 0.5) items.push({ label: "Take your required withdrawal (RMD)", amount: rmd, why: "The IRS forces this out of pre-tax accounts first; it's taxed as ordinary income." });
-      if (voluntaryPretax > 0.5) items.push({ label: "Withdraw from pre-tax (IRA/401k)", amount: voluntaryPretax, why: "Taxed as ordinary income — but done now, in a low bracket, so less is forced out at higher rates later." });
-      if (w.taxable > 0.5) items.push({ label: "Spend taxable savings (cash first, then brokerage)", amount: w.taxable, why: "Cash is spent first (no tax); then brokerage, where only the gain is taxed at the lower capital-gains rate." });
-      if (w.roth > 0.5) items.push({ label: "Tap your Roth (tax-free)", amount: w.roth, why: "Used last — tax-free and never forced out, so it keeps compounding the longest." });
-
-      // Live proof: the three withdrawal orders on THIS household. We rank by money
-      // you can COUNT ON — after-tax estate valued as if heirs realize the brokerage
-      // gains rather than always getting a full step-up — because that's the measure
-      // the advisor uses to avoid recommending a fragile, step-up-dependent plan.
-      const keep = (p: typeof orderCompare.conventional) =>
-        Math.max(0, p.endingEstateAfterTax - p.endingBuckets.taxableGain * 0.15);
-      const orders = [
-        { key: "conventional", name: "Brokerage & cash first", v: keep(orderCompare.conventional) },
-        { key: "smart", name: "Pre-tax first (fill low brackets)", v: keep(orderCompare.smart) },
-        { key: "proportional", name: "A little from everything", v: keep(orderCompare.proportional) },
-      ];
-      const ranked = [...orders].sort((a, b) => b.v - a.v);
-      const chosen = orders.find((o) => o.key === settings.strategy) ?? ranked[0];
-      const runnerUp = ranked.find((o) => o.key !== chosen.key) ?? ranked[1];
-      const edge = chosen.v - (runnerUp?.v ?? chosen.v);
-      const usesBrokerageFirst = settings.strategy === "conventional";
-
-      return (
-        <div>
-          <h2 className="text-xl font-bold leading-snug">{coveredByIncome ? "Nothing to withdraw this year" : "Pull the rest from here — in this order"}</h2>
-          <p className="mt-1 text-[13px] text-foreground/60">
-            Take what&apos;s required first, then the source your numbers show keeps the most money after every tax —
-            saving tax-free Roth for last.
-          </p>
-          {items.length === 0 ? (
-            <p className="mt-4 rounded-xl bg-gain/5 px-3 py-3 text-[13px] text-foreground/75">Your income covers your spending — no withdrawals needed. Any surplus can be reinvested.</p>
-          ) : (
-            <ol className="mt-4 space-y-2">
-              {items.map((it, i) => (
-                <li key={i} className="rise flex gap-3 rounded-2xl border border-border p-3" style={{ ["--i" as string]: i } as React.CSSProperties}>
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-[12px] font-bold text-white">{i + 1}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="font-semibold">{it.label}</span>
-                      <span className="tabular shrink-0 font-bold">{money(it.amount)}</span>
-                    </div>
-                    <p className="mt-0.5 text-[12px] leading-snug text-foreground/60">{it.why}</p>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          )}
-
-          {items.length === 1 && (
-            <p className="mt-2 text-[12px] leading-snug text-foreground/55">
-              That one source covers this whole year&apos;s gap, so it&apos;s all you need now. In later years the mix can
-              shift as balances and tax brackets change.
-            </p>
-          )}
-
-          {/* The rollover is SEPARATE money movement, not spending — connect the two. */}
-          {conversion > 0.5 && (
-            <p className="mt-2 rounded-xl bg-roth/[0.08] px-3 py-2 text-[12px] leading-relaxed text-foreground/75">
-              🔄 Separately, you&apos;ll move about <strong>{money(conversion)}</strong>{" "}from pre-tax into your Roth
-              (the next step). That&apos;s <em>not</em> spending — it lands in your Roth and grows tax-free; its tax is best paid
-              from cash.
-            </p>
-          )}
-
-          {/* Why THIS order — proven on the user's own numbers, and honest about the
-              "spend taxable first" rule of thumb. */}
-          {!coveredByIncome && (
-            <div className="mt-3 rounded-2xl border border-border p-3">
-              {chosen.key === ranked[0].key ? (
-                <>
-                  <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-foreground/45">
-                    Why this order? We tested all three on your numbers
-                  </div>
-                  <div className="space-y-1">
-                    {ranked.map((o) => (
-                      <div key={o.key} className="flex items-baseline justify-between gap-2 text-[12px]">
-                        <span className={o.key === chosen.key ? "font-semibold text-gain" : "text-foreground/60"}>
-                          {o.key === chosen.key ? "✓ " : ""}
-                          {o.name}
-                        </span>
-                        <span className={`tabular ${o.key === chosen.key ? "font-bold text-gain" : "text-foreground/55"}`}>
-                          {moneyCompact(o.v)} left
-                        </span>
+          {/* Where that savings draw comes from — the withdrawal order, on the same money. */}
+          {!coveredByIncome && items.length > 0 && (
+            <div className="mt-5 border-t border-border pt-4">
+              <h3 className="text-base font-bold leading-snug">Where that {money(totalDraw)} comes from — in this order</h3>
+              <p className="mt-1 text-[13px] text-foreground/60">
+                Take what&apos;s required first, then the source your numbers show keeps the most money after every tax —
+                saving tax-free Roth for last.
+              </p>
+              <ol className="mt-4 space-y-2">
+                {items.map((it, i) => (
+                  <li key={i} className="rise flex gap-3 rounded-2xl border border-border p-3" style={{ ["--i" as string]: i } as React.CSSProperties}>
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-[12px] font-bold text-white">{i + 1}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="font-semibold">{it.label}</span>
+                        <span className="tabular shrink-0 font-bold">{money(it.amount)}</span>
                       </div>
-                    ))}
-                  </div>
-                  <p className="-mt-0.5 mb-1 text-[10px] leading-snug text-foreground/40">
-                    &ldquo;Left&rdquo; = after-tax estate counted conservatively (assuming heirs may sell the brokerage rather
-                    than always getting a full step-up), so the winner isn&apos;t resting on a single tax bet.
-                  </p>
-                  <p className="mt-1 text-[12px] leading-relaxed text-foreground/70">
-                    {usesBrokerageFirst ? (
-                      <>
-                        Many advisors say &ldquo;spend your brokerage first&rdquo; — and for you that&apos;s exactly right
-                        {edge > 1000 ? <>, by about <strong>{moneyCompact(edge)}</strong></> : null}. Spending the brokerage
-                        keeps your taxable income low, which opens up cheap room to roll pre-tax → Roth; and anything you
-                        leave in the brokerage gets a <strong>step-up at death</strong> that erases the gain for your heirs.
-                      </>
-                    ) : settings.strategy === "smart" ? (
-                      <>
-                        Here it pays to pull <strong>pre-tax first</strong>
-                        {edge > 1000 ? <>, by about <strong>{moneyCompact(edge)}</strong></> : null}. Filling your low
-                        brackets with pre-tax dollars now shrinks the balance that would otherwise be forced out later as
-                        RMDs at higher rates — worth more than the capital-gains savings of selling the brokerage first.
-                      </>
-                    ) : (
-                      <>
-                        For you a <strong>balanced draw</strong> from every account wins
-                        {edge > 1000 ? <>, by about <strong>{moneyCompact(edge)}</strong></> : null} — it keeps taxable
-                        income low enough to convert pre-tax → Roth cheaply while still preserving brokerage gains for the
-                        step-up.
-                      </>
-                    )}
-                  </p>
-                </>
-              ) : (
-                <p className="text-[12px] leading-relaxed text-foreground/70">
-                  Because your goal is <strong>{GOAL_META[settings.goal].short.toLowerCase()}</strong>, the plan pulls in the
-                  order that best serves it. The order below explains the general trade-off.
+                      <p className="mt-0.5 text-[12px] leading-snug text-foreground/60">{it.why}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+
+              {items.length === 1 && (
+                <p className="mt-2 text-[12px] leading-snug text-foreground/55">
+                  That one source covers this whole year&apos;s gap, so it&apos;s all you need now. In later years the mix can
+                  shift as balances and tax brackets change.
                 </p>
               )}
-              <Info q="Wait — why not just spend the brokerage first like advisors say?">
-                <p>
-                  It&apos;s a great rule of thumb, and often right — but not always. The catch is that the money in your
-                  pre-tax IRA/401(k) will be taxed as ordinary income <em>eventually</em>, either when you take it or when
-                  your heirs do. If you only ever touch the brokerage, that pre-tax balance keeps growing and gets forced
-                  out in your 70s–80s as RMDs — often at a <em>higher</em>{" "}rate than you&apos;d pay today, and it can push
-                  up your Medicare (IRMAA) premiums too.
+
+              {/* The rollover is SEPARATE money movement, not spending — connect the two. */}
+              {conversion > 0.5 && (
+                <p className="mt-2 rounded-xl bg-roth/[0.08] px-3 py-2 text-[12px] leading-relaxed text-foreground/75">
+                  🔄 Separately, you&apos;ll move about <strong>{money(conversion)}</strong>{" "}from pre-tax into your Roth
+                  (the next step). That&apos;s <em>not</em> spending — it lands in your Roth and grows tax-free; its tax is best paid
+                  from cash.
                 </p>
-                <p className="mt-2">
-                  So the real comparison isn&apos;t &ldquo;15% on a brokerage gain vs 22% on a pre-tax dollar this
-                  year.&rdquo; It&apos;s &ldquo;a known low rate now vs a likely higher rate later&rdquo; on the pre-tax
-                  money, plus the fact that brokerage gains can escape tax entirely via the step-up at death. The table
-                  above is that full lifetime comparison run on your actual accounts — whichever order keeps the most after
-                  every tax is the one we use.
-                </p>
-              </Info>
+              )}
+
+              {/* Why THIS order — proven on the user's own numbers, and honest about the
+                  "spend taxable first" rule of thumb. */}
+              <div className="mt-3 rounded-2xl border border-border p-3">
+                {chosen.key === ranked[0].key ? (
+                  <>
+                    <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-foreground/45">
+                      Why this order? We tested all three on your numbers
+                    </div>
+                    <div className="space-y-1">
+                      {ranked.map((o) => (
+                        <div key={o.key} className="flex items-baseline justify-between gap-2 text-[12px]">
+                          <span className={o.key === chosen.key ? "font-semibold text-gain" : "text-foreground/60"}>
+                            {o.key === chosen.key ? "✓ " : ""}
+                            {o.name}
+                          </span>
+                          <span className={`tabular ${o.key === chosen.key ? "font-bold text-gain" : "text-foreground/55"}`}>
+                            {moneyCompact(o.v)} left
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="-mt-0.5 mb-1 text-[10px] leading-snug text-foreground/40">
+                      &ldquo;Left&rdquo; = after-tax estate counted conservatively (assuming heirs may sell the brokerage rather
+                      than always getting a full step-up), so the winner isn&apos;t resting on a single tax bet.
+                    </p>
+                    <p className="mt-1 text-[12px] leading-relaxed text-foreground/70">
+                      {usesBrokerageFirst ? (
+                        <>
+                          Many advisors say &ldquo;spend your brokerage first&rdquo; — and for you that&apos;s exactly right
+                          {edge > 1000 ? <>, by about <strong>{moneyCompact(edge)}</strong></> : null}. Spending the brokerage
+                          keeps your taxable income low, which opens up cheap room to roll pre-tax → Roth; and anything you
+                          leave in the brokerage gets a <strong>step-up at death</strong> that erases the gain for your heirs.
+                        </>
+                      ) : settings.strategy === "smart" ? (
+                        <>
+                          Here it pays to pull <strong>pre-tax first</strong>
+                          {edge > 1000 ? <>, by about <strong>{moneyCompact(edge)}</strong></> : null}. Filling your low
+                          brackets with pre-tax dollars now shrinks the balance that would otherwise be forced out later as
+                          RMDs at higher rates — worth more than the capital-gains savings of selling the brokerage first.
+                        </>
+                      ) : (
+                        <>
+                          For you a <strong>balanced draw</strong> from every account wins
+                          {edge > 1000 ? <>, by about <strong>{moneyCompact(edge)}</strong></> : null} — it keeps taxable
+                          income low enough to convert pre-tax → Roth cheaply while still preserving brokerage gains for the
+                          step-up.
+                        </>
+                      )}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-[12px] leading-relaxed text-foreground/70">
+                    Because your goal is <strong>{GOAL_META[settings.goal].short.toLowerCase()}</strong>, the plan pulls in the
+                    order that best serves it. The order below explains the general trade-off.
+                  </p>
+                )}
+                <Info q="Wait — why not just spend the brokerage first like advisors say?">
+                  <p>
+                    It&apos;s a great rule of thumb, and often right — but not always. The catch is that the money in your
+                    pre-tax IRA/401(k) will be taxed as ordinary income <em>eventually</em>, either when you take it or when
+                    your heirs do. If you only ever touch the brokerage, that pre-tax balance keeps growing and gets forced
+                    out in your 70s–80s as RMDs — often at a <em>higher</em>{" "}rate than you&apos;d pay today, and it can push
+                    up your Medicare (IRMAA) premiums too.
+                  </p>
+                  <p className="mt-2">
+                    So the real comparison isn&apos;t &ldquo;15% on a brokerage gain vs 22% on a pre-tax dollar this
+                    year.&rdquo; It&apos;s &ldquo;a known low rate now vs a likely higher rate later&rdquo; on the pre-tax
+                    money, plus the fact that brokerage gains can escape tax entirely via the step-up at death. The table
+                    above is that full lifetime comparison run on your actual accounts — whichever order keeps the most after
+                    every tax is the one we use.
+                  </p>
+                </Info>
+              </div>
             </div>
           )}
         </div>
