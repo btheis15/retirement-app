@@ -302,6 +302,14 @@ export default function ProjectionPage() {
             <Pill tone="tax">⚠️ At the flat return, assets run short before age {settings.endAge}</Pill>
           </div>
         )}
+        <Info q="What does “after-tax estate” mean?" className="mt-3">
+          <p>
+            Your <strong>estate</strong> is what&apos;s left at your plan-to age of {settings.endAge}. The headline
+            number is <strong>after-tax</strong> — what heirs actually keep after the income tax owed on inherited
+            pre-tax accounts. The smaller print, <strong>&ldquo;before deferred tax,&rdquo;</strong> is the raw balance{" "}
+            <em>before</em> an heir would owe that income tax on the pre-tax (traditional IRA/401k) portion.
+          </p>
+        </Info>
       </Card>
 
       {/* ---------- Monte-Carlo: probability the money lasts ---------- */}
@@ -438,9 +446,9 @@ export default function ProjectionPage() {
           </div>
           {!regime && !regimeLoading && (
             <p className="mt-1 text-[11px] leading-relaxed text-foreground/55">
-              Re-runs your plan under a <strong>regime-switching model</strong> (Hardy&apos;s RSLN-2 — the standard
-              actuaries use for capital reserving). Equity flips between a calm bull market and a sharply negative bear
-              market, and a down year is far more likely to be followed by another, so bad years{" "}
+              Re-runs your plan under a <strong>tougher test where bad years tend to clump together</strong> (the
+              regime-switching model actuaries use for capital reserving). Equity flips between a calm bull market and a
+              sharply negative bear market, and a down year is far more likely to be followed by another, so bad years{" "}
               <strong>cluster</strong> — the real-world pattern a smooth model understates. We hold the average return
               <em> and</em> volatility identical to the main model, so any difference is the <em>clustering</em> alone.
               Calibrated to 1928–2024 history.
@@ -452,7 +460,7 @@ export default function ProjectionPage() {
               ({Math.round(regime.successCI[0] * 100)}–{Math.round(regime.successCI[1] * 100)}%) vs.{" "}
               <strong>{Math.round(mc.successPct * 100)}%</strong> from the main model.{" "}
               {regime.successPct < mc.successPct - 0.02
-                ? "Clustered down-years stress the plan a bit more — at the same average return and volatility — which is exactly why professionals don't rely on a single i.i.d. model."
+                ? "Clustered down-years stress the plan a bit more — at the same average return and volatility — which is exactly why professionals don't rely on a single model that treats each year as independent."
                 : Math.abs(regime.successPct - mc.successPct) <= 0.02
                   ? "The two land in the same place — your result is robust to how returns are modeled, not an artifact of the smooth model's shape."
                   : "Comparable to the main model."}{" "}
@@ -761,7 +769,7 @@ export default function ProjectionPage() {
         </p>
         <p className="mb-1.5">
           As you age, that divisor <strong>shrinks</strong> — you divide by a smaller number, so you must pull a
-          bigger slice each year. At age 75 the divisor is 24.6 (about <strong>4%</strong> of the balance); by 85
+          bigger slice each year. At age 75 the divisor is 24.6 (about <strong>4%</strong>{" "}of the balance); by 85
           it&apos;s 16.0 (<strong>~6.25%</strong>); by 90 it&apos;s 12.2 (<strong>~8.2%</strong>). And because the
           balance itself keeps growing with investment returns, the dollar amount climbs on two fronts at once —
           that&apos;s why the bars ramp up.

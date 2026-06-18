@@ -970,7 +970,7 @@ function GoalAndRecommendation() {
             </strong>{" "}
             (vs {rec.claimAdvice.currentSelf}
             {rec.claimAdvice.delayWho === "both" ? ` / ${rec.claimAdvice.currentSpouse}` : ""}) is projected to leave about{" "}
-            <strong>{moneyCompact(rec.claimAdvice.lift)}</strong> more over your lifetime — set claim ages in the &ldquo;Social Security: when to claim&rdquo; section above.
+            <strong>{moneyCompact(rec.claimAdvice.lift)}</strong>{" "}more over your lifetime — set claim ages in the &ldquo;Social Security: when to claim&rdquo; section above.
           </p>
         )}
         <div className="mt-3 grid grid-cols-2 gap-2">
