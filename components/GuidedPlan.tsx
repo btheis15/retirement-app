@@ -14,8 +14,9 @@ import Link from "next/link";
 import { useStore } from "@/components/HouseholdProvider";
 import { Card, Pill, Info, Callout } from "@/components/ui";
 import { StackedBar } from "@/components/ui";
-import { spendingSweep, SpendingSweep } from "@/lib/spendingSweep";
-import { AnimatedNumber } from "@/components/charts";
+import { spendingSweep } from "@/lib/spendingSweep";
+import { spendImpact } from "@/lib/spendImpact";
+import { AnimatedNumber, FanChart } from "@/components/charts";
 import { planYear } from "@/lib/optimizer";
 import { ltcgZeroCeiling } from "@/lib/tax/engine";
 import { FILING_CONSTANTS, FilingStatus } from "@/lib/tax/constants";
@@ -105,6 +106,11 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   // (this is the primary phone surface). Keyed on the deferred values so it lags
   // smoothly behind a drag/goal change rather than firing on every keystroke.
   const [confidence, setConfidence] = useState<MonteCarloResult | null>(null);
+  // The spending level the current `confidence` was computed at — so the spend
+  // step can tell whether the (lagging) Monte-Carlo band still matches the slider,
+  // and show "updating…" rather than a stale number that contradicts the live
+  // sweep verdict right above it.
+  const [confidenceSpend, setConfidenceSpend] = useState<number | null>(null);
   useEffect(() => {
     let cancelled = false;
     computeMonteCarlo({
@@ -114,7 +120,10 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       model: returnModel(dHousehold.accounts),
       runs: 300,
     }).then((res) => {
-      if (!cancelled) setConfidence(res);
+      if (!cancelled) {
+        setConfidence(res);
+        setConfidenceSpend(dHousehold.annualSpending);
+      }
     });
     return () => {
       cancelled = true;
@@ -214,8 +223,40 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   // surcharge for BOTH enrollees, two years later). Surfaced right where spending
   // is chosen, since spending drives the withdrawals that drive MAGI. ----
   const medicareEnrollees = (plan.selfAge >= 65 ? 1 : 0) + (plan.spouseAge >= 65 ? 1 : 0);
+
+  // Per-spend "impact" sweep — this year's MAGI, marginal bracket, and IRMAA tier
+  // at EVERY spending level — so the slider can show what the chosen number means
+  // (and where the cliffs sit) live, BEFORE it's committed. Mirrors the active
+  // year's withdrawal + conversion plan so the MAGI it reports is the real one.
+  // Conversion is EXCLUDED here on purpose: this sweep isolates what your SPENDING
+  // does to MAGI/brackets/IRMAA, so the slider reads intuitively (spend more →
+  // higher income → closer to the next cliff). The Roth rollover is a separate
+  // lever with its own step; bundling it would make MAGI move *inversely* to
+  // spending (more spending leaves less room to convert), which is baffling here.
+  const impact = useMemo(
+    () =>
+      spendImpact(
+        dHousehold,
+        {
+          strategy: settings.strategy,
+          bracketTarget: settings.bracketTarget,
+          year,
+          conversion: null,
+          inflationFactor: plan.inflationFactor,
+        },
+        FILING_CONSTANTS[plan.filingStatus].irmaaTiers,
+        medicareEnrollees,
+        SPEND_MAX,
+      ),
+    [dHousehold, settings.strategy, settings.bracketTarget, year, plan.inflationFactor, plan.filingStatus, medicareEnrollees],
+  );
+  // The picture at the CURRENT slider position — interpolated, so it updates every
+  // frame of a drag without re-running the planner.
+  const liveImpact = impact.at(localSpend);
+  // IRMAA cliff fed by the LIVE (slider) MAGI, not the committed plan — so the
+  // callout actually moves as you drag, instead of sitting on a stale value.
   const irmaaCliff = irmaaCliffInfo(
-    plan.tax.magi,
+    liveImpact.magi,
     plan.inflationFactor,
     FILING_CONSTANTS[plan.filingStatus].irmaaTiers,
     medicareEnrollees,
@@ -284,6 +325,50 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   // In demo mode we SHOW the example (that's the whole point of an example).
   const needsOwnSetup = mode === "own" && household.accounts.length === 0;
 
+  // STEP 0 — the one-time fork: you go through the WHOLE walkthrough either on the
+  // $5M example or on your own numbers. No mid-flow toggle; to switch, you come back
+  // here (Back from step 1, or "Start over" at the end) and re-pick.
+  steps.push({
+    key: "start",
+    eyebrow: "let's begin",
+    render: () => (
+      <div>
+        <h2 className="text-xl font-bold leading-snug">How do you want to start?</h2>
+        <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+          Pick one — the whole walkthrough runs on that choice. You can start over anytime to switch.
+        </p>
+        <div className="mt-5 grid gap-3">
+          <button
+            onClick={() => { setMode("own"); go(safeStep + 1); }}
+            className={`press flex items-start gap-3 rounded-2xl border p-4 text-left ${mode === "own" ? "border-primary bg-primary/10" : "border-border"}`}
+          >
+            <span className="text-2xl leading-none">✏️</span>
+            <span className="min-w-0">
+              <span className="block font-semibold">Use my own numbers</span>
+              <span className="mt-0.5 block text-[12px] leading-snug text-foreground/55">
+                Enter your accounts and get a plan built around what you actually have. Your numbers stay on your device.
+              </span>
+            </span>
+            {mode === "own" && <span className="ml-auto shrink-0 self-center text-primary">→</span>}
+          </button>
+          <button
+            onClick={() => { setMode("demo"); go(safeStep + 1); }}
+            className={`press flex items-start gap-3 rounded-2xl border p-4 text-left ${mode === "demo" ? "border-primary bg-primary/10" : "border-border"}`}
+          >
+            <span className="text-2xl leading-none">📊</span>
+            <span className="min-w-0">
+              <span className="block font-semibold">Explore the $5M example</span>
+              <span className="mt-0.5 block text-[12px] leading-snug text-foreground/55">
+                See exactly how it all works on a realistic sample household first — nothing here is your real money.
+              </span>
+            </span>
+            {mode === "demo" && <span className="ml-auto shrink-0 self-center text-primary">→</span>}
+          </button>
+        </div>
+      </div>
+    ),
+  });
+
   steps.push({
     key: "accounts",
     eyebrow: "start with your money",
@@ -302,25 +387,14 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             >
               Add my accounts →
             </Link>
-            <button
-              onClick={() => setMode("demo")}
-              className="press mt-2 block w-full rounded-2xl border border-border py-3 text-center text-sm font-semibold text-foreground/70"
-            >
-              Explore a $5M example instead →
-            </button>
           </div>
         );
       }
       return (
         <div>
           {mode === "demo" && (
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-ss/25 bg-ss/[0.06] px-3 py-2">
-              <span className="text-[12px] text-foreground/70">
-                📊 You&apos;re exploring a <strong>sample ~$5M household</strong> — nothing is your real money.
-              </span>
-              <Link href="/accounts" className="press shrink-0 text-[12px] font-semibold text-primary underline underline-offset-2">
-                Use my own numbers →
-              </Link>
+            <div className="mb-3 rounded-xl border border-ss/25 bg-ss/[0.06] px-3 py-2 text-[12px] text-foreground/70">
+              📊 You&apos;re exploring a <strong>sample ~$5M household</strong> — nothing here is your real money.
             </div>
           )}
           <h2 className="text-xl font-bold leading-snug">{mode === "demo" ? "The example portfolio" : "Here’s what you have"}</h2>
@@ -336,9 +410,11 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             <div className="text-[12px] text-foreground/50">total across {household.accounts.length} accounts</div>
           </div>
           <AccountOverview household={household} total={total} />
-          <Link href="/accounts" className="press mt-4 block rounded-xl border border-border py-2.5 text-center text-[13px] font-semibold text-primary">
-            {mode === "demo" ? "Build my own plan instead" : "Edit my accounts"}
-          </Link>
+          {mode === "own" && (
+            <Link href="/accounts" className="press mt-4 block rounded-xl border border-border py-2.5 text-center text-[13px] font-semibold text-primary">
+              Edit my accounts
+            </Link>
+          )}
         </div>
       );
     },
@@ -404,12 +480,61 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       const sustPct = Math.max(compPct, Math.min(100, (sweep.sustainableMax / sweep.max) * 100));
       const zone = localSpend <= sweep.comfortableMax ? "comfortable" : localSpend <= sweep.sustainableMax ? "tight" : "short";
       const hasRoom = sweep.sustainableMax > 0;
+      const pos = (v: number) => Math.max(0, Math.min(100, (v / SPEND_MAX) * 100));
+      const round5 = (n: number) => Math.round(n / 5_000) * 5_000;
+      const floor5 = (n: number) => Math.floor(n / 5_000) * 5_000;
+      const shortTier = (label: string) => label.replace(" surcharge", "").replace("Standard premium", "standard premium");
+
+      // Ticks under the slider: the safe ceilings (green/amber) and every IRMAA
+      // cliff the chosen plan would hit (red), each placed at the spending level
+      // where it bites.
+      const markers: { key: string; value: number; cls: string; title: string }[] = [];
+      if (hasRoom && sweep.comfortableMax > 0 && sweep.comfortableMax < SPEND_MAX)
+        markers.push({ key: "comf", value: sweep.comfortableMax, cls: "bg-gain", title: "Comfortable ceiling" });
+      if (hasRoom && sweep.sustainableMax > sweep.comfortableMax + 5_000 && sweep.sustainableMax < SPEND_MAX)
+        markers.push({ key: "sust", value: sweep.sustainableMax, cls: "bg-accent", title: "Most you can safely spend" });
+      impact.irmaaCliffs
+        .filter((c) => c.spend > 0 && c.spend < SPEND_MAX)
+        .forEach((c, i) => markers.push({ key: `irmaa${i}`, value: c.spend, cls: "bg-tax", title: `Medicare cliff → ${c.toLabel}` }));
+
+      // "Quick amounts" — meaningful edges to anchor the decision to, rather than
+      // guessing: the comfortable ceiling, just under each IRMAA cliff, and the
+      // most you could safely spend. Deduped (within $5k), sorted, capped at 4.
+      const rawChips: { label: string; value: number; cls: string }[] = [];
+      if (hasRoom && sweep.comfortableMax > 5_000 && sweep.comfortableMax < SPEND_MAX)
+        rawChips.push({ label: "Comfortable", value: round5(sweep.comfortableMax), cls: "border-gain/40 text-gain" });
+      impact.irmaaCliffs.forEach((c) => {
+        const v = floor5(c.spend - 2_500); // land just UNDER the cliff
+        if (v >= 5_000 && v < SPEND_MAX) rawChips.push({ label: `Under ${shortTier(c.toLabel)}`, value: v, cls: "border-tax/40 text-tax" });
+      });
+      if (hasRoom && sweep.sustainableMax > sweep.comfortableMax + 5_000 && sweep.sustainableMax <= SPEND_MAX)
+        rawChips.push({ label: "Most you can afford", value: floor5(sweep.sustainableMax), cls: "border-accent/50 text-accent" });
+      const quick: typeof rawChips = [];
+      rawChips
+        .sort((a, b) => a.value - b.value)
+        .forEach((c) => {
+          if (!quick.some((x) => Math.abs(x.value - c.value) < 5_000)) quick.push(c);
+        });
+      const chips = quick.slice(0, 4);
+
+      // Confidence band (today's dollars) for the "what's it worth at the end"
+      // readout — a real range, not a single number. Settles a beat behind a drag.
+      const cw = confidence?.endingWealthReal;
+      const band = confidence?.bandReal;
+      // Does spending actually move the IRMAA tier, or is it pinned by other income
+      // (SS, dividends, forced RMDs)? If your MAGI at this spend is already at the
+      // floor it'd be with ZERO spending, then spending isn't adding to it — so you
+      // can't trim your way under the cliff. Say that honestly instead of implying
+      // a smaller spend would help.
+      const baseMagi = impact.points[0]?.magi ?? 0;
+      const irmaaPinned = medicareEnrollees > 0 && !!irmaaCliff?.inSurcharge && liveImpact.magi <= baseMagi + 5_000;
+
       return (
         <div>
           <h2 className="text-xl font-bold leading-snug">How much do you want to spend each year?</h2>
           <p className="mt-1 text-[13px] text-foreground/60">
-            Your <strong>take-home</strong> target — money in your pocket after all taxes. The colored bar shows how much
-            your savings can actually support.
+            Your <strong>take-home</strong> target — money in your pocket after all taxes. As you move it, watch your tax
+            rate, your Medicare (IRMAA) tier, and what your savings are worth at the end all update below.
           </p>
           <div className="mt-4 text-center">
             <div className="tabular text-4xl font-bold text-primary">
@@ -435,7 +560,93 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             aria-label="Yearly spending"
           />
 
-          {/* Live impact on the account value */}
+          {/* Marker rail: where the safe ceilings and the IRMAA cliffs fall, in
+              spending terms — so the cliffs aren't a surprise you only meet later. */}
+          {markers.length > 0 && (
+            <>
+              <div className="relative mt-1 h-3">
+                {markers.map((m) => (
+                  <div
+                    key={m.key}
+                    className={`absolute top-0 h-3 w-[2px] -translate-x-1/2 rounded-full ${m.cls}`}
+                    style={{ left: `${pos(m.value)}%` }}
+                    title={`${m.title} — ${money(m.value)}/yr`}
+                  />
+                ))}
+              </div>
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-foreground/45">
+                <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-gain" /> comfortable</span>
+                {markers.some((m) => m.key === "sust") && (
+                  <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-accent" /> max safe</span>
+                )}
+                {impact.irmaaCliffs.length > 0 && (
+                  <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-tax" /> 🏥 Medicare cliff</span>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* Quick amounts — anchor the choice to a meaningful edge in one tap. */}
+          {chips.length > 0 && (
+            <div className="mt-3">
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-foreground/45">Quick amounts</div>
+              <div className="flex flex-wrap gap-2">
+                {chips.map((c) => {
+                  const active = Math.abs(localSpend - c.value) < 2_500;
+                  return (
+                    <button
+                      key={c.label}
+                      onClick={() => setLocalSpend(c.value)}
+                      className={`press rounded-full border px-3 py-1 text-[12px] font-medium ${active ? "border-primary bg-primary/10 text-primary" : `${c.cls} bg-transparent`}`}
+                    >
+                      {c.label} · {moneyCompact(c.value)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Live "what this number means right now" — tax rate + Medicare tier,
+              both reading off the chosen spending so they move with the slider. */}
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="rounded-xl border border-border bg-card/60 p-2.5">
+              <div className="text-[10px] uppercase tracking-wide text-foreground/50">Tax this year</div>
+              <div className="tabular text-lg font-bold text-foreground/85">{moneyCompact(liveImpact.totalTax)}</div>
+              <div className="text-[10px] leading-snug text-foreground/45">
+                {liveImpact.marginalRate > 0.12 ? `federal + state · top bracket ${percent(liveImpact.marginalRate, 0)}` : "federal + state on this spending"}
+              </div>
+            </div>
+            <div className={`rounded-xl border p-2.5 ${irmaaCliff?.inSurcharge ? "border-tax/30 bg-tax/[0.05]" : "border-border bg-card/60"}`}>
+              <div className="text-[10px] uppercase tracking-wide text-foreground/50">Medicare (IRMAA)</div>
+              {medicareEnrollees === 0 ? (
+                <>
+                  <div className="text-[13px] font-bold text-foreground/70">Not yet</div>
+                  <div className="text-[10px] leading-snug text-foreground/45">starts at 65</div>
+                </>
+              ) : irmaaCliff?.inSurcharge ? (
+                <>
+                  <div className="tabular text-lg font-bold text-tax">+{moneyCompact(irmaaCliff.curSurcharge)}/yr</div>
+                  <div className="text-[10px] leading-snug text-foreground/45">{shortTier(irmaaCliff.curLabel)}</div>
+                </>
+              ) : (
+                <>
+                  <div className="text-[13px] font-bold text-gain">No surcharge</div>
+                  <div className="text-[10px] leading-snug text-foreground/45">
+                    {irmaaCliff && Number.isFinite(irmaaCliff.distance) ? `${moneyCompact(irmaaCliff.distance)} of room` : "well clear"}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+          {(conversion > 0.5 || settings.useConversions) && (
+            <p className="mt-1.5 text-[11px] leading-snug text-foreground/45">
+              These reflect your <strong>spending</strong> alone. Your Roth rollover adds taxable income on top — the
+              rollover step shows how it interacts with these same brackets and cliffs.
+            </p>
+          )}
+
+          {/* Zone verdict — does it last, and what's left (live, downside path). */}
           {hasRoom && (
             <p
               className={`mt-3 rounded-xl px-3 py-2 text-[13px] leading-relaxed ${
@@ -443,11 +654,11 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               }`}
             >
               {zone === "comfortable" && (
-                <>✅ <strong>Comfortable.</strong> Your money lasts to {settings.endAge} and you&apos;d still have about{" "}
-                  <strong>{money(cur.endingEstate)}</strong> left.</>
+                <>✅ <strong>Comfortable.</strong> Even in a weak market your money lasts to {settings.endAge}, leaving about{" "}
+                  <strong>{money(cur.endingEstate)}</strong>.</>
               )}
               {zone === "tight" && (
-                <>🟡 <strong>Doable, but tight.</strong> It lasts to {settings.endAge}, but you&apos;d end with only about{" "}
+                <>🟡 <strong>Doable, but tight.</strong> It lasts to {settings.endAge}, but in a weak market you&apos;d end with only about{" "}
                   <strong>{money(cur.endingEstate)}</strong>.</>
               )}
               {zone === "short" && (
@@ -456,47 +667,43 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </p>
           )}
 
-          {/* Sparkline: account value left vs how much you spend */}
-          {hasRoom && <SpendSparkline sweep={sweep} current={localSpend} endAge={settings.endAge} />}
+          {/* Portfolio value over time, as a confidence interval — the standard
+              high-end "fan", not a single line. Reads off the off-thread Monte
+              Carlo, which lags a drag; while it catches up we show "updating…"
+              rather than a stale band that would contradict the verdict above. */}
+          {(() => {
+            const fanFresh = confidenceSpend != null && Math.abs(confidenceSpend - localSpend) < 2_500;
+            const haveFan = band && band.length > 1 && cw;
+            return (
+              <div className="mt-3 rounded-2xl border border-border p-3">
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-foreground/45">
+                  What your savings could be worth — range across {(confidence?.runs ?? 300).toLocaleString()} markets
+                </div>
+                {haveFan && fanFresh ? (
+                  <>
+                    <FanChart band={band!} height={150} yLabel={(n) => moneyCompact(n)} />
+                    <p className="mt-1 text-[12px] leading-relaxed text-foreground/70">
+                      At age {settings.endAge}, in today&apos;s dollars, your savings are likely worth between{" "}
+                      <strong>{moneyCompact(cw!.p10)}</strong> and <strong>{moneyCompact(cw!.p90)}</strong> — typically around{" "}
+                      <strong>{moneyCompact(cw!.p50)}</strong>. The shaded band is the middle range of outcomes; the line is the median.
+                    </p>
+                    <p className="mt-1 text-[10px] text-foreground/45">
+                      Spans good and bad market sequences, not a single average path.
+                    </p>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2 py-6 text-[12px] text-foreground/55">
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary/25 border-t-primary" />
+                    Updating the range for {money(localSpend)}/yr across hundreds of market simulations…
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
-          {hasRoom && (
-            <p className="mt-3 rounded-xl bg-primary/5 px-3 py-2 text-[12px] leading-relaxed text-foreground/70">
-              💡 Most careful savers <em>under</em>-spend.{" "}
-              {sweep.sustainableMax >= sweep.max ? (
-                <>
-                  Based on your accounts, your savings comfortably support even the most we model here —{" "}
-                  <strong>{money(sweep.max)}/yr</strong>. You have plenty of room.
-                </>
-              ) : (
-                <>
-                  Based on your accounts, you can comfortably spend up to about{" "}
-                  <strong>{money(sweep.comfortableMax)}/yr</strong>
-                  {sweep.sustainableMax > sweep.comfortableMax + 5_000 ? (
-                    <>
-                      {" "}
-                      — and up to <strong>{money(sweep.sustainableMax)}/yr</strong> before you&apos;d risk running short
-                    </>
-                  ) : null}
-                  .
-                </>
-              )}
-              {localSpend < sweep.comfortableMax - 10_000 && (
-                <>
-                  {" "}
-                  <button onClick={() => setLocalSpend(Math.round(sweep.comfortableMax / 5_000) * 5_000)} className="press font-semibold text-primary underline">
-                    Try {moneyCompact(sweep.comfortableMax)} →
-                  </button>
-                </>
-              )}
-              <span className="mt-1 block text-foreground/50">
-                These ceilings already allow for a <strong>weak market</strong> (not just an average one) — the final step
-                shows your exact odds across hundreds of simulations.
-              </span>
-            </p>
-          )}
-
-          {/* Medicare IRMAA cliff awareness — the spending you pick drives the
-              withdrawals that drive MAGI, and IRMAA is a hard step, not a slope. */}
+          {/* Medicare IRMAA cliff awareness — live, fed by the slider's MAGI. The
+              spending you pick drives the withdrawals that drive MAGI, and IRMAA
+              is a hard step, not a slope. */}
           {irmaaCliff && (irmaaCliff.inSurcharge || (!irmaaCliff.atTop && irmaaCliff.distance < 30_000)) && (
             <div className="mt-3 rounded-xl border border-tax/30 bg-tax/[0.06] px-3 py-2 text-[12px] leading-relaxed text-foreground/80">
               <div className="font-semibold text-tax">🏥 Watch the Medicare (IRMAA) cliff</div>
@@ -505,12 +712,21 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   At this spending level your income lands in <strong>{irmaaCliff.curLabel}</strong> — about{" "}
                   <strong>{money(irmaaCliff.curSurcharge)}/yr</strong> in extra Medicare premiums for{" "}
                   {irmaaCliff.enrollees > 1 ? "both of you" : "you"}, billed two years later.
-                  {irmaaCliff.overBy > 0 && irmaaCliff.overBy < 15_000 && irmaaCliff.dropSaving > 0 && (
+                  {irmaaPinned ? (
                     <>
                       {" "}
-                      You&apos;re only <strong>{money(irmaaCliff.overBy)}</strong> over the line — trimming spending (or this
-                      year&apos;s rollover) a touch could drop {money(irmaaCliff.dropSaving)}/yr of that surcharge entirely.
+                      Dialing spending up or down won&apos;t clear this — your tier is set by your dividends and required
+                      withdrawals (RMDs), not your spending. (Your Roth rollover, on the next step, adds income on top of this.)
                     </>
+                  ) : (
+                    irmaaCliff.overBy > 0 && irmaaCliff.overBy < 15_000 && irmaaCliff.dropSaving > 0 && (
+                      <>
+                        {" "}
+                        You&apos;re only <strong>{money(irmaaCliff.overBy)}</strong> over the line — trimming spending (the{" "}
+                        <em>Under {shortTier(irmaaCliff.curLabel)}</em> quick amount above does it) could drop{" "}
+                        {money(irmaaCliff.dropSaving)}/yr of that surcharge entirely.
+                      </>
+                    )
                   )}
                 </p>
               ) : (
@@ -525,6 +741,18 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 IRMAA is based on your income from two years prior, so today&apos;s choices set your premiums then.
               </p>
             </div>
+          )}
+
+          {/* Under-spending nudge — careful savers leave money on the table. */}
+          {hasRoom && localSpend < sweep.comfortableMax - 10_000 && (
+            <p className="mt-3 rounded-xl bg-primary/5 px-3 py-2 text-[12px] leading-relaxed text-foreground/70">
+              💡 Most careful savers <em>under</em>-spend. Your numbers comfortably support up to about{" "}
+              <strong>{money(sweep.comfortableMax)}/yr</strong>
+              {sweep.sustainableMax > sweep.comfortableMax + 5_000 ? (
+                <> — and up to <strong>{money(sweep.sustainableMax)}/yr</strong> before you&apos;d risk running short</>
+              ) : null}
+              . These ceilings already allow for a <strong>weak market</strong>, not just an average one.
+            </p>
           )}
         </div>
       );
@@ -1479,60 +1707,6 @@ function BracketLadder({
           " — already at or below where your future RMDs land, so there's little to gain from converting more."
         )}
       </p>
-    </div>
-  );
-}
-
-/** Tiny line showing account value left at the end vs. yearly spending, with a
- *  dot at the current choice — makes the spend↔legacy tradeoff visceral. */
-function SpendSparkline({ sweep, current, endAge }: { sweep: SpendingSweep; current: number; endAge: number }) {
-  const pts = sweep.points;
-  if (pts.length < 2) return null;
-  // Plot area with gutters for axis labels.
-  const w = 340;
-  const h = 124;
-  const L = 46; // left gutter (y labels)
-  const R = 10;
-  const T = 10;
-  const B = 26; // bottom gutter (x labels)
-  const plotW = w - L - R;
-  const plotH = h - T - B;
-  const maxEst = Math.max(1, ...pts.map((p) => p.endingEstate));
-  const xAt = (spend: number) => L + (spend / sweep.max) * plotW;
-  const yAt = (est: number) => T + (1 - est / maxEst) * plotH;
-  const baseY = yAt(0); // the $0 ("runs out") line
-  const line = pts.map((p) => `${xAt(p.spend)},${yAt(p.endingEstate)}`).join(" L ");
-  const cur = sweep.at(current);
-  const cx = xAt(current);
-  const cy = yAt(cur.endingEstate);
-  const axis = "var(--color-foreground)";
-  const xMid = sweep.max / 2;
-  return (
-    <div className="mt-3">
-      <div className="mb-1 text-[10px] uppercase tracking-wide text-foreground/45">
-        Money left at age {endAge} (up) vs. what you spend each year (right)
-      </div>
-      <svg viewBox={`0 0 ${w} ${h}`} className="w-full" role="img" aria-label="Money left versus yearly spending">
-        {/* axes */}
-        <line x1={L} y1={T} x2={L} y2={baseY} stroke={axis} strokeOpacity="0.25" strokeWidth="1" />
-        <line x1={L} y1={baseY} x2={w - R} y2={baseY} stroke={axis} strokeOpacity="0.25" strokeWidth="1" />
-        {/* y-axis reference labels */}
-        <text x={L - 5} y={T + 3} textAnchor="end" fontSize="9" fill={axis} fillOpacity="0.55">{moneyCompact(maxEst)}</text>
-        <text x={L - 5} y={(T + baseY) / 2 + 3} textAnchor="end" fontSize="9" fill={axis} fillOpacity="0.45">{moneyCompact(maxEst / 2)}</text>
-        <text x={L - 5} y={baseY + 3} textAnchor="end" fontSize="9" fill={axis} fillOpacity="0.55">$0</text>
-        {/* the curve */}
-        <path d={`M ${line}`} fill="none" stroke="var(--color-primary)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
-        {/* current choice marker + value */}
-        <line x1={cx} y1={T} x2={cx} y2={baseY} stroke={axis} strokeOpacity="0.25" strokeDasharray="3 3" />
-        <circle cx={cx} cy={cy} r="4" fill="var(--color-primary)" />
-        <text x={Math.min(cx + 6, w - R)} y={Math.max(cy - 6, T + 8)} textAnchor={cx > w - 70 ? "end" : "start"} fontSize="10" fontWeight="600" fill="var(--color-primary)">
-          {moneyCompact(cur.endingEstate)} left
-        </text>
-        {/* x-axis reference labels */}
-        <text x={L} y={h - 8} textAnchor="start" fontSize="9" fill={axis} fillOpacity="0.55">$0</text>
-        <text x={L + plotW / 2} y={h - 8} textAnchor="middle" fontSize="9" fill={axis} fillOpacity="0.45">{moneyCompact(xMid)}/yr</text>
-        <text x={w - R} y={h - 8} textAnchor="end" fontSize="9" fill={axis} fillOpacity="0.55">{moneyCompact(sweep.max)}+/yr</text>
-      </svg>
     </div>
   );
 }

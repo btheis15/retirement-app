@@ -3,7 +3,6 @@ import "./globals.css";
 import { TabBar } from "@/components/TabBar";
 import { HouseholdProvider } from "@/components/HouseholdProvider";
 import { PricesProvider } from "@/components/PricesProvider";
-import { ModeBanner } from "@/components/ModeBanner";
 
 export const metadata: Metadata = {
   title: "Retirement Tax Optimizer",
@@ -43,7 +42,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                   paddingBottom: "calc(6rem + env(safe-area-inset-bottom))",
                 }}
               >
-                <ModeBanner />
                 {children}
               </main>
             </div>
