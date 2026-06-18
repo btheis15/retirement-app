@@ -1159,6 +1159,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               fillRate={settings.bracketTarget}
               futureRate={compare.none.peakMarginalRate}
               year={year}
+              ordinaryIncome={plan.tax.ordinaryTaxableIncome}
             />
 
             {/* Proof: three approaches on YOUR numbers */}
@@ -1689,43 +1690,103 @@ function BracketLadder({
   fillRate,
   futureRate,
   year,
+  ordinaryIncome,
 }: {
   status: FilingStatus;
   fillRate: number;
   futureRate: number;
   year: number;
+  /** This year's ordinary taxable income (after deductions, excludes preferential
+   *  gains/dividends) — what actually fills these brackets. */
+  ordinaryIncome: number;
 }) {
   const brackets = FILING_CONSTANTS[status].ordinary;
   const fmt = (n: number) => moneyCompact(n);
   const showFuture = futureRate > fillRate + 1e-9; // only flag a future bracket that's actually higher
+  const hasIncome = ordinaryIncome > 0.5;
+  // How this year's ordinary income fills each bracket: the slice inside it and
+  // the tax on just that slice (slice × rate). This is the whole point — a bracket
+  // taxes only the dollars that land in it, not your whole income.
+  const rows = brackets.map((b, i) => {
+    const from = i === 0 ? 0 : brackets[i - 1].upTo;
+    const slice = Math.max(0, Math.min(ordinaryIncome, b.upTo) - from);
+    return {
+      rate: b.rate,
+      from,
+      upTo: b.upTo,
+      slice,
+      tax: slice * b.rate,
+      isFill: Math.abs(b.rate - fillRate) < 1e-9,
+      isFuture: showFuture && Math.abs(b.rate - futureRate) < 1e-9,
+    };
+  });
+  const totalTax = rows.reduce((s, r) => s + r.tax, 0);
+  const effective = ordinaryIncome > 0 ? totalTax / ordinaryIncome : 0;
+  const topRow = [...rows].reverse().find((r) => r.slice > 0); // highest bracket actually reached
+  const cols = "grid grid-cols-[2.2rem_1fr_auto_auto] items-center gap-x-2";
   return (
     <div className="mt-4 rounded-2xl border border-border p-3">
       <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-foreground/50">
         Your federal brackets ({status === "mfj" ? "married filing jointly" : "single"}, {year})
       </div>
+      {hasIncome && (
+        <div className={`${cols} px-2 pb-1 text-[9px] uppercase tracking-wide text-foreground/40`}>
+          <span>Rate</span>
+          <span>Income range</span>
+          <span className="text-right">Yours</span>
+          <span className="text-right">Tax</span>
+        </div>
+      )}
       <div className="space-y-1">
-        {brackets.map((b, i) => {
-          const from = i === 0 ? 0 : brackets[i - 1].upTo;
-          const isFill = Math.abs(b.rate - fillRate) < 1e-9;
-          const isFuture = showFuture && Math.abs(b.rate - futureRate) < 1e-9;
-          const range = b.upTo === Infinity ? `${fmt(from)}+` : `${fmt(from)} – ${fmt(b.upTo)}`;
+        {rows.map((r) => {
+          const range = r.upTo === Infinity ? `${fmt(r.from)}+` : `${fmt(r.from)} – ${fmt(r.upTo)}`;
+          const filled = r.slice > 0.5;
           return (
             <div
-              key={b.rate}
-              className={`flex items-center gap-2 rounded-lg px-2 py-1 text-[12px] ${isFill ? "bg-gain/10" : isFuture ? "bg-tax/[0.07]" : ""}`}
+              key={r.rate}
+              className={`${cols} rounded-lg px-2 py-1 text-[12px] ${r.isFill ? "bg-gain/10" : r.isFuture ? "bg-tax/[0.07]" : ""}`}
             >
-              <span className={`w-9 shrink-0 font-semibold ${isFill ? "text-gain" : isFuture ? "text-tax" : "text-foreground/70"}`}>
-                {Math.round(b.rate * 100)}%
+              <span className={`font-semibold ${r.isFill ? "text-gain" : r.isFuture ? "text-tax" : "text-foreground/70"}`}>
+                {Math.round(r.rate * 100)}%
               </span>
               <span className="tabular text-foreground/55">{range}</span>
-              {isFill && <span className="ml-auto text-[10px] font-semibold text-gain">↑ we fill to here</span>}
-              {isFuture && (
-                <span className="ml-auto text-[10px] font-semibold text-tax">↑ big RMDs would reach here</span>
+              {hasIncome ? (
+                <>
+                  <span className={`tabular text-right ${filled ? "font-semibold text-foreground/85" : "text-foreground/25"}`}>
+                    {filled ? fmt(r.slice) : "—"}
+                  </span>
+                  <span className={`tabular text-right ${filled ? "text-tax/80" : "text-foreground/25"}`}>
+                    {filled ? fmt(r.tax) : "—"}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span />
+                  <span className="text-right text-[10px] font-semibold">
+                    {r.isFill ? <span className="text-gain">↑ fill</span> : r.isFuture ? <span className="text-tax">↑ RMDs</span> : ""}
+                  </span>
+                </>
               )}
             </div>
           );
         })}
       </div>
+      {hasIncome && topRow && (
+        <p className="mt-2 rounded-lg bg-foreground/[0.03] px-2 py-1.5 text-[11px] leading-relaxed text-foreground/70">
+          The <strong>{money(ordinaryIncome)}</strong> of your income taxed at these rates this year owes about{" "}
+          <strong>{money(totalTax)}</strong> — an effective <strong>{percent(effective, 0)}</strong>, even though your top
+          bracket is <strong>{Math.round(topRow.rate * 100)}%</strong>.{" "}
+          {topRow.rate > 0.10 ? (
+            <>
+              Only the <strong>{money(topRow.slice)}</strong> above {fmt(topRow.from)} is taxed at {Math.round(topRow.rate * 100)}%
+              (about <strong>{money(topRow.tax)}</strong>) — a bracket is a slice, not a cliff, so &ldquo;being in the{" "}
+              {Math.round(topRow.rate * 100)}% bracket&rdquo; costs far less than {Math.round(topRow.rate * 100)}% of everything.
+            </>
+          ) : (
+            <>All of it sits in the lowest bracket.</>
+          )}
+        </p>
+      )}
       <p className="mt-2 text-[11px] leading-relaxed text-foreground/50">
         Each rollover fills only up to the top of your{" "}
         <span className="font-semibold text-gain">{Math.round(fillRate * 100)}%</span> bracket
