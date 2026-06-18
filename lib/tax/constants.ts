@@ -60,17 +60,31 @@ export const NIIT_THRESHOLD_MFJ = 250_000;
 
 /**
  * IRMAA — Medicare Part B/D income surcharge tiers for 2026 (MFJ, based on MAGI
- * from two years prior). `upTo` is the top of each tier's MAGI range; the
- * monthly add-on is the *combined* Part B + Part D surcharge PER PERSON.
- * Approximate — surfaced as an awareness flag in the planner.
+ * from two years prior). `upTo` is the top of each tier's MAGI range. The surcharge
+ * is split into its `partB` and `partD` components (the EXTRA above the standard
+ * premium, per person, per month) so each can be reconciled against Medicare's two
+ * separate published tables; `monthlyPerPerson` is their sum (what the engine uses).
+ * Verified against official 2026 CMS figures (standard Part B premium $202.90; Part B
+ * surcharges 81.20/202.90/324.60/446.30/487.00; Part D surcharges 14.50/37.50/60.40/
+ * 83.30/91.00). Note the Part B piece dominates — Part D alone tops out near $91/mo.
  */
-export const IRMAA_TIERS_MFJ: { upTo: number; monthlyPerPerson: number; label: string }[] = [
-  { upTo: 218_000, monthlyPerPerson: 0, label: "Standard premium" },
-  { upTo: 274_000, monthlyPerPerson: 96, label: "Tier 1 surcharge" },
-  { upTo: 342_000, monthlyPerPerson: 240, label: "Tier 2 surcharge" },
-  { upTo: 410_000, monthlyPerPerson: 385, label: "Tier 3 surcharge" },
-  { upTo: 750_000, monthlyPerPerson: 530, label: "Tier 4 surcharge" },
-  { upTo: Infinity, monthlyPerPerson: 578, label: "Top tier surcharge" },
+export interface IrmaaTier {
+  upTo: number;
+  /** Combined (Part B + Part D) monthly surcharge per person — what the engine bills. */
+  monthlyPerPerson: number;
+  /** Monthly Part B IRMAA surcharge per person (the extra above the standard premium). */
+  partB: number;
+  /** Monthly Part D IRMAA surcharge per person. */
+  partD: number;
+  label: string;
+}
+export const IRMAA_TIERS_MFJ: IrmaaTier[] = [
+  { upTo: 218_000, monthlyPerPerson: 0, partB: 0, partD: 0, label: "Standard premium" },
+  { upTo: 274_000, monthlyPerPerson: 96, partB: 81.2, partD: 14.5, label: "Tier 1 surcharge" },
+  { upTo: 342_000, monthlyPerPerson: 240, partB: 202.9, partD: 37.5, label: "Tier 2 surcharge" },
+  { upTo: 410_000, monthlyPerPerson: 385, partB: 324.6, partD: 60.4, label: "Tier 3 surcharge" },
+  { upTo: 750_000, monthlyPerPerson: 530, partB: 446.3, partD: 83.3, label: "Tier 4 surcharge" },
+  { upTo: Infinity, monthlyPerPerson: 578, partB: 487, partD: 91, label: "Top tier surcharge" },
 ];
 
 // ─── SINGLE-filer 2026 figures (for the surviving-spouse "widow's penalty") ───
@@ -107,13 +121,13 @@ export const SS_SECOND_SINGLE = 34_000;
 /** NIIT threshold (Single, statutory, not indexed). */
 export const NIIT_THRESHOLD_SINGLE = 200_000;
 /** IRMAA tiers for Single — same per-person surcharge dollars as MFJ, lower MAGI bounds. */
-export const IRMAA_TIERS_SINGLE: { upTo: number; monthlyPerPerson: number; label: string }[] = [
-  { upTo: 109_000, monthlyPerPerson: 0, label: "Standard premium" },
-  { upTo: 137_000, monthlyPerPerson: 96, label: "Tier 1 surcharge" },
-  { upTo: 171_000, monthlyPerPerson: 240, label: "Tier 2 surcharge" },
-  { upTo: 205_000, monthlyPerPerson: 385, label: "Tier 3 surcharge" },
-  { upTo: 500_000, monthlyPerPerson: 530, label: "Tier 4 surcharge" },
-  { upTo: Infinity, monthlyPerPerson: 578, label: "Top tier surcharge" },
+export const IRMAA_TIERS_SINGLE: IrmaaTier[] = [
+  { upTo: 109_000, monthlyPerPerson: 0, partB: 0, partD: 0, label: "Standard premium" },
+  { upTo: 137_000, monthlyPerPerson: 96, partB: 81.2, partD: 14.5, label: "Tier 1 surcharge" },
+  { upTo: 171_000, monthlyPerPerson: 240, partB: 202.9, partD: 37.5, label: "Tier 2 surcharge" },
+  { upTo: 205_000, monthlyPerPerson: 385, partB: 324.6, partD: 60.4, label: "Tier 3 surcharge" },
+  { upTo: 500_000, monthlyPerPerson: 530, partB: 446.3, partD: 83.3, label: "Tier 4 surcharge" },
+  { upTo: Infinity, monthlyPerPerson: 578, partB: 487, partD: 91, label: "Top tier surcharge" },
 ];
 
 export type FilingStatus = "mfj" | "single";
@@ -127,7 +141,7 @@ export interface FilingConstants {
   ssBase: number;
   ssSecond: number;
   niitThreshold: number;
-  irmaaTiers: { upTo: number; monthlyPerPerson: number; label: string }[];
+  irmaaTiers: IrmaaTier[];
   /** Number of people on the return — scales the household IRMAA surcharge. */
   people: number;
 }
