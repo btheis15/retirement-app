@@ -1004,12 +1004,12 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
                 {/* Build-up: spending → + rollover → total, with the Medicare tier at each line. */}
                 <div className="mt-3 overflow-hidden rounded-2xl border border-border text-[12px]">
-                  <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 border-b border-border/60 px-3 py-1.5 text-[9px] uppercase tracking-wide text-foreground/40">
+                  <div className="grid grid-cols-[1fr_6.5rem_5.5rem] gap-x-3 border-b border-border/60 px-3 py-1.5 text-[9px] uppercase tracking-wide text-foreground/40">
                     <span />
                     <span className="text-right">Taxable income</span>
                     <span className="text-right">Medicare</span>
                   </div>
-                  <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-3 px-3 py-2">
+                  <div className="grid grid-cols-[1fr_6.5rem_5.5rem] items-center gap-x-3 px-3 py-2">
                     <span className="text-foreground/75">
                       From your spending
                       <div className="text-[10px] text-foreground/45">{money(household.annualSpending)}/yr take-home</div>
@@ -1017,12 +1017,12 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     <span className="tabular text-right text-foreground/80">{money(Math.round(planNoConv.tax.magi))}</span>
                     <span className="tabular text-right text-foreground/70">{irmaaCell(before)}</span>
                   </div>
-                  <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-3 bg-gain/[0.05] px-3 py-2">
+                  <div className="grid grid-cols-[1fr_6.5rem_5.5rem] items-center gap-x-3 bg-gain/[0.05] px-3 py-2">
                     <span className="font-medium text-gain">+ Roth rollover</span>
                     <span className="tabular text-right text-gain">+{money(Math.round(addlMagi))}</span>
                     <span className="tabular text-right text-foreground/45">+{moneyCompact(rollTax)} tax</span>
                   </div>
-                  <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-3 border-t border-border/60 px-3 py-2 font-semibold">
+                  <div className="grid grid-cols-[1fr_6.5rem_5.5rem] items-center gap-x-3 border-t border-border/60 px-3 py-2 font-semibold">
                     <span>{on ? "= Your full plan" : "= If you do it"}</span>
                     <span className="tabular text-right">{money(Math.round(planWithRoll.tax.magi))}</span>
                     <span className={`tabular text-right ${after?.inSurcharge ? "text-tax" : "text-gain"}`}>{irmaaCell(after)}</span>
