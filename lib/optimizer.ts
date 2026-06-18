@@ -261,6 +261,10 @@ export interface PlanParams {
 export type ConversionParam =
   | { mode: "fillBracket"; toBracket: BracketTarget }
   | { mode: "recommended"; futureRate: number; capOTI?: number }
+  // A pre-set dollar amount to convert (capped at the pre-tax left after spending).
+  // Used by the spend-impact sweep so the rollover is a CONSTANT baseline across
+  // spending levels — see the note in planYear's conversion overlay.
+  | { mode: "fixed"; amount: number }
   | null;
 
 /**
@@ -413,6 +417,28 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
   if (conv && shortfall <= 1) {
     const remainingPretax = Math.max(0, balances.pretax - draws.pretax);
 
+    if (conv.mode === "fixed") {
+      // A pre-set dollar conversion. The spend-impact sweep uses this so the
+      // rollover stays a FIXED baseline as it varies spending — otherwise a
+      // bracket-fill rule re-solves at every spend level (shrinking as spending
+      // rises), which makes this year's MAGI move BACKWARDS as you spend more and
+      // the Medicare/tax read-outs run the wrong way. A constant conversion keeps
+      // MAGI a clean, monotonic function of spending while still reflecting the
+      // rollover's tax and IRMAA. Capped at the pre-tax left after funding spending.
+      conversion = Math.min(Math.max(0, conv.amount), remainingPretax);
+      if (conversion > 1) {
+        const withConv = evaluate(ctx, { ...draws, pretax: draws.pretax + conversion }, true);
+        conversionTax = Math.max(0, withConv.tax.totalTax - finalEval.tax.totalTax);
+        taxResult = withConv.tax;
+        notes.push(
+          `Roll about ${money(conversion)} from pre-tax to Roth this year. It costs roughly ${money(
+            conversionTax,
+          )} in ${ctx.state === "IL" ? "federal" : "income"} tax now${
+            ctx.state === "IL" ? " (Illinois doesn't tax conversions, so that's the whole bill)" : ""
+          }, best paid from cash savings — but it permanently shrinks the pre-tax balance that drives future RMDs.`,
+        );
+      }
+    } else {
     // The ordinary-taxable-income level to fill pre-tax up to (−1 = don't convert).
     let targetOTI = -1;
     let label = "";
@@ -462,6 +488,7 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
           }, best paid from cash savings — but it permanently shrinks the pre-tax balance that drives future RMDs, then grows tax-free with no RMDs of its own.`,
         );
       }
+    }
     }
   }
 
