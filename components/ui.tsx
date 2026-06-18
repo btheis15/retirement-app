@@ -2,7 +2,72 @@
 
 /** Small shared UI primitives so pages stay consistent. Light-mode only. */
 
-import { ReactNode, useState } from "react";
+import { ReactNode, useState, useEffect } from "react";
+
+/** True once mounted on a desktop-width viewport (lg breakpoint, 1024px). Returns
+ *  false on the server and first client render (avoids hydration mismatch), then
+ *  updates. Drives the "simple on phone, rich on desktop" split. */
+export function useIsDesktop(query = "(min-width: 1024px)"): boolean {
+  const [is, setIs] = useState(false);
+  useEffect(() => {
+    const m = window.matchMedia(query);
+    setIs(m.matches);
+    const onChange = (e: MediaQueryListEvent) => setIs(e.matches);
+    m.addEventListener("change", onChange);
+    return () => m.removeEventListener("change", onChange);
+  }, [query]);
+  return is;
+}
+
+/** Renders its children only on desktop. On phones it renders `mobileNote` (a
+ *  short "see this on a larger screen" line) or nothing — so deep analytics stay
+ *  off the action-focused mobile view AND don't run their compute there. */
+export function DesktopOnly({ children, mobileNote }: { children: ReactNode; mobileNote?: ReactNode }) {
+  const isDesktop = useIsDesktop();
+  if (isDesktop) return <>{children}</>;
+  return mobileNote ? <>{mobileNote}</> : null;
+}
+
+/** A titled section that is COLLAPSED by default on mobile (tap to expand) and
+ *  OPEN by default on desktop, where there's room. Once the user toggles it, their
+ *  choice sticks. Shows an optional one-line `summary` while collapsed so the phone
+ *  still conveys the gist without the full detail. */
+export function Collapsible({
+  title,
+  eyebrow,
+  summary,
+  children,
+  defaultOpenDesktop = true,
+  className = "",
+}: {
+  title: ReactNode;
+  eyebrow?: string;
+  summary?: ReactNode;
+  children: ReactNode;
+  defaultOpenDesktop?: boolean;
+  className?: string;
+}) {
+  const isDesktop = useIsDesktop();
+  const [toggled, setToggled] = useState<boolean | null>(null);
+  const open = toggled ?? (isDesktop && defaultOpenDesktop);
+  return (
+    <div className={`overflow-hidden rounded-2xl border border-border bg-card ${className}`} style={{ boxShadow: "var(--shadow-card)" }}>
+      <button
+        onClick={() => setToggled(!open)}
+        aria-expanded={open}
+        className="press flex w-full items-center justify-between gap-2 px-4 py-3 text-left"
+      >
+        <span className="min-w-0">
+          {eyebrow && <span className="block text-[11px] font-semibold uppercase tracking-wide text-primary">{eyebrow}</span>}
+          <span className="block font-semibold leading-snug">{title}</span>
+          {!open && summary && <span className="mt-0.5 block text-[12px] leading-snug text-foreground/55">{summary}</span>}
+        </span>
+        <span className={`shrink-0 text-foreground/40 transition-transform ${open ? "rotate-180" : ""}`}>⌄</span>
+      </button>
+      {open && <div className="rise border-t border-border/60 px-4 pb-4 pt-3">{children}</div>}
+    </div>
+  );
+}
 
 export function Card({
   children,

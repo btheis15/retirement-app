@@ -3,7 +3,7 @@
 import { useMemo, useState, useEffect, ReactNode } from "react";
 import Link from "next/link";
 import { useStore } from "@/components/HouseholdProvider";
-import { Card, PageTitle, SectionTitle, Pill, Stat, Disclaimer, Callout, Explainer, Info, StackedBar, PageSkeleton } from "@/components/ui";
+import { Card, PageTitle, SectionTitle, Pill, Stat, Disclaimer, Callout, Explainer, Info, StackedBar, PageSkeleton, DesktopOnly } from "@/components/ui";
 import { Donut, Legend, AnimatedNumber } from "@/components/charts";
 import { planYear, STRATEGY_META, StrategyId, BracketTarget } from "@/lib/optimizer";
 import { ordinaryBracketCeiling } from "@/lib/tax/engine";
@@ -327,6 +327,19 @@ export default function PlanPage() {
         </ul>
       </Info>
 
+      {/* ---------- Deep detail — desktop-only. The phone keeps the Plan tab to the
+           action (your move, the order, what's coming); the source/income donuts and
+           the full tax breakdown are richest on a larger screen. ---------- */}
+      <DesktopOnly
+        mobileNote={
+          <Card className="mt-2">
+            <p className="text-[13px] leading-relaxed text-foreground/65">
+              📊 The detailed breakdowns — where each dollar comes from, your full income picture, and the line-by-line
+              tax math — are on the <strong>desktop version</strong>. Open this on a laptop to see them.
+            </p>
+          </Card>
+        }
+      >
       {/* ---------- Source donut ---------- */}
       <SectionTitle>Where the money comes from</SectionTitle>
       <Explainer>Each slice is an account we&apos;d draw on to fund your spending this year.</Explainer>
@@ -429,6 +442,7 @@ export default function PlanPage() {
           </p>
         )}
       </Card>
+      </DesktopOnly>
 
       {/* ---------- Why ---------- */}
       <SectionTitle>Why this plan</SectionTitle>
