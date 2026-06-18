@@ -40,6 +40,19 @@ export interface Holding {
   price: number;
   /** What you paid per share (taxable accounts) — drives the gain on a sale. */
   costPerShare?: number;
+  /** Trailing-12-month dividend per share. Auto-filled from the market feed,
+   *  user-overridable. Undefined → fall back to an asset-type default yield. */
+  dividendPerShare?: number;
+  /** Recent annual dividend-growth rate (e.g. ~5y CAGR), as a decimal. Drives the
+   *  dividend-growth model. Auto-filled, overridable. Undefined → type default. */
+  dividendGrowthRate?: number;
+  /** True once the user has hand-edited the dividend figures — the live market
+   *  feed then leaves this holding's DPS/growth alone (auto-fetch + override). */
+  dividendManual?: boolean;
+  /** Override the dividend tax character: true → taxed as ORDINARY (non-qualified)
+   *  income (e.g. REITs, many bond funds), false → QUALIFIED (preferential rate).
+   *  Undefined → defaulted by holding type. Only matters in taxable accounts. */
+  dividendOrdinary?: boolean;
 }
 
 export interface Account {

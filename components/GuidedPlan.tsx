@@ -16,6 +16,7 @@ import { Card, Pill, Info, Callout } from "@/components/ui";
 import { StackedBar } from "@/components/ui";
 import { spendingSweep } from "@/lib/spendingSweep";
 import { spendImpact } from "@/lib/spendImpact";
+import { dividendBreakdown, dividendIncomeTrajectory } from "@/lib/dividends";
 import { AnimatedNumber, FanChart } from "@/components/charts";
 import { planYear } from "@/lib/optimizer";
 import { ltcgZeroCeiling } from "@/lib/tax/engine";
@@ -1834,29 +1835,26 @@ function DividendInterestDetail({
     { label: "Tax-exempt interest", value: taxExemptInt, note: "federal-tax-free (munis) — still counts for IRMAA" },
   ].filter((c) => c.value > 0.5);
 
-  // Map taxable holdings to what they throw off, by type. Cash & bond funds →
-  // interest; stocks/ETFs/mutual funds → dividends. No line items → by account kind.
+  // Per-holding dividend model: when taxable holdings carry real dividend data
+  // (auto-fetched or entered), show exactly which holdings throw off the dividends
+  // — shares × dividend-per-share — plus their yield and modeled growth, and where
+  // that income is projected to go (the growth model). Cash interest is separate.
+  const taxableHoldings = household.accounts.filter((a) => bucketOf(a.kind) === "taxable").flatMap((a) => a.holdings ?? []);
+  const bd = dividendBreakdown(taxableHoldings);
+  const traj = bd.hasData ? dividendIncomeTrajectory(taxableHoldings, 20) : null;
+
+  // Fallback (no per-holding data): attribute by holding type / account kind.
   const taxable = household.accounts.filter((a) => bucketOf(a.kind) === "taxable");
   let divAssets = 0;
-  let intAssets = 0;
   const divNames: string[] = [];
-  const intNames: string[] = [];
   for (const a of taxable) {
     if (a.holdings && a.holdings.length > 0) {
       for (const h of a.holdings) {
-        const v = h.shares * h.price;
-        if (h.type === "cash" || h.type === "bond_fund") {
-          intAssets += v;
-          intNames.push(h.name);
-        } else {
-          divAssets += v;
-          divNames.push(h.name);
-        }
+        if (h.type === "cash" || h.type === "bond_fund") continue;
+        divAssets += h.shares * h.price;
+        divNames.push(h.name);
       }
-    } else if (a.kind === "cash") {
-      intAssets += a.balance;
-      intNames.push(a.label);
-    } else {
+    } else if (a.kind !== "cash") {
       divAssets += a.balance;
       divNames.push(a.label);
     }
@@ -1866,7 +1864,7 @@ function DividendInterestDetail({
 
   return (
     <Info q="See where this comes from">
-      <p>These are figures you entered for your taxable accounts. Here&apos;s the makeup and what generates each:</p>
+      <p>Here&apos;s the makeup of this income and exactly which holdings throw it off:</p>
       <div className="mt-2 space-y-1">
         {cats.map((c) => (
           <div key={c.label} className="flex items-baseline justify-between gap-2">
@@ -1877,31 +1875,66 @@ function DividendInterestDetail({
           </div>
         ))}
       </div>
-      <div className="mt-2 space-y-1.5 border-t border-border/50 pt-2">
-        {totalDiv > 0.5 && (
-          <p>
-            <strong>{money(totalDiv)} in dividends</strong> comes from your dividend-paying holdings
-            {namesList(divNames) ? <> ({namesList(divNames)})</> : null}
-            {divAssets > 0 ? (
-              <> — about {money(divAssets)} of assets, an implied <strong>{percent(totalDiv / divAssets, 1)}</strong> yield</>
-            ) : null}
-            .
+
+      {bd.hasData && bd.holdings.filter((h) => h.kind !== "none").length > 0 ? (
+        <>
+          <div className="mt-2 border-t border-border/50 pt-2">
+            <div className="mb-1 grid grid-cols-[1fr_auto_auto] gap-x-2 text-[10px] uppercase tracking-wide text-foreground/40">
+              <span>Holding (shares × div/share)</span>
+              <span className="text-right">Yield</span>
+              <span className="text-right">Income/yr</span>
+            </div>
+            <div className="space-y-1">
+              {bd.holdings
+                .filter((h) => h.kind !== "none" && h.income > 0.5)
+                .map((h) => (
+                  <div key={h.ticker} className="grid grid-cols-[1fr_auto_auto] items-baseline gap-x-2">
+                    <span className="min-w-0 truncate text-foreground/80">
+                      <strong>{h.ticker}</strong>{" "}
+                      <span className="text-foreground/45">
+                        {h.shares.toLocaleString()} × ${h.dps.toFixed(2)} · {percent(h.growth, 0)}/yr growth
+                      </span>
+                    </span>
+                    <span className="tabular text-right text-foreground/55">{percent(h.yieldPct, 1)}</span>
+                    <span className="tabular text-right font-medium">{money(h.income)}</span>
+                  </div>
+                ))}
+            </div>
+          </div>
+          {traj && (
+            <p className="mt-2 rounded-lg bg-gain/[0.06] px-2 py-1.5 text-[11px] leading-relaxed text-foreground/75">
+              📈 At each holding&apos;s modeled dividend-growth rate, this <strong>{money(traj[0].total)}</strong> of dividends
+              is projected to grow to about <strong>{money(traj[10].total)}</strong> in 10 years and{" "}
+              <strong>{money(traj[20].total)}</strong> in 20 — before you sell a single share. Individual stocks fade from
+              their recent growth toward a steady long-run rate; broad funds grow at their own history (the
+              dividend-discount approach advisors use).
+            </p>
+          )}
+          <p className="mt-2 text-foreground/50">
+            Dividend-per-share and growth are pulled from the market feed and refreshed daily — edit any holding on the
+            Accounts page to override.
           </p>
-        )}
-        {totalInt > 0.5 && (
-          <p>
-            <strong>{money(totalInt)} in interest</strong> comes from your cash &amp; bonds
-            {namesList(intNames) ? <> ({namesList(intNames)})</> : null}
-            {intAssets > 0 ? (
-              <> — about {money(intAssets)}, an implied <strong>{percent(totalInt / intAssets, 1)}</strong> rate</>
-            ) : null}
-            .
+        </>
+      ) : (
+        <>
+          <div className="mt-2 border-t border-border/50 pt-2">
+            {totalDiv > 0.5 && (
+              <p>
+                <strong>{money(totalDiv)} in dividends</strong> comes from your dividend-paying holdings
+                {namesList(divNames) ? <> ({namesList(divNames)})</> : null}
+                {divAssets > 0 ? (
+                  <> — about {money(divAssets)} of assets, an implied <strong>{percent(totalDiv / divAssets, 1)}</strong> yield</>
+                ) : null}
+                .
+              </p>
+            )}
+          </div>
+          <p className="mt-2 text-foreground/50">
+            Add tickers &amp; shares on the Accounts page and we&apos;ll pull each holding&apos;s real dividend-per-share and
+            growth automatically.
           </p>
-        )}
-      </div>
-      <p className="mt-2 text-foreground/50">
-        We track these as totals by type, not per fund — adjust them anytime on the Accounts page.
-      </p>
+        </>
+      )}
     </Info>
   );
 }

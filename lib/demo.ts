@@ -83,11 +83,11 @@ const RAW_ACCOUNTS: Account[] = [
     owner: "self",
     balance: 0,
     holdings: [
-      { ticker: "NVDA", name: "NVIDIA Corp.", type: "stock", shares: 1000, price: 170, costPerShare: 35 }, // 170k / basis 35k
-      { ticker: "AAPL", name: "Apple Inc.", type: "stock", shares: 1000, price: 230, costPerShare: 95 }, // 230k / 95k
-      { ticker: "VTI", name: "Vanguard Total Stock Mkt ETF", type: "etf", shares: 1000, price: 290, costPerShare: 245 }, // 290k / 245k
-      { ticker: "VOO", name: "Vanguard S&P 500 ETF", type: "etf", shares: 500, price: 500, costPerShare: 250 }, // 250k / 125k
-      { ticker: "VXUS", name: "Vanguard Total Intl Stock ETF", type: "etf", shares: 1000, price: 160, costPerShare: 100 }, // 160k / 100k
+      { ticker: "NVDA", name: "NVIDIA Corp.", type: "stock", shares: 1000, price: 170, costPerShare: 35, dividendPerShare: 0.04, dividendGrowthRate: 0.15 }, // 170k / basis 35k
+      { ticker: "AAPL", name: "Apple Inc.", type: "stock", shares: 1000, price: 230, costPerShare: 95, dividendPerShare: 1.05, dividendGrowthRate: 0.05 }, // 230k / 95k
+      { ticker: "VTI", name: "Vanguard Total Stock Mkt ETF", type: "etf", shares: 1000, price: 290, costPerShare: 245, dividendPerShare: 3.77, dividendGrowthRate: 0.06 }, // 290k / 245k
+      { ticker: "VOO", name: "Vanguard S&P 500 ETF", type: "etf", shares: 500, price: 500, costPerShare: 250, dividendPerShare: 6.8, dividendGrowthRate: 0.06 }, // 250k / 125k
+      { ticker: "VXUS", name: "Vanguard Total Intl Stock ETF", type: "etf", shares: 1000, price: 160, costPerShare: 100, dividendPerShare: 3.4, dividendGrowthRate: 0.04 }, // 160k / 100k
     ],
   },
   {

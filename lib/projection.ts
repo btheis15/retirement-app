@@ -13,6 +13,7 @@
 import { Account, Household, bucketOf } from "./accounts";
 import { planYear, StrategyId, BracketTarget, YearPlan } from "./optimizer";
 import { adjustedAnnualBenefit, fullRetirementAge } from "./socialSecurity";
+import { dividendBreakdown, bucketGrowthFactor } from "./dividends";
 
 export interface ProjectionAssumptions {
   strategy: StrategyId;
@@ -369,8 +370,30 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
   // off proportionally more (annually taxed) income and a depleted one less —
   // the real annual tax drag that makes tax-free Roth worth more than taxable.
   const isBrokerage = (a: Account) => a.kind !== "cash" && bucketOf(a.kind) === "taxable";
-  const baseDivQ = household.brokerageDividendsAnnual;
-  const baseDivO = household.ordinaryDividendsAnnual ?? 0;
+  // Per-holding dividend model: when taxable holdings carry real dividend data
+  // (DPS auto-filled from the market feed / entered), derive this year's dividend
+  // income from shares × DPS and GROW it at the modeled dividend-growth path —
+  // NOT at the price return. Income then tracks (a) the modeled DPS growth and
+  // (b) how many shares are still held (shareFraction, which only moves when the
+  // brokerage is actually sold/reinvested, never from price). Falls back to the
+  // entered household totals scaled by balance when there's no holdings data.
+  const taxableHoldings = h.accounts.filter((a) => bucketOf(a.kind) === "taxable").flatMap((a) => a.holdings ?? []);
+  const divModel = dividendBreakdown(taxableHoldings);
+  const useDivModel = divModel.hasData;
+  const HORIZON = 62; // loop runs startYear .. startYear+60
+  const qualFactor: number[] = [];
+  const ordFactor: number[] = [];
+  if (useDivModel) {
+    for (let t = 0; t < HORIZON; t++) {
+      qualFactor.push(bucketGrowthFactor(taxableHoldings, "qualified", t));
+      ordFactor.push(bucketGrowthFactor(taxableHoldings, "ordinary", t));
+    }
+  }
+  let shareFraction = 1; // fraction of the original dividend-paying position still held
+  const brokBalNow = () => h.accounts.filter(isBrokerage).reduce((s, a) => s + a.balance, 0);
+
+  const baseDivQ = useDivModel ? divModel.qualifiedYear0 : household.brokerageDividendsAnnual;
+  const baseDivO = useDivModel ? divModel.ordinaryYear0 : (household.ordinaryDividendsAnnual ?? 0);
   const baseInt = household.taxableInterestAnnual ?? 0;
   const baseMuni = household.taxExemptInterestAnnual ?? 0;
   const initBrokerage = h.accounts.filter(isBrokerage).reduce((s, a) => s + a.balance, 0);
@@ -414,8 +437,16 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
     const curCash = h.accounts.filter((a) => a.kind === "cash").reduce((s, a) => s + a.balance, 0);
     const divFactor = initBrokerage > 0 ? curBrokerage / initBrokerage : 1;
     const intFactor = initCash > 0 ? curCash / initCash : 1;
-    h.brokerageDividendsAnnual = baseDivQ * divFactor;
-    h.ordinaryDividendsAnnual = baseDivO * divFactor;
+    if (useDivModel) {
+      // Modeled DPS growth × shares still held. shareFraction is updated below,
+      // when this year's withdrawals/reinvestment actually change the position.
+      const t = year - startYear;
+      h.brokerageDividendsAnnual = baseDivQ * (qualFactor[t] ?? qualFactor[qualFactor.length - 1] ?? 1) * shareFraction;
+      h.ordinaryDividendsAnnual = baseDivO * (ordFactor[t] ?? ordFactor[ordFactor.length - 1] ?? 1) * shareFraction;
+    } else {
+      h.brokerageDividendsAnnual = baseDivQ * divFactor;
+      h.ordinaryDividendsAnnual = baseDivO * divFactor;
+    }
     h.taxExemptInterestAnnual = baseMuni * divFactor;
     h.taxableInterestAnnual = baseInt * intFactor;
 
@@ -459,7 +490,12 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
 
     // Apply withdrawals. pretax draw includes the RMD.
     drawFromBucket(h.accounts, "pretax", plan.withdrawals.pretax);
+    // Track how much of the dividend-paying (non-cash) position the taxable draw
+    // actually sells — cash-first means small draws sell zero brokerage, so they
+    // don't cut the dividend. Price growth never moves shareFraction.
+    const brokBeforeDraw = useDivModel ? brokBalNow() : 0;
     drawFromBucket(h.accounts, "taxable", plan.withdrawals.taxable);
+    if (useDivModel && brokBeforeDraw > 0) shareFraction *= brokBalNow() / brokBeforeDraw;
     drawFromBucket(h.accounts, "roth", plan.withdrawals.roth);
 
     // Roll pre-tax → Roth (tax paid from taxable/cash). Shrinks future RMDs.
@@ -468,9 +504,14 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
       totalConverted += plan.conversion;
     }
 
-    // Forced surplus (RMD bigger than the need) is reinvested in the brokerage.
+    // Forced surplus (RMD bigger than the need) is reinvested in the brokerage —
+    // more shares → proportionally more dividend income.
     const surplus = plan.netCash - plan.spendingTarget;
-    if (surplus > 0) reinvestSurplus(h.accounts, surplus);
+    if (surplus > 0) {
+      const brokBeforeReinvest = useDivModel ? brokBalNow() : 0;
+      reinvestSurplus(h.accounts, surplus);
+      if (useDivModel && brokBeforeReinvest > 0) shareFraction *= brokBalNow() / brokBeforeReinvest;
+    }
 
     // Cut depth = actual real spend vs. the intended real spend (refSpend already
     // includes the survivor step-down), so constant-real reads 0 cut and only

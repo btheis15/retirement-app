@@ -11,7 +11,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useStore } from "@/components/HouseholdProvider";
-import { getSeries, latestPrices, SymbolSeries } from "@/lib/prices";
+import { getSeries, getDividends, latestPrices, SymbolSeries } from "@/lib/prices";
 
 interface PricesCtx {
   loading: boolean;
@@ -23,7 +23,7 @@ interface PricesCtx {
 const Ctx = createContext<PricesCtx>({ loading: false, series: {}, latest: {}, tickers: [] });
 
 export function PricesProvider({ children }: { children: React.ReactNode }) {
-  const { household, ready, applyLivePrices } = useStore();
+  const { household, ready, applyLivePrices, applyLiveDividends } = useStore();
 
   const tickers = useMemo(() => {
     const set = new Set<string>();
@@ -51,11 +51,16 @@ export function PricesProvider({ children }: { children: React.ReactNode }) {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+    // Dividend data (DPS + growth) — fetched alongside prices, applied to holdings
+    // for the per-holding dividend model. Independent of the price load.
+    getDividends(tickers).then((d) => {
+      if (!cancelled) applyLiveDividends(d);
+    });
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tickerKey, ready, applyLivePrices]);
+  }, [tickerKey, ready, applyLivePrices, applyLiveDividends]);
 
   const latest = useMemo(() => latestPrices(series), [series]);
   const value = useMemo<PricesCtx>(() => ({ loading, series, latest, tickers }), [loading, series, latest, tickers]);
