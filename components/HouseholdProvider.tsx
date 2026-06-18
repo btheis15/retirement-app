@@ -44,6 +44,11 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const [mode, setModeState] = useState<Mode>("demo");
   const [ownHousehold, setOwnHousehold] = useState<Household>(() => emptyHousehold());
   const [settings, setSettings] = useState<PlannerSettings>(DEFAULT_SETTINGS);
+  // Spending is an *exploratory* lever on the example — dragging it should change
+  // the example in place, NOT silently turn the example into "your own numbers".
+  // Held separately so the demo stays the demo while you explore it. (null = the
+  // example's built-in spending.)
+  const [demoSpending, setDemoSpending] = useState<number | null>(null);
 
   // Hydrate from localStorage after mount (avoids SSR mismatch).
   useEffect(() => {
@@ -71,6 +76,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
 
   const setMode = useCallback((m: Mode) => {
     setModeState(m);
+    if (m === "demo") setDemoSpending(null); // returning to the example shows it pristine
     try {
       localStorage.setItem(KEY_MODE, m);
     } catch {
@@ -83,7 +89,11 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   // a STABLE reference across renders (demoHousehold() deep-copies on each call) —
   // otherwise every settings change would hand consumers a brand-new household
   // object and needlessly rerun the heavy engines (Monte Carlo, projections).
-  const household = useMemo(() => (mode === "demo" ? demoHousehold() : ownHousehold), [mode, ownHousehold]);
+  const household = useMemo(() => {
+    if (mode !== "demo") return ownHousehold;
+    const h = demoHousehold();
+    return demoSpending != null ? { ...h, annualSpending: demoSpending } : h;
+  }, [mode, ownHousehold, demoSpending]);
 
   const editApply = useCallback(
     (next: Household) => {
@@ -99,10 +109,17 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
 
   const updateHousehold = useCallback(
     (patch: Partial<Household>) => {
-      const base = mode === "demo" ? demoHousehold() : ownHousehold;
+      // Adjusting ONLY the spending dial while exploring the example stays on the
+      // example (no fork) — it's a "what if I spent this much?" lever, not data entry.
+      const keys = Object.keys(patch);
+      if (mode === "demo" && keys.length === 1 && keys[0] === "annualSpending" && typeof patch.annualSpending === "number") {
+        setDemoSpending(patch.annualSpending);
+        return;
+      }
+      const base = mode === "demo" ? { ...demoHousehold(), ...(demoSpending != null ? { annualSpending: demoSpending } : {}) } : ownHousehold;
       editApply({ ...base, ...patch });
     },
-    [mode, ownHousehold, editApply],
+    [mode, ownHousehold, demoSpending, editApply],
   );
 
   const setAccounts = useCallback(

@@ -887,6 +887,7 @@ function GoalAndRecommendation() {
       bracketTarget: r.best.config.bracketTarget,
       useConversions: r.best.config.useConversions,
       convertMode: r.best.config.convertMode,
+      convertUntilAge: r.chosenConvertUntilAge,
     });
   };
 
@@ -933,6 +934,18 @@ function GoalAndRecommendation() {
           Technical version: {describePlan(rec.best.config, settings.convertUntilAge)}.
         </p>
         <p className="mt-1">{rec.rationale}</p>
+        {rec.claimAdvice && (
+          <p className="mt-2 rounded-xl bg-gain/10 px-3 py-2 text-[12px] leading-relaxed text-gain">
+            📈 Bigger lever: claiming Social Security at{" "}
+            <strong>
+              {rec.claimAdvice.self}
+              {rec.claimAdvice.delayWho === "both" ? ` / ${rec.claimAdvice.spouse}` : ""}
+            </strong>{" "}
+            (vs {rec.claimAdvice.currentSelf}
+            {rec.claimAdvice.delayWho === "both" ? ` / ${rec.claimAdvice.currentSpouse}` : ""}) is projected to leave about{" "}
+            <strong>{moneyCompact(rec.claimAdvice.lift)}</strong> more over your lifetime — set claim ages on the Accounts page.
+          </p>
+        )}
         <div className="mt-3 grid grid-cols-2 gap-2">
           <MiniStat label="After-tax wealth" value={moneyCompact(rec.best.metrics.netWealth)} tone="gain" />
           <MiniStat label="Lifetime tax" value={moneyCompact(rec.best.metrics.lifetimeTax)} tone="tax" />

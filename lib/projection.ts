@@ -109,6 +109,9 @@ export interface ProjectionResult {
   endingBuckets: { pretax: number; roth: number; taxable: number; taxableGain: number };
   yearsModeled: number;
   depleted: boolean; // ran out of money before endAge
+  /** Years funded before the first shortfall (= yearsModeled if never short). Lets
+   *  the advisor rank failing plans by how long they last, not just pass/fail. */
+  solventYears: number;
   /** Lowest real (today's-dollars) spending in any year ÷ the initial spend. 1.0
    *  means spending never dipped below plan; <1 means a dynamic-spending cut. */
   minRealSpendRatio: number;
@@ -139,21 +142,50 @@ function cloneHousehold(h: Household): Household {
   };
 }
 
-/** Draw `amount` out of the accounts in one bucket, proportionally, basis-aware. */
+/** Draw `amount` out of the accounts in one bucket, basis-aware. Pre-tax/Roth are
+ *  drawn pro-rata. The TAXABLE bucket is drawn CASH-FIRST: cash/savings (no embedded
+ *  gain) is spent before any appreciated brokerage, so the least capital gain is
+ *  realized and the most-appreciated lots are preserved for the step-up at death.
+ *  This matches the optimizer's cash-first gain assumption (see optimizer.ts ctx). */
 function drawFromBucket(accounts: Account[], bucket: "pretax" | "roth" | "taxable", amount: number) {
   if (amount <= 0) return;
   const inBucket = accounts.filter((a) => bucketOf(a.kind) === bucket);
   const total = inBucket.reduce((s, a) => s + a.balance, 0);
   if (total <= 0) return;
+
+  if (bucket === "taxable") {
+    // 1) Drain cash/savings first (zero gain realized).
+    let remaining = amount;
+    for (const a of inBucket.filter((x) => x.kind === "cash")) {
+      if (remaining <= 0) break;
+      if (a.balance <= 0) continue;
+      const take = Math.min(a.balance, remaining);
+      if (a.costBasis != null) a.costBasis = a.costBasis * (1 - take / a.balance);
+      a.balance -= take;
+      remaining -= take;
+    }
+    // 2) Then sell brokerage pro-rata (blended basis, matching the engine's tax calc).
+    if (remaining > 0) {
+      const brk = inBucket.filter((x) => x.kind !== "cash");
+      const brkTotal = brk.reduce((s, a) => s + a.balance, 0);
+      if (brkTotal > 0) {
+        const ratio = Math.min(1, remaining / brkTotal);
+        for (const a of brk) {
+          if (a.balance <= 0) continue;
+          const take = a.balance * ratio;
+          if (a.costBasis != null) a.costBasis = a.costBasis * (1 - take / a.balance);
+          a.balance -= take;
+        }
+      }
+    }
+    return;
+  }
+
+  // pre-tax / Roth: pro-rata (no basis to optimize)
   const ratio = Math.min(1, amount / total);
   for (const a of inBucket) {
     if (a.balance <= 0) continue; // nothing to sell (avoids 0/0 on basis)
-    const take = a.balance * ratio;
-    if (bucket === "taxable" && a.costBasis != null) {
-      // reduce basis proportionally to the shares sold
-      a.costBasis = a.costBasis * (1 - take / a.balance);
-    }
-    a.balance -= take;
+    a.balance -= a.balance * ratio;
   }
 }
 
@@ -276,6 +308,15 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
     assumptions;
   const heirTaxRate = assumptions.heirTaxRate ?? ASSUMED_LIQUIDATION_RATE;
   const h = cloneHousehold(household);
+  // A genuinely single household (never-married / no living spouse) is encoded by
+  // the absence of a real spouse — the app's convention is spouse.birthYear <= 1900
+  // (see app/projection/page.tsx hasSpouse). Such a person must file SINGLE for the
+  // ENTIRE projection (never MFJ), and the widow's-penalty transition must NOT run
+  // for them (no spending cut, no "keep the larger SS" — they were always single).
+  // Without this, a single retiree is silently taxed on the MFJ curve for life
+  // (double-width brackets, 2× standard deduction, 2× IRMAA headroom), which
+  // overstates the estate by hundreds of thousands and understates lifetime tax.
+  const isSingle = !(household.spouse && household.spouse.birthYear > 1900);
   const startYear = new Date().getFullYear();
   const rows: ProjectionRow[] = [];
   let lifetimeTax = 0;
@@ -381,7 +422,7 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
     // Survivor transition: apply the one-time changes the first year on/after the
     // older spouse's death — keep the larger SS, stop the smaller, inherit the
     // pre-tax (spousal rollover), and drop spending to the survivor factor.
-    const isSurvivorYear = survivor != null && year >= firstDeathYear;
+    const isSurvivorYear = !isSingle && survivor != null && year >= firstDeathYear;
     if (isSurvivorYear && !survivorApplied) {
       survivorApplied = true;
       survivorYear = year;
@@ -397,7 +438,7 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
       h.annualSpending *= survivor.spendingFactor;
       refSpend *= survivor.spendingFactor; // recenter the guardrail rate on the survivor's lower spend
     }
-    const filingStatus = isSurvivorYear ? ("single" as const) : ("mfj" as const);
+    const filingStatus = isSingle || isSurvivorYear ? ("single" as const) : ("mfj" as const);
 
     const convertThisYear = convert != null && selfAge <= convert.untilAge;
     const conversionParam = !convertThisYear
@@ -517,7 +558,14 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
   // Subtract the lifetime Medicare IRMAA surcharges — a real out-of-pocket cost
   // that aggressive conversions (higher MAGI → higher tiers, 2 years later) drive
   // up, so "money you keep" honestly reflects the IRMAA cost of converting.
-  const endingEstateAfterTax = endPretax * (1 - liquidationRate) + endRoth + endTaxable - lifetimeIrmaa;
+  // Floor at 0: a depleted plan leaves a $0 estate, never a negative "wealth" (the
+  // raw formula would otherwise read -lifetimeIrmaa, since IRMAA is a premium you
+  // paid while alive, not a debt your heirs inherit). lifetimeIrmaa stays available
+  // as its own reported cost line.
+  const endingEstateAfterTax = Math.max(
+    0,
+    endPretax * (1 - liquidationRate) + endRoth + endTaxable - lifetimeIrmaa,
+  );
 
   // Today's-dollars versions: the ending estate sits at the final modeled year, so
   // deflate it by that many years of inflation.
@@ -525,7 +573,13 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
   // ending estate to today's dollars — matches the per-year deflation above.
   const endDeflator = priceLevel;
   const endingEstateReal = endingEstate / endDeflator;
-  const endingEstateAfterTaxReal = endingEstateAfterTax / endDeflator;
+  const endingEstateAfterTaxReal = endingEstateAfterTax / endDeflator; // already floored at 0
+
+  // Years funded before the first shortfall (for ranking failing plans by how long
+  // they last — "runs dry at 86" should rank below "runs dry at 95"). Equals the
+  // full horizon when the plan never falls short.
+  const firstShortfallIdx = rows.findIndex((r) => r.shortfall);
+  const solventYears = firstShortfallIdx < 0 ? rows.length : firstShortfallIdx;
 
   return {
     rows,
@@ -540,6 +594,7 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
     endingBuckets: { pretax: endPretax, roth: endRoth, taxable: endTaxable, taxableGain: endTaxableGain },
     yearsModeled: rows.length,
     depleted,
+    solventYears,
     minRealSpendRatio: minSpendRatio === Infinity ? 1 : Math.min(1, minSpendRatio),
     totalConverted,
     peakRmd,

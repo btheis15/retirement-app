@@ -159,11 +159,15 @@ function seniorBonusDeduction(num65Plus: number, magi: number, phaseoutStart: nu
   // age-65 additional standard deduction remains).
   if (year > 2028) return 0;
   // The $6,000 amount and the $150k MFJ / $75k single phaseout thresholds are
-  // STATUTORY FIXED dollars — they are NOT inflation-indexed. Phaseout: each
-  // eligible filer's $6,000 is reduced by 6% of MAGI over the threshold.
+  // STATUTORY FIXED dollars — they are NOT inflation-indexed. OBBBA sec. 70103
+  // reduces the AGGREGATE deduction (the combined $6,000 × eligible filers) by 6%
+  // of MAGI over the threshold ONCE — not each filer's $6,000 independently. So for
+  // an MFJ couple with both spouses 65+, the combined $12,000 phases out over a
+  // $150k–$350k band, not $150k–$250k. (Single filers are unchanged — one filer
+  // means per-filer == aggregate.)
+  const gross = SENIOR_BONUS_DEDUCTION * num65Plus;
   const over = Math.max(0, magi - phaseoutStart);
-  const perFiler = Math.max(0, SENIOR_BONUS_DEDUCTION - over * SENIOR_BONUS_PHASEOUT_RATE);
-  return perFiler * num65Plus;
+  return Math.max(0, gross - over * SENIOR_BONUS_PHASEOUT_RATE);
 }
 
 function irmaaFor(

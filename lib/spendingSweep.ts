@@ -8,12 +8,24 @@
  * People (especially careful savers) chronically UNDER-spend because they can't
  * see the safe ceiling; this makes it concrete from their own accounts.
  *
- * ⚠️ Educational estimates only. Uses the flat expected return (the Monte-Carlo
- * confidence check elsewhere shows market-risk sensitivity).
+ * The ceilings are computed on a DOWNSIDE (below-average) market path, not the
+ * median — a plan that just barely lasts on the median path actually fails in
+ * roughly half of real (volatile) markets, so calling that "sustainable" would
+ * overstate safety. Running the sweep at a return haircut below the expected rate
+ * lands the "comfortable" ceiling near a ~85–90% Monte-Carlo success level (spot-
+ * checked against the MC engine), so the green zone reflects a genuinely cautious
+ * spend rather than a coin-flip. The full MC confidence check still runs elsewhere.
+ *
+ * ⚠️ Educational estimates only.
  */
 
 import { Household } from "./accounts";
 import { projectLifetime, ProjectionAssumptions } from "./projection";
+
+/** How far below the expected return to run the "how much can I safely spend?"
+ *  sweep, to approximate a poor-market (sequence-risk) path. Tuned so the
+ *  no-shortfall ceiling sits near ~85–90% Monte-Carlo success for typical mixes. */
+export const SWEEP_DOWNSIDE_HAIRCUT = 0.02;
 
 export interface SweepPoint {
   spend: number;
@@ -41,8 +53,14 @@ export function spendingSweep(
   steps = 24,
 ): SpendingSweep {
   // Conversions don't change how much you can SPEND, and skipping them halves the
-  // work, so sweep the base plan.
-  const base: ProjectionAssumptions = { ...assumptions, convert: null };
+  // work, so sweep the base plan — on a DOWNSIDE return (haircut below expected) so
+  // a "lasts" verdict means lasts even in a weak market, not just on the median path.
+  const base: ProjectionAssumptions = {
+    ...assumptions,
+    convert: null,
+    returnRate: Math.max(0, assumptions.returnRate - SWEEP_DOWNSIDE_HAIRCUT),
+    returnFor: null,
+  };
   const points: SweepPoint[] = [];
   for (let i = 0; i <= steps; i++) {
     const spend = Math.round((i / steps) * max);
