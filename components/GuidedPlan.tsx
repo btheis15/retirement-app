@@ -1367,7 +1367,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   It&apos;s a great rule of thumb, and often right — but not always. The catch is that the money in your
                   pre-tax IRA/401(k) will be taxed as ordinary income <em>eventually</em>, either when you take it or when
                   your heirs do. If you only ever touch the brokerage, that pre-tax balance keeps growing and gets forced
-                  out in your 70s–80s as RMDs — often at a <em>higher</em> rate than you&apos;d pay today, and it can push
+                  out in your 70s–80s as RMDs — often at a <em>higher</em>{" "}rate than you&apos;d pay today, and it can push
                   up your Medicare (IRMAA) premiums too.
                 </p>
                 <p className="mt-2">
@@ -2081,7 +2081,7 @@ function BracketLadder({
   const topRow = [...rows].reverse().find((r) => r.slice > 0); // highest bracket actually reached
   const fillBracket = rows.find((r) => r.isFill);
   const fillTop = fillBracket && fillBracket.upTo !== Infinity ? fillBracket.upTo : ordinaryIncome;
-  const cols = "grid grid-cols-[2.1rem_minmax(0,1fr)_4.75rem_auto_auto] items-center gap-x-2";
+  const cols = "grid grid-cols-[2.1rem_minmax(0,1fr)_4.75rem_3.5rem_4rem] items-center gap-x-2";
   return (
     <div className="mt-4 rounded-2xl border border-border p-3">
       <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-foreground/50">
