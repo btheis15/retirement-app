@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import { useStore } from "@/components/HouseholdProvider";
-import { Card, PageTitle, SectionTitle, Stat, Pill, Disclaimer, Callout, Explainer, Info, PageSkeleton, DesktopOnly } from "@/components/ui";
+import { Card, PageTitle, SectionTitle, Stat, Pill, Disclaimer, Callout, Explainer, Info, PageSkeleton, DesktopOnly, Collapsible } from "@/components/ui";
 import { StackedArea, Bars, CompareBars, AnimatedNumber, FanChart } from "@/components/charts";
 import { projectLifetime } from "@/lib/projection";
 import { detectMilestones } from "@/lib/milestones";
@@ -27,7 +27,6 @@ const MC_RUNS = 1000;
 
 export default function ProjectionPage() {
   const { ready, household, settings, updateSettings } = useStore();
-  const [showAdv, setShowAdv] = useState(false);
   // The safe-spending RANGE: the most you can spend at 90% confidence if you NEVER
   // cut (flat), and if you're willing to FLEX (trim in down years, guardrails). The
   // two ends turn the old "$290k vs $451k" contradiction into one honest spectrum.
@@ -278,159 +277,9 @@ export default function ProjectionPage() {
 
   return (
     <div>
-      <PageTitle title="Lifetime forecast" subtitle={`Year-by-year through age ${settings.endAge}, with growth & inflation.`} />
+      <PageTitle title="Lifetime forecast" subtitle="Will your money last, and how much can you safely spend?" />
 
-      {/* Scenario controls — derived from holdings */}
-      <div className="flex gap-2">
-        {scenarios.map((s) => (
-          <button
-            key={s.id}
-            onClick={() => updateSettings({ returnRate: s.rate })}
-            className={`press flex-1 rounded-xl border py-2 text-center ${
-              Math.abs(settings.returnRate - s.rate) < 0.0025
-                ? "border-primary bg-primary/10 text-primary"
-                : "border-border"
-            }`}
-          >
-            <div className="text-[12px] font-semibold">{s.label}</div>
-            <div className="text-[11px] text-foreground/55">{percent(s.rate, 1)}/yr</div>
-          </button>
-        ))}
-      </div>
-      <p className="mt-1.5 text-[11px] text-foreground/55">
-        Based on your holdings ({percent(rm.equityPct, 0)} stocks · {percent(rm.bondPct, 0)} bonds · {percent(rm.cashPct, 0)} cash).
-        Stocks have averaged ~10%/yr long-term, so a stock-heavy mix sits high; these scenarios bracket your blend.
-        {rm.basis !== "holdings" && " (Accounts without itemized holdings use an assumed mix — add holdings for precision.)"}
-      </p>
-      <ReturnMethodInfo rm={rm} />
-      <div className="mt-3 grid grid-cols-2 gap-3">
-        <label className="block">
-          <span className="mb-1 block text-[12px] font-medium text-foreground/60">Inflation</span>
-          <select
-            className="w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm"
-            value={settings.inflationRate}
-            onChange={(e) => updateSettings({ inflationRate: Number(e.target.value) })}
-          >
-            {[0.02, 0.025, 0.03, 0.035].map((v) => (
-              <option key={v} value={v}>{percent(v, 1)}</option>
-            ))}
-          </select>
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-[12px] font-medium text-foreground/60">Plan to age</span>
-          <select
-            className="w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm"
-            value={settings.endAge}
-            onChange={(e) => updateSettings({ endAge: Number(e.target.value) })}
-          >
-            {[85, 90, 95, 100, 105].map((v) => (
-              <option key={v} value={v}>{v}</option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      <LongevityCard household={household} settings={settings} updateSettings={updateSettings} real={real} />
-
-      {/* Advanced assumptions — kept collapsed so the page stays approachable. */}
-      <button
-        onClick={() => setShowAdv((v) => !v)}
-        aria-expanded={showAdv}
-        className="press mt-3 flex w-full items-center justify-between rounded-xl border border-border bg-card px-4 py-2.5 text-[13px] font-semibold text-foreground/70"
-      >
-        <span>⚙️ Advanced assumptions{real ? " · showing today’s dollars" : ""}</span>
-        <span className={`transition-transform ${showAdv ? "rotate-180" : ""}`}>⌄</span>
-      </button>
-      {showAdv && (
-        <Card className="mt-2 space-y-1">
-          <label className="flex items-center justify-between gap-3 py-1">
-            <span className="text-[13px]">
-              <span className="font-medium">Show in today’s dollars</span>
-              <span className="mt-0.5 block text-[11px] leading-snug text-foreground/55">
-                Adjust every future figure for inflation, so amounts reflect real purchasing power instead of big
-                nominal numbers.
-              </span>
-            </span>
-            <button
-              onClick={() => updateSettings({ realDollars: !settings.realDollars })}
-              className={`press shrink-0 rounded-full px-3 py-1 text-[12px] font-semibold ${real ? "bg-gain/15 text-gain" : "bg-foreground/10 text-foreground/60"}`}
-            >
-              {real ? "✓ On" : "Off"}
-            </button>
-          </label>
-
-          <div className="border-t border-border/50 pt-2">
-            <label className="flex items-center justify-between gap-3 py-1">
-              <span className="text-[13px]">
-                <span className="font-medium">Model the survivor years</span>
-                <span className="mt-0.5 block text-[11px] leading-snug text-foreground/55">
-                  The &quot;widow&apos;s penalty&quot;: after the first spouse passes, the survivor files Single — harder
-                  brackets and a smaller deduction.
-                </span>
-              </span>
-              <button
-                onClick={() => updateSettings({ survivorModel: !settings.survivorModel })}
-                className={`press shrink-0 rounded-full px-3 py-1 text-[12px] font-semibold ${settings.survivorModel ? "bg-gain/15 text-gain" : "bg-foreground/10 text-foreground/60"}`}
-              >
-                {settings.survivorModel ? "✓ On" : "Off"}
-              </button>
-            </label>
-            {settings.survivorModel && (
-              <label className="flex items-center justify-between gap-3 py-1">
-                <span className="text-[12px] text-foreground/60">First spouse passes at age</span>
-                <select
-                  className="rounded-xl border border-border bg-background/60 px-3 py-1.5 text-sm"
-                  value={settings.firstDeathAge}
-                  onChange={(e) => updateSettings({ firstDeathAge: Number(e.target.value) })}
-                >
-                  {[80, 82, 85, 88, 90, 92].map((v) => (
-                    <option key={v} value={v}>{v}</option>
-                  ))}
-                </select>
-              </label>
-            )}
-          </div>
-
-          <div className="border-t border-border/50 pt-2">
-            <span className="text-[13px] font-medium">Spending strategy</span>
-            <span className="mt-0.5 block text-[11px] leading-snug text-foreground/55">
-              <strong>Steady</strong> spends a fixed inflation-adjusted amount every year. <strong>Guardrails</strong>{" "}
-              (Guyton-Klinger) trims spending ~10% after bad markets and raises it after good ones — far more survivable,
-              the way a real retiree adjusts.
-            </span>
-            <div className="mt-1.5 grid grid-cols-2 gap-2">
-              {(["constant", "guardrails"] as const).map((s) => (
-                <button
-                  key={s}
-                  onClick={() => updateSettings({ spendingStrategy: s })}
-                  className={`press rounded-xl border px-2 py-1.5 text-center text-[12px] font-semibold ${settings.spendingStrategy === s ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/70"}`}
-                >
-                  {s === "constant" ? "Steady (fixed)" : "Guardrails (flex)"}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <label className="block border-t border-border/50 pt-2">
-            <span className="text-[13px] font-medium">Heir&apos;s tax rate on inherited pre-tax</span>
-            <span className="mt-0.5 block text-[11px] leading-snug text-foreground/55">
-              A non-spouse heir must drain an inherited IRA within 10 years (SECURE Act), taxed at their own bracket.
-              Drives the &quot;after-tax estate.&quot; Default 24%.
-            </span>
-            <select
-              className="mt-1.5 w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm"
-              value={settings.heirTaxRate}
-              onChange={(e) => updateSettings({ heirTaxRate: Number(e.target.value) })}
-            >
-              {[0.12, 0.22, 0.24, 0.32].map((v) => (
-                <option key={v} value={v}>{percent(v, 0)}</option>
-              ))}
-            </select>
-          </label>
-        </Card>
-      )}
-
-      {/* Headline */}
+      {/* Headline — the ANSWER comes first, before any assumption controls. */}
       <SectionTitle hint={STRATEGY_META[settings.strategy].label}>If you follow this plan</SectionTitle>
       <Card>
         <div className="grid grid-cols-3 gap-y-4">
@@ -484,7 +333,7 @@ export default function ProjectionPage() {
             safe") into one honest spectrum. */}
         <div className="mt-3 rounded-xl border border-border p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-[13px] font-semibold">How much could you safely spend?</span>
+            <span className="text-[13px] font-semibold">Your safe spending range</span>
             <button
               onClick={findSafeSpending}
               disabled={solving}
@@ -496,7 +345,8 @@ export default function ProjectionPage() {
           {!safe && !solving && (
             <p className="mt-1 text-[11px] leading-relaxed text-foreground/55">
               Solves for your safe yearly spend at <strong>90% confidence</strong> two ways: spending the same amount
-              every year, vs. trimming a little in down markets. Runs a few hundred simulations; takes a few seconds.
+              every year, vs. trimming a little in down markets. This stress-tests the spending target you set on the
+              Plan tab. Runs a few hundred simulations; takes a few seconds.
             </p>
           )}
           {solving && (
@@ -535,8 +385,13 @@ export default function ProjectionPage() {
           )}
         </div>
 
+        {/* Second opinions — block-bootstrap + regime-switching + the "why
+            percentiles" note. Advanced/reassurance, desktop-only so the mobile
+            flow stays headline → will-it-last → safe range → longevity. */}
+        <DesktopOnly>
+        <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-foreground/45">Second opinions (optional) — when all three models agree, you can trust the number</p>
         {/* Historical block-bootstrap — a "second opinion" from real market history. */}
-        <div className="mt-3 rounded-xl border border-border p-3">
+        <div className="mt-2 rounded-xl border border-border p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-[13px] font-semibold">Cross-check against real history</span>
             <button
@@ -642,7 +497,159 @@ export default function ProjectionPage() {
             on the Learn tab.
           </p>
         </Info>
+        </DesktopOnly>
       </Card>
+
+      {/* ---------- How long to plan for — an input to the answer above, so it
+           follows it. ---------- */}
+      <LongevityCard household={household} settings={settings} updateSettings={updateSettings} real={real} />
+
+      {/* ---------- Adjust the assumptions — every knob behind the forecast in ONE
+           collapsed panel, after the answer (not before it). ---------- */}
+      <Collapsible
+        eyebrow="tune it"
+        title="Adjust the assumptions"
+        summary="Return scenario, inflation, plan-to age, today's-dollars, survivor years, spending strategy, heir tax"
+        defaultOpenDesktop={false}
+        className="mt-2"
+      >
+        <span className="mb-1 block text-[12px] font-medium text-foreground/60">Return scenario</span>
+        <div className="flex gap-2">
+          {scenarios.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => updateSettings({ returnRate: s.rate })}
+              className={`press flex-1 rounded-xl border py-2 text-center ${
+                Math.abs(settings.returnRate - s.rate) < 0.0025
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border"
+              }`}
+            >
+              <div className="text-[12px] font-semibold">{s.label}</div>
+              <div className="text-[11px] text-foreground/55">{percent(s.rate, 1)}/yr</div>
+            </button>
+          ))}
+        </div>
+        <p className="mt-1.5 text-[11px] text-foreground/55">
+          Based on your holdings ({percent(rm.equityPct, 0)} stocks · {percent(rm.bondPct, 0)} bonds · {percent(rm.cashPct, 0)} cash).
+          Stocks have averaged ~10%/yr long-term, so a stock-heavy mix sits high; these scenarios bracket your blend.
+          {rm.basis !== "holdings" && " (Accounts without itemized holdings use an assumed mix — add holdings for precision.)"}
+        </p>
+        <ReturnMethodInfo rm={rm} />
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="mb-1 block text-[12px] font-medium text-foreground/60">Inflation</span>
+            <select
+              className="w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm"
+              value={settings.inflationRate}
+              onChange={(e) => updateSettings({ inflationRate: Number(e.target.value) })}
+            >
+              {[0.02, 0.025, 0.03, 0.035].map((v) => (
+                <option key={v} value={v}>{percent(v, 1)}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[12px] font-medium text-foreground/60">Plan to age</span>
+            <select
+              className="w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm"
+              value={settings.endAge}
+              onChange={(e) => updateSettings({ endAge: Number(e.target.value) })}
+            >
+              {[85, 90, 95, 100, 105].map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-3 space-y-1 border-t border-border/50 pt-2">
+          <label className="flex items-center justify-between gap-3 py-1">
+            <span className="text-[13px]">
+              <span className="font-medium">Show in today’s dollars</span>
+              <span className="mt-0.5 block text-[11px] leading-snug text-foreground/55">
+                Adjust every future figure for inflation, so amounts reflect real purchasing power instead of big
+                nominal numbers.
+              </span>
+            </span>
+            <button
+              onClick={() => updateSettings({ realDollars: !settings.realDollars })}
+              className={`press shrink-0 rounded-full px-3 py-1 text-[12px] font-semibold ${real ? "bg-gain/15 text-gain" : "bg-foreground/10 text-foreground/60"}`}
+            >
+              {real ? "✓ On" : "Off"}
+            </button>
+          </label>
+
+          <div className="border-t border-border/50 pt-2">
+            <label className="flex items-center justify-between gap-3 py-1">
+              <span className="text-[13px]">
+                <span className="font-medium">Model the survivor years</span>
+                <span className="mt-0.5 block text-[11px] leading-snug text-foreground/55">
+                  The &quot;widow&apos;s penalty&quot;: after the first spouse passes, the survivor files Single — harder
+                  brackets and a smaller deduction.
+                </span>
+              </span>
+              <button
+                onClick={() => updateSettings({ survivorModel: !settings.survivorModel })}
+                className={`press shrink-0 rounded-full px-3 py-1 text-[12px] font-semibold ${settings.survivorModel ? "bg-gain/15 text-gain" : "bg-foreground/10 text-foreground/60"}`}
+              >
+                {settings.survivorModel ? "✓ On" : "Off"}
+              </button>
+            </label>
+            {settings.survivorModel && (
+              <label className="flex items-center justify-between gap-3 py-1">
+                <span className="text-[12px] text-foreground/60">First spouse passes at age</span>
+                <select
+                  className="rounded-xl border border-border bg-background/60 px-3 py-1.5 text-sm"
+                  value={settings.firstDeathAge}
+                  onChange={(e) => updateSettings({ firstDeathAge: Number(e.target.value) })}
+                >
+                  {[80, 82, 85, 88, 90, 92].map((v) => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+
+          <div className="border-t border-border/50 pt-2">
+            <span className="text-[13px] font-medium">Spending strategy</span>
+            <span className="mt-0.5 block text-[11px] leading-snug text-foreground/55">
+              <strong>Steady</strong> spends a fixed inflation-adjusted amount every year. <strong>Guardrails</strong>{" "}
+              (Guyton-Klinger) trims spending ~10% after bad markets and raises it after good ones — far more survivable,
+              the way a real retiree adjusts.
+            </span>
+            <div className="mt-1.5 grid grid-cols-2 gap-2">
+              {(["constant", "guardrails"] as const).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => updateSettings({ spendingStrategy: s })}
+                  className={`press rounded-xl border px-2 py-1.5 text-center text-[12px] font-semibold ${settings.spendingStrategy === s ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/70"}`}
+                >
+                  {s === "constant" ? "Steady (fixed)" : "Guardrails (flex)"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <label className="block border-t border-border/50 pt-2">
+            <span className="text-[13px] font-medium">Heir&apos;s tax rate on inherited pre-tax</span>
+            <span className="mt-0.5 block text-[11px] leading-snug text-foreground/55">
+              A non-spouse heir must drain an inherited IRA within 10 years (SECURE Act), taxed at their own bracket.
+              Drives the &quot;after-tax estate.&quot; Default 24%.
+            </span>
+            <select
+              className="mt-1.5 w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm"
+              value={settings.heirTaxRate}
+              onChange={(e) => updateSettings({ heirTaxRate: Number(e.target.value) })}
+            >
+              {[0.12, 0.22, 0.24, 0.32].map((v) => (
+                <option key={v} value={v}>{percent(v, 0)}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </Collapsible>
 
       {/* ---------- Stress tests: sequence-of-returns "what ifs" (desktop-only) ---------- */}
       <DesktopOnly>
@@ -678,8 +685,16 @@ export default function ProjectionPage() {
         </Callout>
       )}
 
-      {/* Spending power (shared with Home) */}
-      <SpendingPowerCard />
+      {/* What-if spending explorer — demoted and collapsed. Your SAFE number is the
+          range above; this slider is purely exploratory ("could I spend more?"). */}
+      <Collapsible
+        title="Explore other spending levels"
+        summary="A what-if slider — not your safe number (that's the range above)"
+        defaultOpenDesktop={false}
+        className="mt-2"
+      >
+        <SpendingPowerCard />
+      </Collapsible>
 
       {/* ---------- Deep analytics — desktop-only. On a phone the Forecast stays
            focused on "will it last / how much can I spend"; the full charts, the
@@ -691,7 +706,8 @@ export default function ProjectionPage() {
             <p className="text-[13px] leading-relaxed text-foreground/65">
               📊 The full detail — balances over time, your RMD schedule, the rollover comparison, smart-vs-conventional,
               key milestones, and the year-by-year table — is on the <strong>desktop version</strong>, where there&apos;s room
-              to lay it out. Open this on a laptop to dig in.
+              to lay it out. Open this on a laptop to dig in. Roth conversions are turned on and tuned on the{" "}
+              <strong>Plan tab</strong>.
             </p>
           </Card>
         }
@@ -757,28 +773,29 @@ export default function ProjectionPage() {
         </p>
       </Info>
 
-      {/* Roth conversion / rollover plan */}
-      <SectionTitle>Roll pre-tax → Roth to defuse the bomb</SectionTitle>
+      {/* Roth conversion / rollover plan — READ-ONLY impact view. The editable
+          toggle lives on the Plan tab (one setting drives both pages). */}
+      <SectionTitle>Roth conversions — the lifetime impact</SectionTitle>
       <Explainer>
-        Your forecast with and without rolling pre-tax money to Roth in your low-tax years. Toggle it on to apply the
-        rollovers to every chart and the table below.
+        Your forecast with and without rolling pre-tax money to Roth in your low-tax years. This view is read-only —
+        turn the plan on/off and tune it on the Plan tab; it flows through every chart and the table here.
       </Explainer>
       <Card>
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="font-semibold">Rollover plan {settings.useConversions ? "on" : "off"}</div>
             <p className="text-[12px] text-foreground/60">
-              Rolls about {moneyCompact(conv.avgAnnualConversion)}/yr through {conv.windowEndYear} ({moneyCompact(conv.totalConverted)} total).
+              {settings.useConversions
+                ? `Rolls about ${moneyCompact(conv.avgAnnualConversion)}/yr through ${conv.windowEndYear} (${moneyCompact(conv.totalConverted)} total).`
+                : "No Roth conversions in the current plan."}
             </p>
           </div>
-          <button
-            onClick={() => updateSettings({ useConversions: !settings.useConversions, planCustomized: true })}
-            className={`press shrink-0 rounded-full px-4 py-2 text-sm font-semibold ${
-              settings.useConversions ? "bg-gain/15 text-gain" : "bg-primary text-white"
-            }`}
+          <a
+            href="/plan"
+            className="press shrink-0 rounded-full border border-primary/30 bg-primary/5 px-3 py-1.5 text-[12px] font-semibold text-primary"
           >
-            {settings.useConversions ? "✓ On" : "Turn on"}
-          </button>
+            Adjust on Plan →
+          </a>
         </div>
         <p className="mb-2 mt-4 text-[13px] text-foreground/70">Worst-year RMD — the forced &quot;tax bomb&quot;:</p>
         <CompareBars

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/components/HouseholdProvider";
 import { Card, SectionTitle, Explainer, Info, Pill, Callout } from "@/components/ui";
 import { projectLifetime } from "@/lib/projection";
@@ -131,7 +131,12 @@ function SpendScale({
  * self-sustaining spending level. Self-contained; drop it on any page.
  */
 export function SpendingPowerCard() {
-  const { ready, household, settings, updateSettings, updateHousehold } = useStore();
+  const { ready, household, settings, updateSettings } = useStore();
+  // What-if ONLY: this slider explores spending levels WITHOUT overwriting the
+  // real annualSpending (the Plan tab owns that). Seeded from it, re-synced when it
+  // changes, but never written back — so it can't silently disagree with the plan.
+  const [whatIf, setWhatIf] = useState(household.annualSpending);
+  useEffect(() => setWhatIf(household.annualSpending), [household.annualSpending]);
 
   const rm = useMemo(() => returnModel(household.accounts), [JSON.stringify(household.accounts)]);
 
@@ -152,7 +157,7 @@ export function SpendingPowerCard() {
     endAge: settings.endAge,
   };
 
-  const chosen = useMemo(() => projectLifetime(household, base), [household, settings]);
+  const chosen = useMemo(() => projectLifetime({ ...household, annualSpending: whatIf }, base), [household, settings, whatIf]);
 
   const startTotal = sumBuckets(household.accounts).total;
   const sustain = useMemo(
@@ -182,7 +187,7 @@ export function SpendingPowerCard() {
         ? "optimistic"
         : "moderate";
   const endsRicher = chosen.endingEstate > startTotal * 1.001;
-  const current = household.annualSpending;
+  const current = whatIf;
   const sustainMessage =
     current <= sustain.real
       ? `You're spending ${money(current)}/yr — about ${money(Math.max(0, sustain.real - current))} under the inflation-preserving level. You have real room to spend (or give) more, and your buying power would still be intact at age ${settings.endAge}.`
@@ -199,18 +204,18 @@ export function SpendingPowerCard() {
       </Explainer>
       <Card>
         <div className="flex items-baseline justify-between">
-          <span className="text-[12px] font-medium text-foreground/60">Yearly spending (after tax)</span>
-          <span className="tabular text-2xl font-bold text-primary">{money(household.annualSpending)}</span>
+          <span className="text-[12px] font-medium text-foreground/60">What-if spending (after tax)</span>
+          <span className="tabular text-2xl font-bold text-primary">{money(whatIf)}</span>
         </div>
         <input
           type="range"
           min={0}
           max={SPEND_MAX}
           step={SPEND_STEP}
-          value={Math.min(SPEND_MAX, household.annualSpending)}
-          onChange={(e) => updateHousehold({ annualSpending: Number(e.target.value) })}
+          value={Math.min(SPEND_MAX, whatIf)}
+          onChange={(e) => setWhatIf(Number(e.target.value))}
           className="mt-3 w-full accent-primary"
-          aria-label="Yearly spending"
+          aria-label="What-if yearly spending"
         />
         <div className="mt-1 flex justify-between text-[11px] text-foreground/45">
           <span>{moneyCompact(0)}</span>
