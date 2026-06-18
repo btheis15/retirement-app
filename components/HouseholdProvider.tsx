@@ -9,6 +9,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Account, Household, syncAccountFromHoldings } from "@/lib/accounts";
 import { demoHousehold } from "@/lib/demo";
+import { syncHouseholdDividends } from "@/lib/dividends";
 import { emptyHousehold, DEFAULT_SETTINGS, PlannerSettings } from "@/lib/defaults";
 
 type Mode = "demo" | "own";
@@ -29,6 +30,9 @@ interface Store {
    *  No-op in demo mode so the example stays fixed; only ticker symbols were
    *  ever sent to fetch these — never amounts. */
   applyLivePrices: (priceBySymbol: Record<string, number>) => void;
+  /** Apply fresh per-symbol dividend data (DPS + growth) to your own holdings,
+   *  skipping any the user has hand-edited. Feeds the dividend-income model. */
+  applyLiveDividends: (divBySymbol: Record<string, { dps: number; growth: number | null }>) => void;
   /** Replace your own data wholesale (used when importing a backup file). */
   loadOwn: (household: Household, settings?: Partial<PlannerSettings>) => void;
 }
@@ -90,9 +94,11 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   // otherwise every settings change would hand consumers a brand-new household
   // object and needlessly rerun the heavy engines (Monte Carlo, projections).
   const household = useMemo(() => {
-    if (mode !== "demo") return ownHousehold;
+    // Derive taxable dividend totals from per-holding data (when present) so the
+    // tax engine and every view agree on the same per-share-based numbers.
+    if (mode !== "demo") return syncHouseholdDividends(ownHousehold);
     const h = demoHousehold();
-    return demoSpending != null ? { ...h, annualSpending: demoSpending } : h;
+    return syncHouseholdDividends(demoSpending != null ? { ...h, annualSpending: demoSpending } : h);
   }, [mode, ownHousehold, demoSpending]);
 
   const editApply = useCallback(
@@ -196,6 +202,44 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     [mode],
   );
 
+  // Apply fresh per-symbol dividend data (DPS + growth) to your own holdings,
+  // leaving any holding the user has hand-edited (dividendManual) untouched. Feeds
+  // the per-holding dividend-income model in the engine.
+  const applyLiveDividends = useCallback(
+    (divBySymbol: Record<string, { dps: number; growth: number | null }>) => {
+      if (mode !== "own") return; // never mutate the static demo
+      setOwnHousehold((prev) => {
+        let changed = false;
+        const accounts = prev.accounts.map((a) => {
+          if (!a.holdings || a.holdings.length === 0) return a;
+          let accChanged = false;
+          const holdings = a.holdings.map((h) => {
+            if (h.dividendManual) return h; // user override wins
+            const d = divBySymbol[h.ticker?.toUpperCase()];
+            if (!d) return h;
+            const nextGrowth = d.growth ?? h.dividendGrowthRate;
+            if (Math.abs((h.dividendPerShare ?? -1) - d.dps) > 1e-6 || h.dividendGrowthRate !== nextGrowth) {
+              accChanged = true;
+              changed = true;
+              return { ...h, dividendPerShare: d.dps, dividendGrowthRate: nextGrowth };
+            }
+            return h;
+          });
+          return accChanged ? { ...a, holdings } : a;
+        });
+        if (!changed) return prev;
+        const next = { ...prev, accounts };
+        try {
+          localStorage.setItem(KEY_OWN, JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+    },
+    [mode],
+  );
+
   const loadOwn = useCallback(
     (h: Household, s?: Partial<PlannerSettings>) => {
       setMode("own");
@@ -232,9 +276,10 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       updateSettings,
       resetOwn,
       applyLivePrices,
+      applyLiveDividends,
       loadOwn,
     }),
-    [ready, mode, household, settings, setMode, updateHousehold, setAccounts, upsertAccount, removeAccount, updateSettings, resetOwn, applyLivePrices, loadOwn],
+    [ready, mode, household, settings, setMode, updateHousehold, setAccounts, upsertAccount, removeAccount, updateSettings, resetOwn, applyLivePrices, applyLiveDividends, loadOwn],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

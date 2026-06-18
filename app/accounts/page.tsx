@@ -16,6 +16,7 @@ import {
   holdingValue,
   syncAccountFromHoldings,
 } from "@/lib/accounts";
+import { holdingDps, holdingDivGrowth, dividendKind, holdingDividendKind } from "@/lib/dividends";
 import { rmdStartAge } from "@/lib/tax/constants";
 import { adjustedAnnualBenefit, fullRetirementAge } from "@/lib/socialSecurity";
 import { searchTickers, getSeries, latestPrices, assetTypeLabel, SearchResult } from "@/lib/prices";
@@ -384,7 +385,7 @@ function AccountEditor({
               Add your stocks, ETFs, or funds and how many shares you have — we&apos;ll track the real prices for
               you. Only the ticker symbol is ever looked up; your share counts and balances stay on your device.
             </p>
-            <HoldingsEditor holdings={holdings} isTaxable={isTaxable} onChange={setHoldings} />
+            <HoldingsEditor holdings={holdings} isTaxable={isTaxable} bucket={bucketOf(draft.kind)} onChange={setHoldings} />
           </div>
         )}
 
@@ -435,10 +436,12 @@ const YAHOO_TO_HOLDING: Record<string, HoldingType> = {
 function HoldingsEditor({
   holdings,
   isTaxable,
+  bucket,
   onChange,
 }: {
   holdings: Holding[];
   isTaxable: boolean;
+  bucket: "pretax" | "roth" | "taxable";
   onChange: (next: Holding[]) => void;
 }) {
   const [open, setOpen] = useState(false); // search screen open?
@@ -606,8 +609,79 @@ function HoldingsEditor({
               {h.price > 0 && (
                 <div className="mt-1 text-[10px] text-foreground/45">{money(h.price, { cents: true })}/share · updates daily</div>
               )}
+              {/* Dividend (taxable holdings only — IRA/Roth dividends aren't taxed
+                  yearly). Auto-filled from the market feed; edit to override. */}
+              {isTaxable && dividendKind(h.type) !== "none" && (
+                <div className="mt-2 border-t border-border/40 pt-2">
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="text-[10px] text-foreground/55">
+                      Dividend · {h.dividendManual ? "your override" : "from market feed"}
+                    </span>
+                    {h.dividendManual && (
+                      <button onClick={() => update(i, { dividendManual: false })} className="press text-[10px] font-medium text-primary">
+                        ↺ use market
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <label className="flex-1">
+                      <span className="mb-1 block text-[10px] text-foreground/55">Div / share / yr</span>
+                      <input
+                        className={`${INPUT} py-1.5 text-sm`}
+                        inputMode="decimal"
+                        value={h.dividendPerShare ?? ""}
+                        placeholder={holdingDps(h).toFixed(2)}
+                        onChange={(e) => update(i, { dividendPerShare: numFrom(e.target.value), dividendManual: true })}
+                      />
+                    </label>
+                    <label className="flex-1">
+                      <span className="mb-1 block text-[10px] text-foreground/55">Growth / yr %</span>
+                      <input
+                        className={`${INPUT} py-1.5 text-sm`}
+                        inputMode="decimal"
+                        value={h.dividendGrowthRate != null ? (h.dividendGrowthRate * 100).toFixed(1) : ""}
+                        placeholder={(holdingDivGrowth(h) * 100).toFixed(1)}
+                        onChange={(e) => update(i, { dividendGrowthRate: numFrom(e.target.value) / 100, dividendManual: true })}
+                      />
+                    </label>
+                    <div className="flex-1 text-right">
+                      <span className="mb-1 block text-[10px] text-foreground/55">Income / yr</span>
+                      <span className="tabular text-sm font-semibold">{h.shares > 0 ? money(h.shares * holdingDps(h)) : "—"}</span>
+                    </div>
+                  </div>
+                  {/* Qualified vs ordinary (non-qualified) — drives the tax rate.
+                      Defaulted by type; flag REITs / non-qualified funds as ordinary. */}
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-[10px] text-foreground/55">Taxed as</span>
+                    {(["qualified", "ordinary"] as const).map((k) => {
+                      const active = holdingDividendKind(h) === k;
+                      return (
+                        <button
+                          key={k}
+                          onClick={() => update(i, { dividendOrdinary: k === "ordinary", dividendManual: true })}
+                          className={`press rounded-full border px-2.5 py-0.5 text-[11px] ${active ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/60"}`}
+                        >
+                          {k === "qualified" ? "Qualified" : "Ordinary"}
+                        </button>
+                      );
+                    })}
+                    <span className="text-[10px] text-foreground/40">
+                      {holdingDividendKind(h) === "qualified" ? "preferential rate" : "ordinary-income rate"}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
+          {/* Account-type tax note: dividends inside tax-advantaged accounts aren't
+              taxed yearly, so we only model the taxable ones. */}
+          {!isTaxable && (
+            <p className="rounded-xl bg-ss/[0.06] px-3 py-2 text-[11px] leading-relaxed text-foreground/60">
+              💡 This is a {bucket === "roth" ? "Roth" : "tax-deferred"} account, so its dividends{" "}
+              {bucket === "roth" ? "are never taxed" : "aren't taxed each year — they compound tax-deferred"}.
+              We only model annual dividend tax on your <strong>taxable</strong> accounts.
+            </p>
+          )}
         </div>
       )}
 

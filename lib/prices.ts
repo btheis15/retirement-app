@@ -119,6 +119,60 @@ export async function getSeries(symbols: string[], range: PriceRange = "5y"): Pr
   return out;
 }
 
+export interface DivInfo {
+  /** Trailing-12-month dividend per share. */
+  dps: number;
+  /** ~5y dividend-growth CAGR (decimal), or null if not enough history. */
+  growth: number | null;
+}
+
+interface DivCache {
+  fetchedOn: string;
+  dividends: Record<string, DivInfo>;
+}
+
+const DIV_KEY = "rto-dividends";
+
+/** Fetch per-symbol dividend-per-share + growth, daily-cached like prices. */
+export async function getDividends(symbols: string[]): Promise<Record<string, DivInfo>> {
+  const wanted = [...new Set(symbols.map((s) => s.toUpperCase()).filter(Boolean))];
+  if (wanted.length === 0) return {};
+  let cached: DivCache | null = null;
+  try {
+    const raw = localStorage.getItem(DIV_KEY);
+    if (raw) cached = JSON.parse(raw) as DivCache;
+  } catch {
+    /* ignore */
+  }
+  const fresh = cached?.fetchedOn === todayKey() ? cached.dividends : {};
+  const missing = wanted.filter((s) => !fresh[s]);
+  if (missing.length === 0) {
+    const out: Record<string, DivInfo> = {};
+    for (const s of wanted) out[s] = fresh[s];
+    return out;
+  }
+  try {
+    const res = await fetch(`/api/ticker/dividends?symbols=${encodeURIComponent(missing.join(","))}`);
+    if (res.ok) {
+      const data = (await res.json()) as { dividends?: Record<string, DivInfo> };
+      const merged = { ...fresh, ...(data.dividends ?? {}) };
+      try {
+        localStorage.setItem(DIV_KEY, JSON.stringify({ fetchedOn: todayKey(), dividends: merged }));
+      } catch {
+        /* quota — refetch next time */
+      }
+      const out: Record<string, DivInfo> = {};
+      for (const s of wanted) if (merged[s]) out[s] = merged[s];
+      return out;
+    }
+  } catch {
+    /* fall through to cache */
+  }
+  const out: Record<string, DivInfo> = {};
+  for (const s of wanted) if (fresh[s]) out[s] = fresh[s];
+  return out;
+}
+
 /** Map of symbol → latest price, for valuing holdings. */
 export function latestPrices(series: Record<string, SymbolSeries>): Record<string, number> {
   const out: Record<string, number> = {};
