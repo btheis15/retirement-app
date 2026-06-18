@@ -284,6 +284,50 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   // In demo mode we SHOW the example (that's the whole point of an example).
   const needsOwnSetup = mode === "own" && household.accounts.length === 0;
 
+  // STEP 0 — the one-time fork: you go through the WHOLE walkthrough either on the
+  // $5M example or on your own numbers. No mid-flow toggle; to switch, you come back
+  // here (Back from step 1, or "Start over" at the end) and re-pick.
+  steps.push({
+    key: "start",
+    eyebrow: "let's begin",
+    render: () => (
+      <div>
+        <h2 className="text-xl font-bold leading-snug">How do you want to start?</h2>
+        <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+          Pick one — the whole walkthrough runs on that choice. You can start over anytime to switch.
+        </p>
+        <div className="mt-5 grid gap-3">
+          <button
+            onClick={() => { setMode("own"); go(safeStep + 1); }}
+            className={`press flex items-start gap-3 rounded-2xl border p-4 text-left ${mode === "own" ? "border-primary bg-primary/10" : "border-border"}`}
+          >
+            <span className="text-2xl leading-none">✏️</span>
+            <span className="min-w-0">
+              <span className="block font-semibold">Use my own numbers</span>
+              <span className="mt-0.5 block text-[12px] leading-snug text-foreground/55">
+                Enter your accounts and get a plan built around what you actually have. Your numbers stay on your device.
+              </span>
+            </span>
+            {mode === "own" && <span className="ml-auto shrink-0 self-center text-primary">→</span>}
+          </button>
+          <button
+            onClick={() => { setMode("demo"); go(safeStep + 1); }}
+            className={`press flex items-start gap-3 rounded-2xl border p-4 text-left ${mode === "demo" ? "border-primary bg-primary/10" : "border-border"}`}
+          >
+            <span className="text-2xl leading-none">📊</span>
+            <span className="min-w-0">
+              <span className="block font-semibold">Explore the $5M example</span>
+              <span className="mt-0.5 block text-[12px] leading-snug text-foreground/55">
+                See exactly how it all works on a realistic sample household first — nothing here is your real money.
+              </span>
+            </span>
+            {mode === "demo" && <span className="ml-auto shrink-0 self-center text-primary">→</span>}
+          </button>
+        </div>
+      </div>
+    ),
+  });
+
   steps.push({
     key: "accounts",
     eyebrow: "start with your money",
@@ -302,25 +346,14 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             >
               Add my accounts →
             </Link>
-            <button
-              onClick={() => setMode("demo")}
-              className="press mt-2 block w-full rounded-2xl border border-border py-3 text-center text-sm font-semibold text-foreground/70"
-            >
-              Explore a $5M example instead →
-            </button>
           </div>
         );
       }
       return (
         <div>
           {mode === "demo" && (
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-ss/25 bg-ss/[0.06] px-3 py-2">
-              <span className="text-[12px] text-foreground/70">
-                📊 You&apos;re exploring a <strong>sample ~$5M household</strong> — nothing is your real money.
-              </span>
-              <Link href="/accounts" className="press shrink-0 text-[12px] font-semibold text-primary underline underline-offset-2">
-                Use my own numbers →
-              </Link>
+            <div className="mb-3 rounded-xl border border-ss/25 bg-ss/[0.06] px-3 py-2 text-[12px] text-foreground/70">
+              📊 You&apos;re exploring a <strong>sample ~$5M household</strong> — nothing here is your real money.
             </div>
           )}
           <h2 className="text-xl font-bold leading-snug">{mode === "demo" ? "The example portfolio" : "Here’s what you have"}</h2>
@@ -336,9 +369,11 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             <div className="text-[12px] text-foreground/50">total across {household.accounts.length} accounts</div>
           </div>
           <AccountOverview household={household} total={total} />
-          <Link href="/accounts" className="press mt-4 block rounded-xl border border-border py-2.5 text-center text-[13px] font-semibold text-primary">
-            {mode === "demo" ? "Build my own plan instead" : "Edit my accounts"}
-          </Link>
+          {mode === "own" && (
+            <Link href="/accounts" className="press mt-4 block rounded-xl border border-border py-2.5 text-center text-[13px] font-semibold text-primary">
+              Edit my accounts
+            </Link>
+          )}
         </div>
       );
     },
