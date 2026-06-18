@@ -115,6 +115,36 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     () => planYear(household, { strategy: settings.strategy, bracketTarget: settings.bracketTarget, year, filingStatus, conversion: null }),
     [household, settings.strategy, settings.bracketTarget, year, filingStatus],
   );
+  // The worst future RMD-era marginal rate, computed independently of whether the
+  // rollover is currently ON — proj.futureRate is only populated when conversions
+  // are active, so the rollover-confirmation step needs a toggle-independent value
+  // to size the recommended rollover it previews. Reuses proj's value when it's
+  // available; otherwise derives it from a no-conversion baseline (same formula).
+  const futureRateStable = useMemo(() => {
+    if (proj.futureRate > 0) return proj.futureRate;
+    const baseline = projectLifetime(household, { ...activeAssumptions, strategy: "conventional", convert: null, returnFor: null });
+    return baseline.rows.reduce((m, r) => (r.rmd > 0 ? Math.max(m, r.effMarginalRate) : m), 0);
+  }, [proj.futureRate, household, activeAssumptions]);
+  // Same year WITH the recommended rollover — used by the rollover-confirmation step
+  // to show the build-up (spending → + rollover → total) and the IRMAA before/after,
+  // regardless of whether the rollover is currently toggled on. When it IS on this
+  // equals the active `plan`.
+  const planWithRoll = useMemo(
+    () =>
+      settings.useConversions
+        ? plan
+        : planYear(household, {
+            strategy: settings.strategy,
+            bracketTarget: settings.bracketTarget,
+            year,
+            filingStatus,
+            conversion:
+              settings.convertMode === "fillBracket"
+                ? { mode: "fillBracket", toBracket: settings.bracketTarget }
+                : { mode: "recommended", futureRate: futureRateStable },
+          }),
+    [settings.useConversions, plan, household, settings.strategy, settings.bracketTarget, settings.convertMode, futureRateStable, year, filingStatus],
+  );
   const lookAhead = useMemo(() => buildActionPlan(household, proj, 5), [household, proj]);
   // The two heaviest computations (a 150-sim Monte Carlo and the 7-config plan
   // grid) run off DEFERRED inputs at low priority, so they catch up a beat after
@@ -271,37 +301,13 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   // decision. If the sweep instead let the rollover re-solve per spend level (a
   // bracket-fill rule), it would SHRINK as spending rose and drag MAGI down with it,
   // making the tax/Medicare read-outs move BACKWARDS as you spend more (and the
-  // cliff markers jump around / vanish as you drag). Anchoring to a fixed reference
-  // also keeps the cliffs and quick-amount chips stable while you explore. The
-  // rollover is still fully reflected (its tax + IRMAA show), just as a constant
-  // baseline you tune on the rollover step.
-  const baselineConv = useMemo(() => {
-    if (!settings.useConversions) return 0;
-    const refSpend = portfolioTotal > 0 ? Math.min(SPEND_MAX, Math.round(0.04 * portfolioTotal)) : household.annualSpending;
-    return planYear(
-      { ...household, annualSpending: refSpend },
-      {
-        strategy: settings.strategy,
-        bracketTarget: settings.bracketTarget,
-        year,
-        filingStatus,
-        conversion:
-          settings.convertMode === "recommended"
-            ? { mode: "recommended", futureRate: proj.futureRate }
-            : { mode: "fillBracket", toBracket: settings.bracketTarget },
-        inflationFactor: plan.inflationFactor,
-      },
-    ).conversion;
-  }, [portfolioTotal, household.accounts, household.self, household.spouse, settings.useConversions, settings.strategy, settings.bracketTarget, settings.convertMode, proj.futureRate, year, plan.inflationFactor, filingStatus]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Per-spend "impact" sweep — this year's MAGI, marginal bracket, IRMAA tier, and
-  // savings draw at EVERY spending level — so the slider shows what the chosen
-  // number ACTUALLY means (and where the cliffs sit) live, before it's committed.
-  // It mirrors the FULL plan, INCLUDING the Roth rollover (held FIXED at baselineConv
-  // above), because the rollover is part of the income the user actually files —
-  // leaving it out made the card claim "no IRMAA" when the real plan crosses a tier.
-  // With the rollover held constant, MAGI is strictly monotonic in spending, so the
-  // slider stays intuitive (more spend → more tax / higher tier, never the reverse).
+  // cliff markers jump around / vanish as you drag).
+  //
+  // The spend step shows the tax & Medicare impact of SPENDING ALONE (conversion:
+  // null) — the Roth rollover is confirmed on its OWN step right after this, where
+  // we add the rollover's taxable income on top and re-show IRMAA. Keeping spending
+  // and the rollover as separate, sequential steps lets the user watch the picture
+  // build up in order, and keeps this sweep cleanly monotonic in spending.
   const impact = useMemo(
     () =>
       spendImpact(
@@ -311,14 +317,14 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           bracketTarget: settings.bracketTarget,
           year,
           filingStatus: plan.filingStatus,
-          conversion: settings.useConversions && baselineConv > 0 ? { mode: "fixed", amount: baselineConv } : null,
+          conversion: null, // spending only — the rollover is its own step
           inflationFactor: plan.inflationFactor,
         },
         FILING_CONSTANTS[plan.filingStatus].irmaaTiers,
         medicareEnrollees,
         SPEND_MAX,
       ),
-    [dHousehold, settings.strategy, settings.bracketTarget, settings.useConversions, baselineConv, year, plan.inflationFactor, plan.filingStatus, medicareEnrollees],
+    [dHousehold, settings.strategy, settings.bracketTarget, year, plan.inflationFactor, plan.filingStatus, medicareEnrollees],
   );
   // The picture at the CURRENT slider position — interpolated, so it updates every
   // frame of a drag without re-running the planner.
@@ -723,7 +729,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               <div className="text-[10px] uppercase tracking-wide text-foreground/50">Tax this year</div>
               <div className="tabular text-lg font-bold text-foreground/85">{moneyCompact(liveImpact.totalTax)}</div>
               <div className="text-[10px] leading-snug text-foreground/45">
-                federal + state{conversion > 0.5 || settings.useConversions ? " · incl. rollover" : ""}
+                federal + state · from your spending
                 {liveImpact.marginalRate > 0.12 ? ` · top bracket ${percent(liveImpact.marginalRate, 0)}` : ""}
               </div>
             </div>
@@ -755,10 +761,10 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               )}
             </div>
           </div>
-          {(conversion > 0.5 || settings.useConversions) && (
+          {pretaxShare > 0.2 && (
             <p className="mt-1.5 text-[11px] leading-snug text-foreground/45">
-              These are your <strong>full plan</strong> this year — including your Roth rollover, which adds taxable income
-              (the rollover step breaks out its share of the tax and IRMAA).
+              This is from your <strong>spending alone</strong>. Your Roth rollover is the <strong>next step</strong> — it adds
+              taxable income on top of this, which is what can push your Medicare (IRMAA) tier up.
             </p>
           )}
 
@@ -929,6 +935,19 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   dollar over triggers the whole surcharge.
                 </p>
               )}
+              {portfolioTotal > 0 && (() => {
+                const amt = irmaaCliff.inSurcharge ? irmaaCliff.curSurcharge : irmaaCliff.nextJump;
+                if (amt <= 0) return null;
+                const pct = amt / portfolioTotal;
+                const pctStr = pct < 0.001 ? "under 0.1%" : `${(pct * 100).toFixed(pct < 0.01 ? 2 : 1)}%`;
+                const tiny = pct < 0.005;
+                return (
+                  <p className="mt-1.5 rounded-lg bg-gain/[0.06] px-2 py-1.5 text-[11px] leading-relaxed text-foreground/75">
+                    💡 But keep it in scale: {money(amt)}/yr is only about <strong>{pctStr}</strong> of your{" "}
+                    {money(portfolioTotal)} in savings{tiny ? <> — a tiny slice. It&apos;s rarely a good reason to spend less than you comfortably can; you saved this money to use it.</> : "."}
+                  </p>
+                );
+              })()}
               <p className="mt-1 text-[11px] text-foreground/55">
                 IRMAA is based on your income from two years prior, so today&apos;s choices set your premiums then.
               </p>
@@ -938,6 +957,155 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       );
     },
   });
+
+  // ── Confirm the Roth rollover — its own step right after spending, so the picture
+  // builds up in order: spending first (previous step), then we add the rollover's
+  // taxable income on top and re-show the Medicare (IRMAA) tier. ──
+  if (pretaxShare > 0.2) {
+    steps.push({
+      key: "rollconfirm",
+      eyebrow: "confirm your rollover",
+      render: () => {
+        const on = settings.useConversions;
+        const tiers = FILING_CONSTANTS[plan.filingStatus].irmaaTiers;
+        const fct = plan.inflationFactor;
+        const before = irmaaCliffInfo(planNoConv.tax.magi, fct, tiers, medicareEnrollees);
+        const after = irmaaCliffInfo(planWithRoll.tax.magi, fct, tiers, medicareEnrollees);
+        const rollAmt = planWithRoll.conversion;
+        const rollTax = planWithRoll.conversionTax;
+        const addlMagi = Math.max(0, planWithRoll.tax.magi - planNoConv.tax.magi);
+        const irmaaJump = (after?.curSurcharge ?? 0) - (before?.curSurcharge ?? 0);
+        const tierName = (l: string) => l.replace(" surcharge", "").replace("Standard premium", "no surcharge");
+        const irmaaCell = (c: ReturnType<typeof irmaaCliffInfo>) =>
+          medicareEnrollees === 0 ? "—" : c?.inSurcharge ? `+${moneyCompact(c.curSurcharge)}/yr` : "none";
+        return (
+          <div>
+            <h2 className="text-xl font-bold leading-snug">Confirm your Roth rollover</h2>
+            <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+              Separate from your spending, your plan can move some pre-tax money into a Roth this year — taxed at a low,
+              controlled rate now — to shrink the big forced withdrawals (RMDs) that would be taxed harder later. Here&apos;s
+              exactly what it adds on top of the spending you just chose.
+            </p>
+
+            {rollAmt < 1 ? (
+              <Callout tone="info" icon="✓" title="No rollover recommended this year">
+                At your current income there&apos;s little or nothing to gain from converting right now — the plan revisits this
+                automatically each year.
+              </Callout>
+            ) : (
+              <>
+                <div className="mt-4 rounded-2xl border border-border p-3">
+                  <div className="text-[10px] uppercase tracking-wide text-foreground/45">Recommended this year</div>
+                  <div className="tabular text-2xl font-bold text-primary">{money(rollAmt)}</div>
+                  <div className="text-[12px] text-foreground/55">
+                    moved from pre-tax → Roth. It isn&apos;t spent — it stays invested and grows tax-free, with no future RMDs.
+                  </div>
+                </div>
+
+                {/* Build-up: spending → + rollover → total, with the Medicare tier at each line. */}
+                <div className="mt-3 overflow-hidden rounded-2xl border border-border text-[12px]">
+                  <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 border-b border-border/60 px-3 py-1.5 text-[9px] uppercase tracking-wide text-foreground/40">
+                    <span />
+                    <span className="text-right">Taxable income</span>
+                    <span className="text-right">Medicare</span>
+                  </div>
+                  <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-3 px-3 py-2">
+                    <span className="text-foreground/75">
+                      From your spending
+                      <div className="text-[10px] text-foreground/45">{money(household.annualSpending)}/yr take-home</div>
+                    </span>
+                    <span className="tabular text-right text-foreground/80">{money(Math.round(planNoConv.tax.magi))}</span>
+                    <span className="tabular text-right text-foreground/70">{irmaaCell(before)}</span>
+                  </div>
+                  <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-3 bg-gain/[0.05] px-3 py-2">
+                    <span className="font-medium text-gain">+ Roth rollover</span>
+                    <span className="tabular text-right text-gain">+{money(Math.round(addlMagi))}</span>
+                    <span className="tabular text-right text-foreground/45">+{moneyCompact(rollTax)} tax</span>
+                  </div>
+                  <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-3 border-t border-border/60 px-3 py-2 font-semibold">
+                    <span>{on ? "= Your full plan" : "= If you do it"}</span>
+                    <span className="tabular text-right">{money(Math.round(planWithRoll.tax.magi))}</span>
+                    <span className={`tabular text-right ${after?.inSurcharge ? "text-tax" : "text-gain"}`}>{irmaaCell(after)}</span>
+                  </div>
+                </div>
+
+                {medicareEnrollees > 0 && irmaaJump > 1 && (
+                  <p className="mt-2 rounded-xl border border-tax/30 bg-tax/[0.06] px-3 py-2 text-[12px] leading-relaxed text-foreground/80">
+                    🏥 The rollover lifts your Medicare from <strong>{tierName(before?.curLabel ?? "")}</strong>{" "}to{" "}
+                    <strong>{tierName(after?.curLabel ?? "")}</strong> — about <strong>+{money(irmaaJump)}/yr</strong>{" "}in extra
+                    premiums (billed two years out, for {medicareEnrollees > 1 ? "both of you" : "you"}). The next rollover step
+                    shows the full bracket math.
+                  </p>
+                )}
+                {(() => {
+                  const gainReal = compare.smooth.endingEstateAfterTaxReal - compare.none.endingEstateAfterTaxReal;
+                  const peakBomb = compare.none.peakRmd;
+                  const bombRate = compare.none.peakMarginalRate;
+                  const noneIrmaa = compare.none.lifetimeIrmaa;
+                  const smoothIrmaa = compare.smooth.lifetimeIrmaa;
+                  const worthIt = gainReal > 1_000;
+                  const surPct = irmaaJump > 1 && portfolioTotal > 0 ? irmaaJump / portfolioTotal : 0;
+                  const surStr = surPct < 0.001 ? "under 0.1%" : `${(surPct * 100).toFixed(surPct < 0.01 ? 2 : 1)}%`;
+                  return (
+                    <p className="mt-2 rounded-xl bg-gain/[0.06] px-3 py-2 text-[12px] leading-relaxed text-foreground/75">
+                      💡 <strong>Why it&apos;s worth it.</strong> Leave this money in pre-tax and your biggest forced withdrawal
+                      (RMD) climbs to about <strong>{moneyCompact(peakBomb)}</strong>{" "}in a single year, taxed up at{" "}
+                      <strong>{percent(bombRate, 0)}</strong>{" "}— a tax bomb you don&apos;t get to time.
+                      {worthIt ? (
+                        <> Rolling over now heads that off: it&apos;s projected to leave your family about{" "}
+                        <strong>{moneyCompact(gainReal)}</strong>{" "}more (in today&apos;s dollars) after every tax is paid</>
+                      ) : (
+                        <> Rolling over now shrinks that forced withdrawal and the tax on it</>
+                      )}
+                      {medicareEnrollees > 0 && noneIrmaa > smoothIrmaa + 100 ? (
+                        <>, and holds your lifetime Medicare surcharges near <strong>{moneyCompact(smoothIrmaa)}</strong>{" "}instead
+                        of about <strong>{moneyCompact(noneIrmaa)}</strong> if you wait</>
+                      ) : null}
+                      .{irmaaJump > 1 ? (
+                        <> The <strong>+{money(irmaaJump)}/yr</strong> surcharge during conversion years — about {surStr} of your
+                        savings — is small next to that.</>
+                      ) : null}
+                    </p>
+                  );
+                })()}
+
+                <div className="mt-3">
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-foreground/45">
+                    Follow this recommendation?
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => updateSettings({ useConversions: true, planCustomized: true })}
+                      className={`press flex-1 rounded-xl border px-3 py-2 text-[13px] font-semibold ${on ? "border-primary bg-primary text-white" : "border-border text-foreground/70"}`}
+                    >
+                      ✓ Yes, do the rollover
+                    </button>
+                    <button
+                      onClick={() => updateSettings({ useConversions: false, planCustomized: true })}
+                      className={`press flex-1 rounded-xl border px-3 py-2 text-[13px] font-semibold ${!on ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/70"}`}
+                    >
+                      Skip it this year
+                    </button>
+                  </div>
+                  <p className="mt-1.5 text-[11px] leading-snug text-foreground/45">
+                    {on ? (
+                      <>Applied. Everything after this — your tax, your future RMDs, and what your family keeps — reflects this rollover.</>
+                    ) : (
+                      <>
+                        Skipped. Your taxable income stays at {money(Math.round(planNoConv.tax.magi))} and your Medicare stays{" "}
+                        {tierName(before?.curLabel ?? "no surcharge")} — but your pre-tax balance keeps growing, so your future
+                        RMDs (and the tax on them) will be larger.
+                      </>
+                    )}
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+        );
+      },
+    });
+  }
 
   steps.push({
     key: "cover",

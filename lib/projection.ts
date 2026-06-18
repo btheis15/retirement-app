@@ -504,13 +504,23 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
       totalConverted += plan.conversion;
     }
 
-    // Forced surplus (RMD bigger than the need) is reinvested in the brokerage —
-    // more shares → proportionally more dividend income.
-    const surplus = plan.netCash - plan.spendingTarget;
-    if (surplus > 0) {
+    // The Medicare IRMAA premium is a real out-of-pocket cash cost this year — it
+    // isn't an income tax, so it's NOT inside plan.tax.totalTax or netCash. Pay it
+    // from savings now so those dollars leave the compounding base, exactly like
+    // spending and income tax already do. A forced-RMD surplus (netCash above the
+    // spending need) covers it first; any remainder is drawn from savings cash-first.
+    const irmaaCost = plan.tax.irmaa.householdAnnual;
+    const leftover = plan.netCash - plan.spendingTarget; // forced-RMD surplus, before the premium
+    const reinvestAmt = Math.max(0, leftover - irmaaCost);
+    const premiumFromSavings = Math.max(0, irmaaCost - Math.max(0, leftover));
+    if (reinvestAmt > 0) {
       const brokBeforeReinvest = useDivModel ? brokBalNow() : 0;
-      reinvestSurplus(h.accounts, surplus);
+      reinvestSurplus(h.accounts, reinvestAmt);
       if (useDivModel && brokBeforeReinvest > 0) shareFraction *= brokBalNow() / brokBeforeReinvest;
+    } else if (premiumFromSavings > 0) {
+      const brokBeforePremium = useDivModel ? brokBalNow() : 0;
+      drawFromBucket(h.accounts, "taxable", premiumFromSavings);
+      if (useDivModel && brokBeforePremium > 0) shareFraction *= brokBalNow() / brokBeforePremium;
     }
 
     // Cut depth = actual real spend vs. the intended real spend (refSpend already
@@ -596,17 +606,11 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
   // unrealized gain is forgiven, so heirs inherit at full value and owe $0 income
   // tax on it. Roth is already tax-free. (Heirs selling later realize only
   // post-death gains, ~$0 at the moment of death.)
-  // Subtract the lifetime Medicare IRMAA surcharges — a real out-of-pocket cost
-  // that aggressive conversions (higher MAGI → higher tiers, 2 years later) drive
-  // up, so "money you keep" honestly reflects the IRMAA cost of converting.
-  // Floor at 0: a depleted plan leaves a $0 estate, never a negative "wealth" (the
-  // raw formula would otherwise read -lifetimeIrmaa, since IRMAA is a premium you
-  // paid while alive, not a debt your heirs inherit). lifetimeIrmaa stays available
-  // as its own reported cost line.
-  const endingEstateAfterTax = Math.max(
-    0,
-    endPretax * (1 - liquidationRate) + endRoth + endTaxable - lifetimeIrmaa,
-  );
+  // The lifetime Medicare IRMAA surcharges are NOT subtracted here — they are now
+  // paid as a real cash outflow from savings each year (see the loop above), so the
+  // remaining balances already reflect them. lifetimeIrmaa is kept only as a
+  // reported cost line. Floor at 0: a depleted plan leaves a $0 estate.
+  const endingEstateAfterTax = Math.max(0, endPretax * (1 - liquidationRate) + endRoth + endTaxable);
 
   // Today's-dollars versions: the ending estate sits at the final modeled year, so
   // deflate it by that many years of inflation.
