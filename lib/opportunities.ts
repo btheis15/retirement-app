@@ -64,20 +64,25 @@ export function detectOpportunities(
   const zeroRoom = zeroCeiling - tax.taxableIncome;
   if (zeroRoom > 2_000 && buckets.taxableGain > 1_000) {
     const harvest = Math.min(zeroRoom, buckets.taxableGain);
+    const taxesGains = (household.state ?? "IL") !== "none"; // IL (and most states) tax realized LTCG even when it's federally 0%
     out.push({
       id: "cap-gains-harvest",
       icon: "🎁",
-      title: "Harvest capital gains at 0%",
-      detail: `${status === "single" ? "Filing single" : "Married filing jointly"}, long-term gains are taxed at 0% until taxable income reaches ${money(
+      title: "Harvest capital gains at 0% — but only what you'll spend",
+      detail: `${status === "single" ? "Filing single" : "Married filing jointly"}, long-term gains are taxed at 0% federal until taxable income reaches ${money(
         zeroCeiling,
       )}. You have about ${money(
         zeroRoom,
-      )} of room left this year. Selling appreciated brokerage holdings to realize up to ${money(
+      )} of room left this year. Selling appreciated holdings to realize up to ${money(
         harvest,
-      )} of gains — then optionally rebuying — resets your cost basis higher at no federal tax, shrinking future taxable gains.`,
-      impact: `Up to ${money(harvest)} of gains realized tax-free`,
+      )} of gains — then rebuying — resets your cost basis higher, shrinking future taxable gains.${
+        taxesGains
+          ? " Important: Illinois still taxes the realized gain at 4.95%, so it's only free federally."
+          : ""
+      } And only harvest shares you actually plan to SELL during retirement — anything you'd leave to heirs gets a step-up at death that forgives the gain entirely, so realizing it early just pays tax you'd never owe.`,
+      impact: taxesGains ? `Up to ${money(harvest)} of gains at 0% federal (still 4.95% Illinois)` : `Up to ${money(harvest)} of gains realized tax-free`,
       tone: "good",
-      sources: [SOURCES.capGains, SOURCES.brackets2026],
+      sources: [SOURCES.capGains, SOURCES.stepUp, SOURCES.brackets2026],
     });
   }
 
@@ -108,6 +113,30 @@ export function detectOpportunities(
         sources: [SOURCES.irmaa],
       });
       break;
+    }
+  }
+
+  // 3b) ACA premium-tax-credit cliff — for pre-Medicare (under-65) households, a big
+  //     conversion / high MAGI can wipe out health-insurance subsidies. Mirrors the
+  //     IRMAA cliff warning, but for the years before Medicare.
+  const youngerAge = Math.min(selfAge, plan.spouseAge);
+  if (youngerAge < 65) {
+    // ~400% of the 2026 federal poverty level (rough): ~$62k single / ~$85k couple.
+    const aca400 = (status === "single" ? 62_600 : 84_600) * plan.inflationFactor;
+    if (magi > aca400 * 0.6) {
+      out.push({
+        id: "aca-cliff",
+        icon: "🏥",
+        title: "Before 65, watch the ACA health-subsidy cliff",
+        detail: `Until Medicare at 65, your health insurance is likely ACA Marketplace coverage, where the premium subsidy shrinks as income rises and largely disappears above about ${money(
+          aca400,
+        )} of income (${status === "single" ? "single" : "a couple"}, ~400% of the poverty line). Your projected income this year is ${money(
+          magi,
+        )}. A large Roth conversion in these pre-65 years can cost thousands in lost subsidy — so weigh the conversion benefit against the subsidy you'd give up, and consider keeping income lower until Medicare starts.`,
+        impact: "Lost ACA subsidy can be ~$10k–$20k/yr if you cross the line",
+        tone: "warn",
+        sources: [SOURCES.aca],
+      });
     }
   }
 

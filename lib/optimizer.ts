@@ -26,7 +26,6 @@ import {
   Household,
   bucketOf,
   ageInYear,
-  gainFraction,
 } from "./accounts";
 import { adjustedAnnualBenefit } from "./socialSecurity";
 import { money } from "./format";
@@ -73,6 +72,10 @@ export function computeRmd(household: Household, year: number): { total: number;
   const details: RmdDetail[] = [];
   for (const who of ["self", "spouse"] as const) {
     const person = household[who];
+    // Skip a non-real spouse (the app's "no spouse" sentinel is birthYear <= 1900).
+    // Without this, a sentinel age ~130 hits the age-120 RMD floor (factor 2.0) and
+    // would emit a phantom 50%-of-balance RMD on a person who doesn't exist.
+    if (who === "spouse" && person.birthYear <= 1900) continue;
     const age = ageInYear(person.birthYear, year);
     const startAge = rmdStartAge(person.birthYear);
     const pretaxBalance = household.accounts
@@ -94,7 +97,13 @@ interface YearContext {
   taxableInterest: number;
   taxExemptInterest: number;
   num65Plus: number;
-  gainFraction: number; // unrealized-gain share of a taxable withdrawal
+  // Taxable withdrawals come CASH-FIRST: the first `cashTaxable` dollars are cash/
+  // savings (zero embedded gain), and only dollars beyond that sell appreciated
+  // brokerage at `brokerageGainFraction`. This realizes the least capital gain and
+  // preserves the most-appreciated lots for the step-up at death — and the engine's
+  // tax math must match the projection's cash-first draw order.
+  cashTaxable: number;
+  brokerageGainFraction: number; // unrealized-gain share of a brokerage (non-cash) sale
   balances: { pretax: number; roth: number; taxable: number };
   state: StateCode;
   inflationFactor: number;
@@ -112,7 +121,9 @@ function evaluate(
   draws: Draws,
   wantMarginal = false,
 ): { tax: TaxResult; grossInflow: number; netCash: number } {
-  const longTermGains = draws.taxable * ctx.gainFraction;
+  // Cash-first: the first ctx.cashTaxable dollars realize no gain; only the excess
+  // sells brokerage and realizes long-term gain.
+  const longTermGains = Math.max(0, draws.taxable - ctx.cashTaxable) * ctx.brokerageGainFraction;
   const tax = computeTaxes({
     otherOrdinaryIncome: ctx.pension,
     preTaxWithdrawals: draws.pretax,
@@ -288,7 +299,15 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
     roth: household.accounts.filter((a) => bucketOf(a.kind) === "roth").reduce((s, a) => s + a.balance, 0),
     taxable: household.accounts.filter((a) => bucketOf(a.kind) === "taxable").reduce((s, a) => s + a.balance, 0),
   };
-  const gf = gainFraction(household.accounts);
+  // Cash-first taxable draw: the cash/savings tranche (zero gain) is sold before any
+  // appreciated brokerage, so the marginal taxable dollar realizes brokerage gain
+  // only after cash is exhausted. The projection draws in this same order.
+  const taxableAccts = household.accounts.filter((a) => bucketOf(a.kind) === "taxable");
+  const cashTaxable = taxableAccts.filter((a) => a.kind === "cash").reduce((s, a) => s + a.balance, 0);
+  const brokerageAccts = taxableAccts.filter((a) => a.kind !== "cash");
+  const brokerageBal = brokerageAccts.reduce((s, a) => s + a.balance, 0);
+  const brokerageGain = brokerageAccts.reduce((s, a) => s + Math.max(0, a.balance - (a.costBasis ?? a.balance)), 0);
+  const brokerageGainFraction = brokerageBal > 0 ? Math.min(1, brokerageGain / brokerageBal) : 0;
 
   const ctx: YearContext = {
     year,
@@ -299,7 +318,8 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
     taxableInterest: household.taxableInterestAnnual ?? 0,
     taxExemptInterest: household.taxExemptInterestAnnual ?? 0,
     num65Plus,
-    gainFraction: gf,
+    cashTaxable,
+    brokerageGainFraction,
     balances,
     state: household.state ?? "IL",
     inflationFactor: params.inflationFactor ?? 1,

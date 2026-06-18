@@ -26,6 +26,7 @@ import { computeMonteCarlo } from "@/lib/mcClient";
 import { returnModel } from "@/lib/returns";
 import { buildActionPlan, PlanYear, PlanAction } from "@/lib/actionPlan";
 import { GoalId, survivorFromSettings } from "@/lib/defaults";
+import { adjustedAnnualBenefit } from "@/lib/socialSecurity";
 import { bucketOf, ACCOUNT_KIND_META, TaxBucket, Household } from "@/lib/accounts";
 import { money, moneyCompact, percent } from "@/lib/format";
 
@@ -126,12 +127,15 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   const rec = useMemo(() => recommendPlan(household, inputs, settings.goal), [household, settings]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // What plan EACH goal would pick — so the goal step can show the tradeoff (or
-  // reassure when all three agree). Deferred + display-only, so it never blocks.
+  // reassure when all three agree). Deferred + display-only, and run in LIGHT mode
+  // (no claim-age / window search — those are only needed for the active plan), so
+  // three goals never trigger three heavy searches.
+  const LIGHT = { searchWindow: false, optimizeClaimAge: false } as const;
   const recAll = useMemo(
     () => ({
-      maxCapital: recommendPlan(dHousehold, inputs, "maxCapital").best.config,
-      lowestTax: recommendPlan(dHousehold, inputs, "lowestTax").best.config,
-      lowestRate: recommendPlan(dHousehold, inputs, "lowestRate").best.config,
+      maxCapital: recommendPlan(dHousehold, inputs, "maxCapital", LIGHT).best.config,
+      lowestTax: recommendPlan(dHousehold, inputs, "lowestTax", LIGHT).best.config,
+      lowestRate: recommendPlan(dHousehold, inputs, "lowestRate", LIGHT).best.config,
     }),
     [dHousehold, settings], // eslint-disable-line react-hooks/exhaustive-deps
   );
@@ -156,6 +160,15 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       aggressive: mk({ convert: { untilAge: settings.convertUntilAge, mode: "fillBracket" }, bracketTarget: 0.32 }),
     };
   }, [dHousehold, dAssumptions, settings.convertUntilAge]);
+  // Same household, three WITHDRAWAL ORDERS side by side — to show (and prove) why
+  // the plan pulls where it does, rather than just asserting it. After-tax estate
+  // is the apples-to-apples yardstick (it already accounts for the step-up and the
+  // deferred tax on pre-tax left behind).
+  const orderCompare = useMemo(() => {
+    const mk = (strategy: "conventional" | "smart" | "proportional") =>
+      projectLifetime(dHousehold, { ...dAssumptions, strategy });
+    return { conventional: mk("conventional"), smart: mk("smart"), proportional: mk("proportional") };
+  }, [dHousehold, dAssumptions]);
 
   // ---- Derived, plain-English values for this year ----
   const w = plan.withdrawals;
@@ -178,6 +191,36 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   const federalZero = plan.tax.federalTax < 100 && plan.tax.taxableIncome > 1000;
   const zeroCeiling = ltcgZeroCeiling(plan.filingStatus);
 
+  // ---- "What pays for it" context ----
+  // Share of this year's funding that comes from guaranteed income vs. savings.
+  const coverageRatio = guaranteed + totalDraw > 0 ? guaranteed / (guaranteed + totalDraw) : 1;
+  // Withdrawal rate = what you pull from savings this year ÷ total savings. The
+  // classic sustainability yardstick (the "4% rule" lives here).
+  const portfolioTotal = household.accounts.reduce((s, a) => s + a.balance, 0);
+  const withdrawalRate = portfolioTotal > 0 ? totalDraw / portfolioTotal : 0;
+  // Social Security not started yet? Show what becomes guaranteed once each spouse
+  // claims, so a low-coverage year reads as "not yet" rather than "you're exposed".
+  const ssSelfClaimed = plan.selfAge >= household.self.ssClaimAge;
+  const ssSpouseClaimed = plan.spouseAge >= household.spouse.ssClaimAge;
+  const futureSelfSS = adjustedAnnualBenefit(household.self.socialSecurityAnnual, household.self.birthYear, household.self.ssClaimAge);
+  const futureSpouseSS = adjustedAnnualBenefit(household.spouse.socialSecurityAnnual, household.spouse.birthYear, household.spouse.ssClaimAge);
+  const pendingSS = (ssSelfClaimed ? 0 : futureSelfSS) + (ssSpouseClaimed ? 0 : futureSpouseSS);
+  const nextClaimAge = Math.min(
+    ssSelfClaimed ? Infinity : household.self.ssClaimAge,
+    ssSpouseClaimed ? Infinity : household.spouse.ssClaimAge,
+  );
+
+  // ---- IRMAA cliff awareness (a hard step: cross a MAGI line by $1 → the full
+  // surcharge for BOTH enrollees, two years later). Surfaced right where spending
+  // is chosen, since spending drives the withdrawals that drive MAGI. ----
+  const medicareEnrollees = (plan.selfAge >= 65 ? 1 : 0) + (plan.spouseAge >= 65 ? 1 : 0);
+  const irmaaCliff = irmaaCliffInfo(
+    plan.tax.magi,
+    plan.inflationFactor,
+    FILING_CONSTANTS[plan.filingStatus].irmaaTiers,
+    medicareEnrollees,
+  );
+
   const applyGoal = (goal: GoalId) => {
     startTransition(() => {
       const r = recommendPlan(household, inputs, goal);
@@ -188,6 +231,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         bracketTarget: r.best.config.bracketTarget,
         useConversions: r.best.config.useConversions,
         convertMode: r.best.config.convertMode,
+        convertUntilAge: r.chosenConvertUntilAge,
       });
     });
   };
@@ -199,19 +243,22 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   // adjusts the rollover (planCustomized), and converges in one pass (it only
   // writes when the active config actually differs from the recommendation).
   const rc = rec.best.config;
+  const recWindow = rec.chosenConvertUntilAge;
   useEffect(() => {
     if (settings.planCustomized) return;
     if (
       settings.strategy !== rc.strategy ||
       settings.bracketTarget !== rc.bracketTarget ||
       settings.useConversions !== rc.useConversions ||
-      settings.convertMode !== rc.convertMode
+      settings.convertMode !== rc.convertMode ||
+      (rc.useConversions && settings.convertUntilAge !== recWindow)
     ) {
       updateSettings({
         strategy: rc.strategy,
         bracketTarget: rc.bracketTarget,
         useConversions: rc.useConversions,
         convertMode: rc.convertMode,
+        ...(rc.useConversions ? { convertUntilAge: recWindow } : {}),
       });
     }
   }, [
@@ -219,11 +266,13 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     rc.bracketTarget,
     rc.useConversions,
     rc.convertMode,
+    recWindow,
     settings.planCustomized,
     settings.strategy,
     settings.bracketTarget,
     settings.useConversions,
     settings.convertMode,
+    settings.convertUntilAge,
     updateSettings,
   ]);
 
@@ -439,7 +488,43 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   </button>
                 </>
               )}
+              <span className="mt-1 block text-foreground/50">
+                These ceilings already allow for a <strong>weak market</strong> (not just an average one) — the final step
+                shows your exact odds across hundreds of simulations.
+              </span>
             </p>
+          )}
+
+          {/* Medicare IRMAA cliff awareness — the spending you pick drives the
+              withdrawals that drive MAGI, and IRMAA is a hard step, not a slope. */}
+          {irmaaCliff && (irmaaCliff.inSurcharge || (!irmaaCliff.atTop && irmaaCliff.distance < 30_000)) && (
+            <div className="mt-3 rounded-xl border border-tax/30 bg-tax/[0.06] px-3 py-2 text-[12px] leading-relaxed text-foreground/80">
+              <div className="font-semibold text-tax">🏥 Watch the Medicare (IRMAA) cliff</div>
+              {irmaaCliff.inSurcharge ? (
+                <p className="mt-1">
+                  At this spending level your income lands in <strong>{irmaaCliff.curLabel}</strong> — about{" "}
+                  <strong>{money(irmaaCliff.curSurcharge)}/yr</strong> in extra Medicare premiums for{" "}
+                  {irmaaCliff.enrollees > 1 ? "both of you" : "you"}, billed two years later.
+                  {irmaaCliff.overBy > 0 && irmaaCliff.overBy < 15_000 && irmaaCliff.dropSaving > 0 && (
+                    <>
+                      {" "}
+                      You&apos;re only <strong>{money(irmaaCliff.overBy)}</strong> over the line — trimming spending (or this
+                      year&apos;s rollover) a touch could drop {money(irmaaCliff.dropSaving)}/yr of that surcharge entirely.
+                    </>
+                  )}
+                </p>
+              ) : (
+                <p className="mt-1">
+                  You&apos;re within <strong>{money(irmaaCliff.distance)}</strong> of the next IRMAA cliff (MAGI{" "}
+                  {money(irmaaCliff.nextThreshold)}). Crossing it would add about <strong>{money(irmaaCliff.nextJump)}/yr</strong>{" "}
+                  in Medicare premiums for {irmaaCliff.enrollees > 1 ? "both of you" : "you"} — and it&apos;s a cliff: one
+                  dollar over triggers the whole surcharge.
+                </p>
+              )}
+              <p className="mt-1 text-[11px] text-foreground/55">
+                IRMAA is based on your income from two years prior, so today&apos;s choices set your premiums then.
+              </p>
+            </div>
           )}
         </div>
       );
@@ -449,46 +534,153 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   steps.push({
     key: "cover",
     eyebrow: "what pays for it",
-    render: () => (
-      <div>
-        <h2 className="text-xl font-bold leading-snug">Good news — most of it is already covered</h2>
-        <p className="mt-1 text-[13px] text-foreground/60">Your guaranteed income comes in first; you only pull from savings to fill the gap.</p>
-        <div className="mt-4">
-          <StackedBar
-            segments={[
-              { value: guaranteed, className: "bg-ss", label: "Guaranteed income" },
-              { value: totalDraw, className: "bg-taxable", label: "From savings" },
-            ].filter((s) => s.value > 0.5)}
-          />
-          <div className="mt-3 space-y-1 text-[13px]">
-            <Row label="Guaranteed income (Social Security, pension, dividends)" value={money(guaranteed)} tone="ss" />
-            <Row label="You pull this from savings" value={money(totalDraw)} tone="taxable" />
+    render: () => {
+      const pct = Math.round(coverageRatio * 100);
+      const heading = coveredByIncome
+        ? "Your income already covers it"
+        : coverageRatio >= 0.5
+          ? "Good news — most of it is already covered"
+          : coverageRatio >= 0.25
+            ? "A good chunk is already covered"
+            : pendingSS > 0.5
+              ? "This year, most comes from your savings"
+              : "Here's what funds your spending";
+      // Itemize guaranteed income so "guaranteed" isn't a black box.
+      const gItems = [
+        { label: "Social Security", value: ssNow },
+        { label: "Pension", value: plan.fixed.pension },
+        { label: "Dividends & interest", value: allDividends + interestIncome },
+      ].filter((g) => g.value > 0.5);
+      // Withdrawal-rate read: is the savings draw a sustainable pace?
+      const wrPct = (withdrawalRate * 100).toFixed(1);
+      const wrTone = withdrawalRate <= 0.045 ? "gain" : withdrawalRate <= 0.06 ? "accent" : "tax";
+      return (
+        <div>
+          <h2 className="text-xl font-bold leading-snug">{heading}</h2>
+          <p className="mt-1 text-[13px] text-foreground/60">
+            Your guaranteed income comes in first; you only pull from savings to fill the gap. Here&apos;s the split for {year}.
+          </p>
+          <div className="mt-4">
+            <StackedBar
+              segments={[
+                { value: guaranteed, className: "bg-ss", label: "Guaranteed income" },
+                { value: totalDraw, className: "bg-taxable", label: "From savings" },
+              ].filter((s) => s.value > 0.5)}
+            />
+            <div className="mt-1 flex justify-between text-[11px] text-foreground/45">
+              <span>{pct}% guaranteed income</span>
+              <span>{100 - pct}% from savings</span>
+            </div>
+            <div className="mt-3 space-y-1 text-[13px]">
+              <Row label="Guaranteed income (doesn't depend on markets)" value={money(guaranteed)} tone="ss" bold />
+              {gItems.map((g) => (
+                <Row key={g.label} label={`…${g.label}`} value={money(g.value)} sub />
+              ))}
+              <div className="my-1 border-t border-border/60" />
+              <Row label="You pull this from savings" value={money(totalDraw)} tone="taxable" bold />
+            </div>
           </div>
-        </div>
-        <p className="mt-3 rounded-xl bg-ss/5 px-3 py-2 text-[13px] text-foreground/75">
+
+          {/* What this means — the real value: is the draw sustainable, and what changes when SS starts. */}
           {coveredByIncome ? (
-            <>Your guaranteed income alone covers your spending this year — you don&apos;t need to pull from savings{rmd > 0.5 ? " beyond the required RMD" : ""}.</>
+            <p className="mt-3 rounded-xl bg-ss/5 px-3 py-2 text-[13px] text-foreground/75">
+              Your guaranteed income alone covers your spending this year — you don&apos;t need to pull from savings
+              {rmd > 0.5 ? " beyond the required RMD" : ""}. Anything left over can stay invested.
+            </p>
           ) : (
-            <>Social Security and other income cover <strong>{money(guaranteed)}</strong>. You&apos;ll pull the remaining <strong>{money(totalDraw)}</strong> from your accounts — next we&apos;ll show exactly where.</>
+            <>
+              {portfolioTotal > 0 && (
+                <p className={`mt-3 rounded-xl px-3 py-2 text-[13px] leading-relaxed bg-${wrTone}/[0.07] text-foreground/80`}>
+                  💡 The <strong>{money(totalDraw)}</strong> you pull is about{" "}
+                  <strong className={`text-${wrTone}`}>{wrPct}%</strong> of your <strong>{money(portfolioTotal)}</strong> in savings.{" "}
+                  {withdrawalRate <= 0.045
+                    ? "That's at or below the ~4–4.5% pace planners treat as sustainable for a long retirement — a comfortable draw."
+                    : withdrawalRate <= 0.06
+                      ? "That's a bit above the classic ~4% pace — workable for now, but worth watching, especially before Social Security starts."
+                      : "That's a steep pace versus the ~4% rule of thumb — the longevity check later will show whether it lasts."}
+                </p>
+              )}
+              {pendingSS > 0.5 && Number.isFinite(nextClaimAge) && (
+                <p className="mt-2 rounded-xl bg-primary/5 px-3 py-2 text-[13px] leading-relaxed text-foreground/75">
+                  📅 This is the heavy-lifting phase: <strong>Social Security hasn&apos;t started yet</strong>. Once you claim
+                  at {nextClaimAge}, about <strong>{money(pendingSS)}/yr</strong> more becomes guaranteed income — so you&apos;ll
+                  pull noticeably less from savings, and these early years are the most you&apos;ll lean on your accounts.
+                </p>
+              )}
+              <p className="mt-2 rounded-xl bg-foreground/[0.03] px-3 py-2 text-[13px] text-foreground/70">
+                So this year you need <strong>{money(totalDraw)}</strong> from savings — next we&apos;ll show exactly which
+                accounts it comes from, and why that order keeps your lifetime tax lowest.
+              </p>
+            </>
           )}
-        </p>
-      </div>
-    ),
+
+          {/* Social Security claim-age guidance — the single highest-value lever, so
+              we surface it (not silently apply it: when to claim is a personal call). */}
+          {rec.claimAdvice && (
+            <Callout tone="good" icon="📈" title="A bigger lever: when to claim Social Security" className="mt-3">
+              {(() => {
+                const ca = rec.claimAdvice;
+                const who =
+                  ca.delayWho === "self"
+                    ? household.self.label
+                    : ca.delayWho === "spouse"
+                      ? household.spouse.label
+                      : ca.delayWho === "both"
+                        ? "both of you"
+                        : "you";
+                return (
+                  <>
+                    On your numbers, having <strong>{who}</strong> claim Social Security at{" "}
+                    <strong>{ca.delayWho === "spouse" ? ca.spouse : ca.self}</strong>
+                    {ca.delayWho === "both" ? ` / ${ca.spouse}` : ""} instead of {ca.currentSelf}
+                    {ca.delayWho === "both" ? ` / ${ca.currentSpouse}` : ""} is projected to leave about{" "}
+                    <strong>{money(ca.lift)}</strong> more over your lifetime — partly because delaying the higher earner
+                    also locks in a larger benefit for whoever lives longer. It&apos;s a personal decision (health, cash
+                    needs); you can set claim ages on the Accounts page. This estimate already reflects your plan-to age.
+                  </>
+                );
+              })()}
+            </Callout>
+          )}
+        </div>
+      );
+    },
   });
 
   steps.push({
     key: "pull",
     eyebrow: "where to pull it",
     render: () => {
-      const items: { label: string; amount: number; why: string; dot: string }[] = [];
-      if (rmd > 0.5) items.push({ label: "Take your required withdrawal (RMD)", amount: rmd, why: "The IRS forces this out of pre-tax accounts first; it's taxed as ordinary income.", dot: "bg-deferred" });
-      if (voluntaryPretax > 0.5) items.push({ label: "Withdraw from pre-tax (IRA/401k)", amount: voluntaryPretax, why: "Cheap dollars now, filling a low bracket, so less is forced out later.", dot: "bg-deferred" });
-      if (w.taxable > 0.5) items.push({ label: "Sell from your brokerage", amount: w.taxable, why: "Only the gain is taxed, usually at the lower capital-gains rate.", dot: "bg-taxable" });
-      if (w.roth > 0.5) items.push({ label: "Tap your Roth (tax-free)", amount: w.roth, why: "Used last — it's tax-free and never forced out, so it keeps growing.", dot: "bg-roth" });
+      const items: { label: string; amount: number; why: string }[] = [];
+      if (rmd > 0.5) items.push({ label: "Take your required withdrawal (RMD)", amount: rmd, why: "The IRS forces this out of pre-tax accounts first; it's taxed as ordinary income." });
+      if (voluntaryPretax > 0.5) items.push({ label: "Withdraw from pre-tax (IRA/401k)", amount: voluntaryPretax, why: "Taxed as ordinary income — but done now, in a low bracket, so less is forced out at higher rates later." });
+      if (w.taxable > 0.5) items.push({ label: "Spend taxable savings (cash first, then brokerage)", amount: w.taxable, why: "Cash is spent first (no tax); then brokerage, where only the gain is taxed at the lower capital-gains rate." });
+      if (w.roth > 0.5) items.push({ label: "Tap your Roth (tax-free)", amount: w.roth, why: "Used last — tax-free and never forced out, so it keeps compounding the longest." });
+
+      // Live proof: the three withdrawal orders on THIS household. We rank by money
+      // you can COUNT ON — after-tax estate valued as if heirs realize the brokerage
+      // gains rather than always getting a full step-up — because that's the measure
+      // the advisor uses to avoid recommending a fragile, step-up-dependent plan.
+      const keep = (p: typeof orderCompare.conventional) =>
+        Math.max(0, p.endingEstateAfterTax - p.endingBuckets.taxableGain * 0.15);
+      const orders = [
+        { key: "conventional", name: "Brokerage & cash first", v: keep(orderCompare.conventional) },
+        { key: "smart", name: "Pre-tax first (fill low brackets)", v: keep(orderCompare.smart) },
+        { key: "proportional", name: "A little from everything", v: keep(orderCompare.proportional) },
+      ];
+      const ranked = [...orders].sort((a, b) => b.v - a.v);
+      const chosen = orders.find((o) => o.key === settings.strategy) ?? ranked[0];
+      const runnerUp = ranked.find((o) => o.key !== chosen.key) ?? ranked[1];
+      const edge = chosen.v - (runnerUp?.v ?? chosen.v);
+      const usesBrokerageFirst = settings.strategy === "conventional";
+
       return (
         <div>
           <h2 className="text-xl font-bold leading-snug">{coveredByIncome ? "Nothing to withdraw this year" : "Pull the rest from here — in this order"}</h2>
-          <p className="mt-1 text-[13px] text-foreground/60">We always take what&apos;s required first, then the most tax-friendly source, saving tax-free Roth for last.</p>
+          <p className="mt-1 text-[13px] text-foreground/60">
+            Take what&apos;s required first, then the source your numbers show keeps the most money after every tax —
+            saving tax-free Roth for last.
+          </p>
           {items.length === 0 ? (
             <p className="mt-4 rounded-xl bg-gain/5 px-3 py-3 text-[13px] text-foreground/75">Your income covers your spending — no withdrawals needed. Any surplus can be reinvested.</p>
           ) : (
@@ -506,6 +698,98 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 </li>
               ))}
             </ol>
+          )}
+
+          {items.length === 1 && (
+            <p className="mt-2 text-[12px] leading-snug text-foreground/55">
+              That one source covers this whole year&apos;s gap, so it&apos;s all you need now. In later years the mix can
+              shift as balances and tax brackets change.
+            </p>
+          )}
+
+          {/* The rollover is SEPARATE money movement, not spending — connect the two. */}
+          {conversion > 0.5 && (
+            <p className="mt-2 rounded-xl bg-roth/[0.08] px-3 py-2 text-[12px] leading-relaxed text-foreground/75">
+              🔄 Separately, you&apos;ll move about <strong>{money(conversion)}</strong> from pre-tax into your Roth (the
+              next step). That&apos;s <em>not</em> spending — it lands in your Roth and grows tax-free; its tax is best paid
+              from cash.
+            </p>
+          )}
+
+          {/* Why THIS order — proven on the user's own numbers, and honest about the
+              "spend taxable first" rule of thumb. */}
+          {!coveredByIncome && (
+            <div className="mt-3 rounded-2xl border border-border p-3">
+              {chosen.key === ranked[0].key ? (
+                <>
+                  <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-foreground/45">
+                    Why this order? We tested all three on your numbers
+                  </div>
+                  <div className="space-y-1">
+                    {ranked.map((o) => (
+                      <div key={o.key} className="flex items-baseline justify-between gap-2 text-[12px]">
+                        <span className={o.key === chosen.key ? "font-semibold text-gain" : "text-foreground/60"}>
+                          {o.key === chosen.key ? "✓ " : ""}
+                          {o.name}
+                        </span>
+                        <span className={`tabular ${o.key === chosen.key ? "font-bold text-gain" : "text-foreground/55"}`}>
+                          {moneyCompact(o.v)} left
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="-mt-0.5 mb-1 text-[10px] leading-snug text-foreground/40">
+                    &ldquo;Left&rdquo; = after-tax estate counted conservatively (assuming heirs may sell the brokerage rather
+                    than always getting a full step-up), so the winner isn&apos;t resting on a single tax bet.
+                  </p>
+                  <p className="mt-1 text-[12px] leading-relaxed text-foreground/70">
+                    {usesBrokerageFirst ? (
+                      <>
+                        Many advisors say &ldquo;spend your brokerage first&rdquo; — and for you that&apos;s exactly right
+                        {edge > 1000 ? <>, by about <strong>{moneyCompact(edge)}</strong></> : null}. Spending the brokerage
+                        keeps your taxable income low, which opens up cheap room to roll pre-tax → Roth; and anything you
+                        leave in the brokerage gets a <strong>step-up at death</strong> that erases the gain for your heirs.
+                      </>
+                    ) : settings.strategy === "smart" ? (
+                      <>
+                        Here it pays to pull <strong>pre-tax first</strong>
+                        {edge > 1000 ? <>, by about <strong>{moneyCompact(edge)}</strong></> : null}. Filling your low
+                        brackets with pre-tax dollars now shrinks the balance that would otherwise be forced out later as
+                        RMDs at higher rates — worth more than the capital-gains savings of selling the brokerage first.
+                      </>
+                    ) : (
+                      <>
+                        For you a <strong>balanced draw</strong> from every account wins
+                        {edge > 1000 ? <>, by about <strong>{moneyCompact(edge)}</strong></> : null} — it keeps taxable
+                        income low enough to convert pre-tax → Roth cheaply while still preserving brokerage gains for the
+                        step-up.
+                      </>
+                    )}
+                  </p>
+                </>
+              ) : (
+                <p className="text-[12px] leading-relaxed text-foreground/70">
+                  Because your goal is <strong>{GOAL_META[settings.goal].short.toLowerCase()}</strong>, the plan pulls in the
+                  order that best serves it. The order below explains the general trade-off.
+                </p>
+              )}
+              <Info q="Wait — why not just spend the brokerage first like advisors say?">
+                <p>
+                  It&apos;s a great rule of thumb, and often right — but not always. The catch is that the money in your
+                  pre-tax IRA/401(k) will be taxed as ordinary income <em>eventually</em>, either when you take it or when
+                  your heirs do. If you only ever touch the brokerage, that pre-tax balance keeps growing and gets forced
+                  out in your 70s–80s as RMDs — often at a <em>higher</em> rate than you&apos;d pay today, and it can push
+                  up your Medicare (IRMAA) premiums too.
+                </p>
+                <p className="mt-2">
+                  So the real comparison isn&apos;t &ldquo;15% on a brokerage gain vs 22% on a pre-tax dollar this
+                  year.&rdquo; It&apos;s &ldquo;a known low rate now vs a likely higher rate later&rdquo; on the pre-tax
+                  money, plus the fact that brokerage gains can escape tax entirely via the step-up at death. The table
+                  above is that full lifetime comparison run on your actual accounts — whichever order keeps the most after
+                  every tax is the one we use.
+                </p>
+              </Info>
+            </div>
           )}
         </div>
       );
@@ -965,6 +1249,39 @@ function CashFlowBar({
       </div>
     </div>
   );
+}
+
+/**
+ * Where this year's MAGI sits relative to the Medicare IRMAA cliffs. IRMAA is a
+ * step function: crossing a tier's MAGI ceiling adds the FULL next-tier surcharge
+ * (per enrollee, ×12 months), two years later. Returns the current surcharge, the
+ * distance to the next cliff, and the jump if you cross it — so the UI can warn
+ * before spending/withdrawals push the household over a line.
+ */
+type IrmaaTier = { upTo: number; monthlyPerPerson: number; label: string };
+function irmaaCliffInfo(magi: number, factor: number, tiers: IrmaaTier[], enrollees: number) {
+  if (enrollees <= 0) return null; // nobody on Medicare yet → IRMAA doesn't apply
+  let idx = tiers.findIndex((t) => magi <= t.upTo * factor);
+  if (idx < 0) idx = tiers.length - 1;
+  const cur = tiers[idx];
+  const atTop = idx >= tiers.length - 1;
+  const next = atTop ? null : tiers[idx + 1];
+  const nextThreshold = atTop ? Infinity : cur.upTo * factor; // top of current tier = the next cliff
+  const prevThreshold = idx > 0 ? tiers[idx - 1].upTo * factor : 0; // the cliff just below you
+  const prev = idx > 0 ? tiers[idx - 1] : null;
+  return {
+    inSurcharge: cur.monthlyPerPerson > 0,
+    curLabel: cur.label,
+    curSurcharge: cur.monthlyPerPerson * 12 * enrollees,
+    atTop,
+    nextThreshold,
+    distance: nextThreshold - magi,
+    nextJump: next ? (next.monthlyPerPerson - cur.monthlyPerPerson) * 12 * enrollees : 0,
+    // How far you've crossed the line BELOW you, and what dropping back under it saves.
+    overBy: magi - prevThreshold,
+    dropSaving: prev ? (cur.monthlyPerPerson - prev.monthlyPerPerson) * 12 * enrollees : 0,
+    enrollees,
+  };
 }
 
 function CFItem({ icon, label, value, tone }: { icon: string; label: string; value: number; tone: string }) {
