@@ -3,7 +3,7 @@
 import { useMemo, useState, useEffect, ReactNode } from "react";
 import Link from "next/link";
 import { useStore } from "@/components/HouseholdProvider";
-import { Card, PageTitle, SectionTitle, Pill, Stat, Disclaimer, Callout, Explainer, Info, StackedBar, PageSkeleton, DesktopOnly } from "@/components/ui";
+import { Card, PageTitle, SectionTitle, Pill, Stat, Disclaimer, Callout, Explainer, Info, StackedBar, PageSkeleton, DesktopOnly, Collapsible } from "@/components/ui";
 import { Donut, Legend, AnimatedNumber } from "@/components/charts";
 import { planYear, STRATEGY_META, StrategyId, BracketTarget } from "@/lib/optimizer";
 import { ordinaryBracketCeiling } from "@/lib/tax/engine";
@@ -169,18 +169,40 @@ export default function PlanPage() {
         settings.convertMode === "recommended"
           ? ", sized to your projected future RMD-era tax rate"
           : `, filling the ${percent(settings.bracketTarget, 0)} bracket`
-      }. Pay the tax from cash — Illinois doesn't tax the conversion — and it shrinks every future RMD, then grows tax-free with no RMDs of its own.`,
+      }. Pay the tax from cash${(household.state ?? "IL") === "IL" ? " — Illinois doesn't tax the conversion" : ""} — and it shrinks every future RMD, then grows tax-free with no RMDs of its own.`,
       tone: "roth",
     });
   }
 
   return (
     <div>
-      <PageTitle title={`Your ${year} plan — the full picture`} subtitle="Every number and chart behind the walkthrough. New here? Start on the Start tab." />
+      <PageTitle title={`Your ${year} plan`} subtitle="What to do this year, and the tax math behind it. (New to this? The Start tab walks you through it.)" />
 
       <div className="mt-1">
-      {/* ---------- ROBO-ADVISOR: goal → recommended plan ---------- */}
-      <GoalAndRecommendation />
+      {/* ---------- THE ONE NUMBER YOU CONTROL: spending (must come first — every
+           card below quotes it) ---------- */}
+      <SectionTitle>How much do you want to spend each year?</SectionTitle>
+      <Explainer>This is your target — the money you actually want in your pocket after tax. Drag it and watch the whole plan and tax update.</Explainer>
+      <Card>
+        <div className="flex items-baseline justify-between">
+          <span className="text-[12px] font-medium text-foreground/60">Yearly spending (after tax)</span>
+          <span className="tabular text-2xl font-bold text-primary">{money(plan.spendingTarget)}</span>
+        </div>
+        <input
+          type="range"
+          min={SPEND_MIN}
+          max={SPEND_MAX}
+          step={SPEND_STEP}
+          value={Math.min(SPEND_MAX, household.annualSpending)}
+          onChange={(e) => updateHousehold({ annualSpending: Number(e.target.value) })}
+          className="mt-3 w-full accent-primary"
+          aria-label="Yearly spending"
+        />
+        <div className="mt-1 flex justify-between text-[11px] text-foreground/45">
+          <span>{moneyCompact(SPEND_MIN)}</span>
+          <span>{moneyCompact(SPEND_MAX)}+</span>
+        </div>
+      </Card>
 
       {/* ---------- THE HEADLINE: what to do ---------- */}
       <Callout tone="good" icon="🧭" title="Your move this year">
@@ -188,7 +210,7 @@ export default function PlanPage() {
           <>
             Good news — your Social Security, pension and dividends already cover your{" "}
             <strong>{money(plan.spendingTarget)}</strong>{" "}of spending this year. You don&apos;t need to
-            pull from any account{plan.rmd > 0.5 ? " beyond the required RMD below" : ""}.
+            pull from any account{plan.rmd > 0.5 ? " beyond the required minimum withdrawal (RMD) below" : ""}.
           </>
         ) : (
           <>
@@ -232,7 +254,7 @@ export default function PlanPage() {
             <span className="tabular">{money(plan.grossInflow)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-foreground/65">− Federal tax</span>
+            <span className="text-foreground/65">− Tax (federal + {plan.tax.state.state === "IL" ? "Illinois" : "state"})</span>
             <span className="tabular text-tax">− {money(plan.tax.totalTax)}</span>
           </div>
           <div className="flex justify-between font-semibold">
@@ -245,30 +267,6 @@ export default function PlanPage() {
             ⏳ {ssPending.join("; ")} — until then, withdrawals cover more (see &quot;when to claim&quot; below).
           </p>
         )}
-      </Card>
-
-      {/* ---------- Spending control ---------- */}
-      <SectionTitle>How much do you want to spend?</SectionTitle>
-      <Explainer>This is your target — the money you actually want in your pocket after tax. Drag it and watch the plan and tax update.</Explainer>
-      <Card>
-        <div className="flex items-baseline justify-between">
-          <span className="text-[12px] font-medium text-foreground/60">Yearly spending (after tax)</span>
-          <span className="tabular text-2xl font-bold text-primary">{money(plan.spendingTarget)}</span>
-        </div>
-        <input
-          type="range"
-          min={SPEND_MIN}
-          max={SPEND_MAX}
-          step={SPEND_STEP}
-          value={Math.min(SPEND_MAX, household.annualSpending)}
-          onChange={(e) => updateHousehold({ annualSpending: Number(e.target.value) })}
-          className="mt-3 w-full accent-primary"
-          aria-label="Yearly spending"
-        />
-        <div className="mt-1 flex justify-between text-[11px] text-foreground/45">
-          <span>{moneyCompact(SPEND_MIN)}</span>
-          <span>{moneyCompact(SPEND_MAX)}+</span>
-        </div>
       </Card>
 
       {/* ---------- The step-by-step ---------- */}
@@ -312,12 +310,7 @@ export default function PlanPage() {
         </div>
       </Card>
 
-      {/* ---------- LOOKING AHEAD: the next several years ---------- */}
-      <LookingAhead />
-
-      {/* ---------- ROLLOVER / ROTH-CONVERSION PLAN ---------- */}
-      <RolloverPlanCard />
-
+      {/* Why this order — defined right where the steps just used it. */}
       <Info q="Why this order? (pre-tax → brokerage → Roth)" sources={[SOURCES.rmd, SOURCES.rothNoRmd, SOURCES.capGains]}>
         <p className="mb-1.5">Your accounts fall into three tax &quot;buckets,&quot; and the bucket — not the brand — sets the order:</p>
         <ul className="space-y-1">
@@ -326,6 +319,78 @@ export default function PlanPage() {
           <li><strong className="text-roth">Roth</strong>: already taxed, so it comes out tax-free and is <em>never</em>{" "}forced out — which is why it&apos;s spent last.</li>
         </ul>
       </Info>
+
+      {/* ---------- LOOKING AHEAD: the next several years ---------- */}
+      <LookingAhead />
+
+      {/* ---------- ROLLOVER / ROTH-CONVERSION PLAN (the canonical, editable control) ---------- */}
+      <RolloverPlanCard />
+
+      {/* ---------- SOCIAL SECURITY timing — the one place to act on claim age ---------- */}
+      <SsTiming household={household} year={year} update={updateHousehold} />
+
+      {/* ---------- The strategy we picked (demoted below the action; collapsed) ---------- */}
+      <Collapsible
+        eyebrow="under the hood"
+        title="See the strategy we picked for you"
+        summary="Your goal, the recommended plan, and how confident we are"
+        className="mt-2"
+      >
+        <GoalAndRecommendation />
+      </Collapsible>
+
+      {/* ---------- Why this plan (collapsed detail) ---------- */}
+      <Collapsible title="Why this plan" summary="The reasoning behind the steps, in your own numbers" className="mt-2">
+        <ul className="space-y-2 text-[13px] text-foreground/75">
+          {plan.notes.map((n, i) => (
+            <li key={i} className="flex gap-2">
+              <span className="text-primary">•</span>
+              <span>{n}</span>
+            </li>
+          ))}
+        </ul>
+      </Collapsible>
+
+      {/* ---------- Opportunities (collapsed detail) ---------- */}
+      {opportunities.length > 0 && (
+        <Collapsible
+          title="More ways to save"
+          summary={`${opportunities.length} optional move${opportunities.length > 1 ? "s" : ""} that could lower your tax`}
+          className="mt-2"
+        >
+          <div className="space-y-2 lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0">
+            {opportunities.map((o) => (
+              <Card as="div" key={o.id} className={`border-l-4 ${oppBorder(o.tone)}`}>
+                <div className="flex items-start gap-2">
+                  <span className="text-lg">{o.icon}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold">{o.title}</div>
+                    {o.impact && (
+                      <div className="mt-0.5">
+                        <Pill tone={o.tone === "warn" ? "tax" : "gain"}>{o.impact}</Pill>
+                      </div>
+                    )}
+                    <p className="mt-1.5 text-[13px] text-foreground/70">{o.detail}</p>
+                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                      {o.sources.map((s, i) => (
+                        <a
+                          key={i}
+                          href={s.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[11px] text-primary underline decoration-primary/30 underline-offset-2"
+                        >
+                          {s.label} ↗
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </Collapsible>
+      )}
 
       {/* ---------- Deep detail — desktop-only. The phone keeps the Plan tab to the
            action (your move, the order, what's coming); the source/income donuts and
@@ -340,8 +405,10 @@ export default function PlanPage() {
           </Card>
         }
       >
+      <SectionTitle>The full tax math</SectionTitle>
+      <Explainer>Where each dollar comes from, your full income picture, and the line-by-line tax bill — the complete detail behind the numbers above.</Explainer>
       {/* ---------- Source donut ---------- */}
-      <SectionTitle>Where the money comes from</SectionTitle>
+      <p className="mb-2 mt-4 text-[13px] font-semibold text-foreground/70">Where the money comes from</p>
       <Explainer>Each slice is an account we&apos;d draw on to fund your spending this year.</Explainer>
       <Card>
         {totalDraw > 0.5 ? (
@@ -443,62 +510,6 @@ export default function PlanPage() {
         )}
       </Card>
       </DesktopOnly>
-
-      {/* ---------- Why ---------- */}
-      <SectionTitle>Why this plan</SectionTitle>
-      <Explainer>The reasoning behind the steps above, in your own numbers.</Explainer>
-      <Card>
-        <ul className="space-y-2 text-[13px] text-foreground/75">
-          {plan.notes.map((n, i) => (
-            <li key={i} className="flex gap-2">
-              <span className="text-primary">•</span>
-              <span>{n}</span>
-            </li>
-          ))}
-        </ul>
-      </Card>
-
-      {/* ---------- Opportunities ---------- */}
-      {opportunities.length > 0 && (
-        <>
-          <SectionTitle hint={`${opportunities.length} ideas`}>Opportunities to save</SectionTitle>
-          <Explainer>Optional moves that could lower your tax — each links to the official IRS / Medicare source.</Explainer>
-          <div className="space-y-2 lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0">
-            {opportunities.map((o) => (
-              <Card as="div" key={o.id} className={`border-l-4 ${oppBorder(o.tone)}`}>
-                <div className="flex items-start gap-2">
-                  <span className="text-lg">{o.icon}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="font-semibold">{o.title}</div>
-                    {o.impact && (
-                      <div className="mt-0.5">
-                        <Pill tone={o.tone === "warn" ? "tax" : "gain"}>{o.impact}</Pill>
-                      </div>
-                    )}
-                    <p className="mt-1.5 text-[13px] text-foreground/70">{o.detail}</p>
-                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
-                      {o.sources.map((s, i) => (
-                        <a
-                          key={i}
-                          href={s.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[11px] text-primary underline decoration-primary/30 underline-offset-2"
-                        >
-                          {s.label} ↗
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* ---------- Social Security timing ---------- */}
-      <SsTiming household={household} year={year} update={updateHousehold} />
 
       {/* ---------- Advanced: tune the strategy yourself (collapsed by default) ---------- */}
       <button
@@ -873,7 +884,9 @@ function GoalAndRecommendation() {
         spendingStrategy: settings.spendingStrategy,
       },
       model: returnModel(household.accounts),
-      runs: 600,
+      // 1,000 runs + fixed seed → matches the Forecast tab's confidence number
+      // exactly for the same plan (no visually-disagreeing percentages).
+      runs: 1000,
     }).then((res) => {
       if (!cancelled) setConfidence(res);
     });
@@ -957,7 +970,7 @@ function GoalAndRecommendation() {
             </strong>{" "}
             (vs {rec.claimAdvice.currentSelf}
             {rec.claimAdvice.delayWho === "both" ? ` / ${rec.claimAdvice.currentSpouse}` : ""}) is projected to leave about{" "}
-            <strong>{moneyCompact(rec.claimAdvice.lift)}</strong> more over your lifetime — set claim ages on the Accounts page.
+            <strong>{moneyCompact(rec.claimAdvice.lift)}</strong> more over your lifetime — set claim ages in the &ldquo;Social Security: when to claim&rdquo; section above.
           </p>
         )}
         <div className="mt-3 grid grid-cols-2 gap-2">
@@ -1024,6 +1037,8 @@ function LookingAhead() {
         endAge: settings.endAge,
         convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
         survivor: survivorFromSettings(settings),
+        spendingStrategy: settings.spendingStrategy,
+        heirTaxRate: settings.heirTaxRate,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
@@ -1033,6 +1048,8 @@ function LookingAhead() {
       settings.returnRate,
       settings.inflationRate,
       settings.endAge,
+      settings.spendingStrategy,
+      settings.heirTaxRate,
       settings.useConversions,
       settings.convertMode,
       settings.convertUntilAge,
@@ -1043,7 +1060,7 @@ function LookingAhead() {
 
   return (
     <>
-      <SectionTitle hint={`next ${years.length} years`}>Looking ahead — your plan year by year</SectionTitle>
+      <SectionTitle hint={`next ${years.length} years`}>The next few years</SectionTitle>
       <Explainer>
         What to actually do each year, so you can plan around it{settings.useConversions ? ", including the Roth rollovers" : ""}.
         It re-runs whenever you change your goal, spending, or assumptions.
@@ -1084,7 +1101,7 @@ function LookingAhead() {
         href="/projection"
         className="press mt-3 block rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 text-center text-sm font-semibold text-primary"
       >
-        See the full year-by-year forecast →
+        See the full year-by-year detail in the Forecast tab →
       </Link>
     </>
   );
@@ -1145,11 +1162,11 @@ function RolloverPlanCard() {
 
   return (
     <>
-      <SectionTitle>Smooth your future taxes with Roth rollovers</SectionTitle>
+      <SectionTitle>Roth conversions: pay a little tax now to cut future RMDs</SectionTitle>
       <Explainer>
-        {Math.round(conv.pretaxShare * 100)}% of your money is pre-tax. The goal isn&apos;t to avoid RMDs — it&apos;s to
-        keep them from arriving as big, high-bracket chunks later. Moving a little to Roth now, while you&apos;re in a low
-        bracket, smooths your income and lowers your <em>lifetime</em> tax.
+        {Math.round(conv.pretaxShare * 100)}% of your money is pre-tax, so big required withdrawals later can push you into a
+        higher bracket. The fix: move a little to Roth now, while you&apos;re in a low bracket — that smooths your income and
+        lowers your <em>lifetime</em> tax.
       </Explainer>
       <Callout
         tone={conv.recommended ? "good" : "info"}
@@ -1192,7 +1209,7 @@ function RolloverPlanCard() {
             settings.useConversions ? "bg-gain/15 text-gain" : "bg-primary text-white"
           }`}
         >
-          {settings.useConversions ? "✓ Rollover plan is on — see it in Looking ahead" : "Turn on the rollover plan"}
+          {settings.useConversions ? "✓ Rollover plan is on — it appears in “The next few years” above" : "Turn on the rollover plan"}
         </button>
 
         {settings.useConversions && (
