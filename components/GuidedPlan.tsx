@@ -225,15 +225,14 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   // is chosen, since spending drives the withdrawals that drive MAGI. ----
   const medicareEnrollees = (plan.selfAge >= 65 ? 1 : 0) + (plan.spouseAge >= 65 ? 1 : 0);
 
-  // Per-spend "impact" sweep — this year's MAGI, marginal bracket, and IRMAA tier
-  // at EVERY spending level — so the slider can show what the chosen number means
-  // (and where the cliffs sit) live, BEFORE it's committed. Mirrors the active
-  // year's withdrawal + conversion plan so the MAGI it reports is the real one.
-  // Conversion is EXCLUDED here on purpose: this sweep isolates what your SPENDING
-  // does to MAGI/brackets/IRMAA, so the slider reads intuitively (spend more →
-  // higher income → closer to the next cliff). The Roth rollover is a separate
-  // lever with its own step; bundling it would make MAGI move *inversely* to
-  // spending (more spending leaves less room to convert), which is baffling here.
+  // Per-spend "impact" sweep — this year's MAGI, marginal bracket, IRMAA tier, and
+  // savings draw at EVERY spending level — so the slider shows what the chosen
+  // number ACTUALLY means (and where the cliffs sit) live, before it's committed.
+  // It mirrors the active year's FULL plan, INCLUDING the Roth rollover, because
+  // the rollover is part of the income the user actually files — leaving it out
+  // made the card claim "no IRMAA" when the real plan crosses a tier. The combined
+  // MAGI is still monotonic in spending (the recommended rollover fills a low
+  // bracket and spending adds on top), so the slider stays intuitive.
   const impact = useMemo(
     () =>
       spendImpact(
@@ -242,14 +241,18 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           strategy: settings.strategy,
           bracketTarget: settings.bracketTarget,
           year,
-          conversion: null,
+          conversion: settings.useConversions
+            ? settings.convertMode === "recommended"
+              ? { mode: "recommended", futureRate: proj.futureRate }
+              : { mode: "fillBracket", toBracket: settings.bracketTarget }
+            : null,
           inflationFactor: plan.inflationFactor,
         },
         FILING_CONSTANTS[plan.filingStatus].irmaaTiers,
         medicareEnrollees,
         SPEND_MAX,
       ),
-    [dHousehold, settings.strategy, settings.bracketTarget, year, plan.inflationFactor, plan.filingStatus, medicareEnrollees],
+    [dHousehold, settings.strategy, settings.bracketTarget, settings.useConversions, settings.convertMode, proj.futureRate, year, plan.inflationFactor, plan.filingStatus, medicareEnrollees],
   );
   // The picture at the CURRENT slider position — interpolated, so it updates every
   // frame of a drag without re-running the planner.
@@ -498,25 +501,41 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         .filter((c) => c.spend > 0 && c.spend < SPEND_MAX)
         .forEach((c, i) => markers.push({ key: `irmaa${i}`, value: c.spend, cls: "bg-tax", title: `Medicare cliff → ${c.toLabel}` }));
 
-      // "Quick amounts" — meaningful edges to anchor the decision to, rather than
-      // guessing: the comfortable ceiling, just under each IRMAA cliff, and the
-      // most you could safely spend. Deduped (within $5k), sorted, capped at 4.
+      // The RECOMMENDED amount: the spend whose savings draw lands at the classic
+      // ~4% safe-withdrawal pace (capped so it's never above what the downside
+      // sweep says is sustainable). This is the headline "quick amount" — a
+      // recognizable, advisor-grade anchor — so the user has a default to start from.
+      let recSpend: number | null = null;
+      if (portfolioTotal > 0) {
+        const target = 0.04 * portfolioTotal;
+        const pts = impact.points;
+        for (let i = 1; i < pts.length; i++) {
+          if (pts[i - 1].draw < target && pts[i].draw >= target) {
+            const t = pts[i].draw === pts[i - 1].draw ? 0 : (target - pts[i - 1].draw) / (pts[i].draw - pts[i - 1].draw);
+            recSpend = round5(pts[i - 1].spend + (pts[i].spend - pts[i - 1].spend) * t);
+            break;
+          }
+        }
+        if (recSpend != null && hasRoom) recSpend = Math.min(recSpend, floor5(sweep.sustainableMax));
+      }
+
+      // Secondary "quick amounts": just under each IRMAA cliff, and the most you
+      // could safely spend. Deduped (within $5k) and sorted.
       const rawChips: { label: string; value: number; cls: string }[] = [];
-      if (hasRoom && sweep.comfortableMax > 5_000 && sweep.comfortableMax < SPEND_MAX)
-        rawChips.push({ label: "Comfortable", value: round5(sweep.comfortableMax), cls: "border-gain/40 text-gain" });
       impact.irmaaCliffs.forEach((c) => {
         const v = floor5(c.spend - 2_500); // land just UNDER the cliff
         if (v >= 5_000 && v < SPEND_MAX) rawChips.push({ label: `Under ${shortTier(c.toLabel)}`, value: v, cls: "border-tax/40 text-tax" });
       });
-      if (hasRoom && sweep.sustainableMax > sweep.comfortableMax + 5_000 && sweep.sustainableMax <= SPEND_MAX)
+      if (hasRoom && sweep.sustainableMax > 5_000 && sweep.sustainableMax <= SPEND_MAX)
         rawChips.push({ label: "Most you can afford", value: floor5(sweep.sustainableMax), cls: "border-accent/50 text-accent" });
-      const quick: typeof rawChips = [];
+      const otherChips: typeof rawChips = [];
       rawChips
         .sort((a, b) => a.value - b.value)
         .forEach((c) => {
-          if (!quick.some((x) => Math.abs(x.value - c.value) < 5_000)) quick.push(c);
+          if (recSpend != null && Math.abs(c.value - recSpend) < 5_000) return; // don't duplicate the recommended
+          if (!otherChips.some((x) => Math.abs(x.value - c.value) < 5_000)) otherChips.push(c);
         });
-      const chips = quick.slice(0, 4);
+      const chips = otherChips.slice(0, 3);
 
       // Confidence band (today's dollars) for the "what's it worth at the end"
       // readout — a real range, not a single number. Settles a beat behind a drag.
@@ -587,11 +606,23 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </>
           )}
 
-          {/* Quick amounts — anchor the choice to a meaningful edge in one tap. */}
-          {chips.length > 0 && (
+          {/* Quick amounts — anchor the choice to a meaningful number in one tap.
+              The recommended ~4% safe-pace amount leads, styled as the default. */}
+          {(recSpend != null || chips.length > 0) && (
             <div className="mt-3">
               <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-foreground/45">Quick amounts</div>
               <div className="flex flex-wrap gap-2">
+                {recSpend != null && (() => {
+                  const active = Math.abs(localSpend - recSpend) < 2_500;
+                  return (
+                    <button
+                      onClick={() => setLocalSpend(recSpend!)}
+                      className={`press rounded-full border px-3 py-1 text-[12px] font-semibold ${active ? "border-primary bg-primary text-white" : "border-primary bg-primary/10 text-primary"}`}
+                    >
+                      ✓ Recommended · {moneyCompact(recSpend)}
+                    </button>
+                  );
+                })()}
                 {chips.map((c) => {
                   const active = Math.abs(localSpend - c.value) < 2_500;
                   return (
@@ -605,6 +636,11 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   );
                 })}
               </div>
+              {recSpend != null && (
+                <p className="mt-1 text-[10px] leading-snug text-foreground/45">
+                  Recommended ≈ a <strong>4% withdrawal pace</strong>, the rate planners treat as safe for a long retirement.
+                </p>
+              )}
             </div>
           )}
 
@@ -615,7 +651,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               <div className="text-[10px] uppercase tracking-wide text-foreground/50">Tax this year</div>
               <div className="tabular text-lg font-bold text-foreground/85">{moneyCompact(liveImpact.totalTax)}</div>
               <div className="text-[10px] leading-snug text-foreground/45">
-                {liveImpact.marginalRate > 0.12 ? `federal + state · top bracket ${percent(liveImpact.marginalRate, 0)}` : "federal + state on this spending"}
+                federal + state{conversion > 0.5 || settings.useConversions ? " · incl. rollover" : ""}
+                {liveImpact.marginalRate > 0.12 ? ` · top bracket ${percent(liveImpact.marginalRate, 0)}` : ""}
               </div>
             </div>
             <div className={`rounded-xl border p-2.5 ${irmaaCliff?.inSurcharge ? "border-tax/30 bg-tax/[0.05]" : "border-border bg-card/60"}`}>
@@ -642,8 +679,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           </div>
           {(conversion > 0.5 || settings.useConversions) && (
             <p className="mt-1.5 text-[11px] leading-snug text-foreground/45">
-              These reflect your <strong>spending</strong> alone. Your Roth rollover adds taxable income on top — the
-              rollover step shows how it interacts with these same brackets and cliffs.
+              These are your <strong>full plan</strong> this year — including your Roth rollover, which adds taxable income
+              (the rollover step breaks out its share of the tax and IRMAA).
             </p>
           )}
 
@@ -669,20 +706,28 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           )}
 
           {/* Withdrawal-rate guide — the classic "4% rule" yardstick, live at the
-              chosen spend, so the user has a second anchor (besides the safe
-              ceilings) for picking a number. Mirrors the "what pays for it" step. */}
-          {portfolioTotal > 0 && liveImpact.draw > 0.5 && (() => {
+              chosen spend. ALWAYS shown (when there are savings) so it doesn't blink
+              in and out as you drag; the content adapts to the chosen number. */}
+          {portfolioTotal > 0 && (() => {
             const liveWR = liveImpact.draw / portfolioTotal;
-            const wrTone = liveWR <= 0.045 ? "gain" : liveWR <= 0.06 ? "accent" : "tax";
+            const drawing = liveImpact.draw > 0.5;
+            const wrTone = !drawing || liveWR <= 0.045 ? "gain" : liveWR <= 0.06 ? "accent" : "tax";
             return (
               <p className={`mt-2 rounded-xl px-3 py-2 text-[12px] leading-relaxed bg-${wrTone}/[0.07] text-foreground/80`}>
-                💡 At this spending you&apos;d pull about <strong className={`text-${wrTone}`}>{(liveWR * 100).toFixed(1)}%</strong> of your{" "}
-                <strong>{money(portfolioTotal)}</strong> in savings this year.{" "}
-                {liveWR <= 0.045
-                  ? "That's at or below the ~4–4.5% pace planners treat as sustainable for a long retirement — a comfortable draw."
-                  : liveWR <= 0.06
-                    ? "That's a bit above the classic ~4% pace — workable, but worth watching, especially before Social Security starts."
-                    : "That's a steep pace versus the ~4% rule of thumb — the market-risk range below shows whether it holds up."}
+                💡{" "}
+                {!drawing ? (
+                  <>Your guaranteed income covers this spending — you&apos;re not drawing from savings yet, so you&apos;re well within a sustainable pace.</>
+                ) : (
+                  <>
+                    At this spending you&apos;d pull about <strong className={`text-${wrTone}`}>{(liveWR * 100).toFixed(1)}%</strong> of your{" "}
+                    <strong>{money(portfolioTotal)}</strong> in savings this year.{" "}
+                    {liveWR <= 0.045
+                      ? "That's at or below the ~4–4.5% pace planners treat as sustainable for a long retirement — a comfortable draw."
+                      : liveWR <= 0.06
+                        ? "That's a bit above the classic ~4% pace — workable, but worth watching, especially before Social Security starts."
+                        : "That's a steep pace versus the ~4% rule of thumb — the market-risk range below shows whether it holds up."}
+                  </>
+                )}
               </p>
             );
           })()}
@@ -735,8 +780,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   {irmaaPinned ? (
                     <>
                       {" "}
-                      Dialing spending up or down won&apos;t clear this — your tier is set by your dividends and required
-                      withdrawals (RMDs), not your spending. (Your Roth rollover, on the next step, adds income on top of this.)
+                      Dialing spending up or down won&apos;t clear this — your tier is set by your Roth rollover and fixed
+                      income (dividends, RMDs), not your spending. Adjust the rollover (next step) to change it.
                     </>
                   ) : (
                     irmaaCliff.overBy > 0 && irmaaCliff.overBy < 15_000 && irmaaCliff.dropSaving > 0 && (
@@ -761,18 +806,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 IRMAA is based on your income from two years prior, so today&apos;s choices set your premiums then.
               </p>
             </div>
-          )}
-
-          {/* Under-spending nudge — careful savers leave money on the table. */}
-          {hasRoom && localSpend < sweep.comfortableMax - 10_000 && (
-            <p className="mt-3 rounded-xl bg-primary/5 px-3 py-2 text-[12px] leading-relaxed text-foreground/70">
-              💡 Most careful savers <em>under</em>-spend. Your numbers comfortably support up to about{" "}
-              <strong>{money(sweep.comfortableMax)}/yr</strong>
-              {sweep.sustainableMax > sweep.comfortableMax + 5_000 ? (
-                <> — and up to <strong>{money(sweep.sustainableMax)}/yr</strong> before you&apos;d risk running short</>
-              ) : null}
-              . These ceilings already allow for a <strong>weak market</strong>, not just an average one.
-            </p>
           )}
         </div>
       );
