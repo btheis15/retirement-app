@@ -17,6 +17,7 @@
 
 import { Household } from "./accounts";
 import { planYear, StrategyId, BracketTarget, ConversionParam } from "./optimizer";
+import { FilingStatus } from "./tax/constants";
 
 export interface SpendImpactPoint {
   spend: number;
@@ -58,6 +59,9 @@ export interface SpendImpactConfig {
   conversion: ConversionParam;
   /** This year's inflation index (scales the nominal IRMAA tier tops). */
   inflationFactor?: number;
+  /** Filing status — picks the right brackets/deductions for the MAGI math (the
+   *  IRMAA tiers are passed separately). Default "mfj". */
+  filingStatus?: FilingStatus;
 }
 
 export interface SpendImpact {
@@ -106,6 +110,7 @@ export function spendImpact(
         year: config.year,
         conversion: config.conversion,
         inflationFactor: factor,
+        filingStatus: config.filingStatus,
       },
     );
     points.push({

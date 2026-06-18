@@ -13,6 +13,7 @@ import { useMemo, useState, useEffect, useDeferredValue, useTransition, ReactNod
 import Link from "next/link";
 import { useStore } from "@/components/HouseholdProvider";
 import { Card, Pill, Info, Callout } from "@/components/ui";
+import { SOURCES } from "@/lib/sources";
 import { StackedBar } from "@/components/ui";
 import { spendingSweep } from "@/lib/spendingSweep";
 import { spendImpact } from "@/lib/spendImpact";
@@ -83,19 +84,27 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     [settings],
   );
   const proj = useMemo(() => projectLifetime(household, activeAssumptions), [household, activeAssumptions]);
+  // Filing status for THIS year's single-year planner. The app's "no spouse"
+  // sentinel is spouse.birthYear <= 1900 (matches lib/goals + lib/projection); a
+  // real spouse → married-filing-jointly, otherwise single. This drives the right
+  // tax brackets AND the right IRMAA tiers (the joint thresholds are double the
+  // single ones), so a couple is read against the MFJ tables and a single person
+  // against the single tables.
+  const filingStatus: FilingStatus = household.spouse && household.spouse.birthYear > 1900 ? "mfj" : "single";
   const plan = useMemo(
     () =>
       planYear(household, {
         strategy: settings.strategy,
         bracketTarget: settings.bracketTarget,
         year,
+        filingStatus,
         conversion: settings.useConversions
           ? settings.convertMode === "recommended"
             ? { mode: "recommended", futureRate: proj.futureRate }
             : { mode: "fillBracket", toBracket: settings.bracketTarget }
           : null,
       }),
-    [household, settings, proj.futureRate, year],
+    [household, settings, proj.futureRate, year, filingStatus],
   );
   const lookAhead = useMemo(() => buildActionPlan(household, proj, 5), [household, proj]);
   // The two heaviest computations (a 150-sim Monte Carlo and the 7-config plan
@@ -266,6 +275,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         strategy: settings.strategy,
         bracketTarget: settings.bracketTarget,
         year,
+        filingStatus,
         conversion:
           settings.convertMode === "recommended"
             ? { mode: "recommended", futureRate: proj.futureRate }
@@ -273,7 +283,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         inflationFactor: plan.inflationFactor,
       },
     ).conversion;
-  }, [portfolioTotal, household.accounts, household.self, household.spouse, settings.useConversions, settings.strategy, settings.bracketTarget, settings.convertMode, proj.futureRate, year, plan.inflationFactor]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [portfolioTotal, household.accounts, household.self, household.spouse, settings.useConversions, settings.strategy, settings.bracketTarget, settings.convertMode, proj.futureRate, year, plan.inflationFactor, filingStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Per-spend "impact" sweep — this year's MAGI, marginal bracket, IRMAA tier, and
   // savings draw at EVERY spending level — so the slider shows what the chosen
@@ -291,6 +301,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           strategy: settings.strategy,
           bracketTarget: settings.bracketTarget,
           year,
+          filingStatus: plan.filingStatus,
           conversion: settings.useConversions && baselineConv > 0 ? { mode: "fixed", amount: baselineConv } : null,
           inflationFactor: plan.inflationFactor,
         },
@@ -608,7 +619,10 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             <div className="tabular text-4xl font-bold text-primary">
               <AnimatedNumber value={localSpend} format={(n) => money(n)} />
             </div>
-            <div className="text-[12px] text-foreground/50">per year, after tax</div>
+            <div className="text-[12px] text-foreground/50">
+              per year, after tax{" "}
+              <span className="text-foreground/40">(≈ {money(Math.round(localSpend / 12))}/mo)</span>
+            </div>
           </div>
 
           {/* Colored "how much you can spend" zones + slider */}
@@ -713,7 +727,10 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               ) : irmaaCliff?.inSurcharge ? (
                 <>
                   <div className="tabular text-lg font-bold text-tax">+{moneyCompact(irmaaCliff.curSurcharge)}/yr</div>
-                  <div className="text-[10px] leading-snug text-foreground/45">{shortTier(irmaaCliff.curLabel)}</div>
+                  <div className="text-[10px] leading-snug text-foreground/45">
+                    {shortTier(irmaaCliff.curLabel)} · {money(Math.round(irmaaCliff.curSurcharge / 12 / irmaaCliff.enrollees))}/mo per person
+                    {irmaaCliff.enrollees > 1 ? ` × ${irmaaCliff.enrollees}` : ""}
+                  </div>
                 </>
               ) : (
                 <>
@@ -730,6 +747,32 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               These are your <strong>full plan</strong> this year — including your Roth rollover, which adds taxable income
               (the rollover step breaks out its share of the tax and IRMAA).
             </p>
+          )}
+
+          {medicareEnrollees > 0 && (
+            <Info q="How is this Medicare (IRMAA) number figured — and why doesn't it match Medicare's premium table?" sources={[SOURCES.irmaa]}>
+              <p>
+                <strong>IRMAA</strong> is an income-related surcharge that gets <strong>added on top of</strong> the standard
+                Medicare premium everyone pays (in 2026 that base is about <strong>$203/mo</strong> for Part B, plus your Part D
+                plan). Once your income crosses a threshold, you pay the standard premium <em>plus</em> this extra.
+              </p>
+              <p className="mt-2">
+                Medicare quotes it <strong>per person, per month</strong>, and splits it into Part&nbsp;B and Part&nbsp;D. The figure
+                here is the <strong>surcharge only</strong> (not the total premium), with Part&nbsp;B and Part&nbsp;D{" "}
+                <strong>combined</strong>, then shown <strong>per year</strong> for the{" "}
+                {medicareEnrollees > 1 ? `${medicareEnrollees} of you` : "one of you"}{" "}on Medicare. So Medicare&apos;s own
+                table looks bigger because it shows the <em>whole</em> monthly premium (standard + surcharge), each part on its own
+                line — this shows just the added yearly cost.
+              </p>
+              <p className="mt-2">
+                Your tier is set by your{" "}
+                <strong>{plan.filingStatus === "single" ? "single-filer" : "married-filing-jointly"} MAGI from two years earlier</strong>{" "}
+                — your 2026 premium uses your 2024 income. The brackets are the{" "}
+                {plan.filingStatus === "single" ? "single" : "joint"} ones (for 2026, the surcharge starts at{" "}
+                <strong>{plan.filingStatus === "single" ? "$109,000" : "$218,000"}</strong>{" "}of MAGI
+                {plan.filingStatus === "single" ? "" : " — double the single-filer threshold"}).
+              </p>
+            </Info>
           )}
 
           {/* Zone verdict — does it last, and what's left (live, downside path). */}
