@@ -264,15 +264,9 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   const guaranteed = ssNow + plan.fixed.pension + allDividends + interestIncome;
   const spending = plan.spendingTarget;
   const conversion = plan.conversion;
-  const conversionTax = plan.conversionTax;
   const totalTax = plan.tax.totalTax;
-  const spendingTax = Math.max(0, totalTax - conversionTax);
   const coveredByIncome = totalDraw < 0.5;
   const isIL = (household.state ?? "IL") === "IL";
-  // Federal can legitimately be ~$0 when income is mostly 0%-rate long-term gains/
-  // qualified dividends and ordinary income is under the standard deduction.
-  const federalZero = plan.tax.federalTax < 100 && plan.tax.taxableIncome > 1000;
-  const zeroCeiling = ltcgZeroCeiling(plan.filingStatus);
 
   // ---- "What pays for it" context ----
   // Share of this year's funding that comes from guaranteed income vs. savings.
@@ -1182,7 +1176,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           : coverageRatio >= 0.25
             ? "A good chunk is already covered"
             : pendingSS > 0.5
-              ? "This year, most comes from your savings"
+              ? "This year, most comes from your accounts"
               : "Here's what funds your spending";
       // Itemize guaranteed income so "guaranteed" isn't a black box.
       const gItems = [
@@ -1199,7 +1193,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       const items: { label: string; amount: number; why: string }[] = [];
       if (rmd > 0.5) items.push({ label: "Take your required withdrawal (RMD)", amount: rmd, why: "The IRS forces this out of pre-tax accounts first; it's taxed as ordinary income." });
       if (voluntaryPretax > 0.5) items.push({ label: "Withdraw from pre-tax (IRA/401k)", amount: voluntaryPretax, why: "Taxed as ordinary income — but done now, in a low bracket, so less is forced out at higher rates later." });
-      if (w.taxable > 0.5) items.push({ label: "Spend taxable savings (cash first, then brokerage)", amount: w.taxable, why: "Cash is spent first (no tax); then brokerage, where only the gain is taxed at the lower capital-gains rate." });
+      if (w.taxable > 0.5) items.push({ label: "Spend from taxable accounts (cash first, then brokerage)", amount: w.taxable, why: "Cash is spent first (no tax); then brokerage, where only the gain is taxed at the lower capital-gains rate." });
       if (w.roth > 0.5) items.push({ label: "Tap your Roth (tax-free)", amount: w.roth, why: "Used last — tax-free and never forced out, so it keeps compounding the longest." });
       const keep = (p: typeof orderCompare.conventional) =>
         Math.max(0, p.endingEstateAfterTax - p.endingBuckets.taxableGain * 0.15);
@@ -1217,19 +1211,19 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         <div>
           <h2 className="text-xl font-bold leading-snug">{heading}</h2>
           <p className="mt-1 text-[13px] text-foreground/60">
-            Your guaranteed income comes in first; you only pull from savings to fill the gap. Here&apos;s the split for {year} —
+            Your guaranteed income comes in first; you only pull from your accounts to fill the gap. Here&apos;s the split for {year} —
             and exactly which accounts that draw comes from.
           </p>
           <div className="mt-4">
             <StackedBar
               segments={[
                 { value: guaranteed, className: "bg-ss", label: "Guaranteed income" },
-                { value: totalDraw, className: "bg-taxable", label: "From savings" },
+                { value: totalDraw, className: "bg-taxable", label: "From your accounts" },
               ].filter((s) => s.value > 0.5)}
             />
             <div className="mt-1 flex justify-between text-[11px] text-foreground/45">
               <span>{pct}% guaranteed income</span>
-              <span>{100 - pct}% from savings</span>
+              <span>{100 - pct}% from your accounts</span>
             </div>
             <div className="mt-3 space-y-1 text-[13px]">
               <Row label="Guaranteed income (doesn't depend on markets)" value={money(guaranteed)} tone="ss" bold />
@@ -1250,14 +1244,18 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 </div>
               ))}
               <div className="my-1 border-t border-border/60" />
-              <Row label="You pull this from savings" value={money(totalDraw)} tone="taxable" bold />
+              <Row label="You pull this from your accounts" value={money(totalDraw)} tone="taxable" bold />
             </div>
+            <p className="mt-1 text-[10px] leading-snug text-foreground/45">
+              &ldquo;Your accounts&rdquo; means everything you&apos;ve saved — pre-tax (IRA/401k), taxable (cash &amp;
+              brokerage), and Roth combined. The steps below show which of them this year&apos;s draw comes from.
+            </p>
           </div>
 
           {/* What this means — the real value: is the draw sustainable, and what changes when SS starts. */}
           {coveredByIncome ? (
             <p className="mt-3 rounded-xl bg-ss/5 px-3 py-2 text-[13px] text-foreground/75">
-              Your guaranteed income alone covers your spending this year — you don&apos;t need to pull from savings
+              Your guaranteed income alone covers your spending this year — you don&apos;t need to pull from your accounts
               {rmd > 0.5 ? " beyond the required RMD" : ""}. Anything left over can stay invested.
             </p>
           ) : (
@@ -1277,7 +1275,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 <p className="mt-2 rounded-xl bg-primary/5 px-3 py-2 text-[13px] leading-relaxed text-foreground/75">
                   📅 This is the heavy-lifting phase: <strong>Social Security hasn&apos;t started yet</strong>. Once you claim
                   at {nextClaimAge}, about <strong>{money(pendingSS)}/yr</strong>{" "}more becomes guaranteed income — so
-                  you&apos;ll pull noticeably less from savings, and these early years are the most you&apos;ll lean on your accounts.
+                  you&apos;ll pull noticeably less from your accounts, and these early years are the most you&apos;ll lean on them.
                 </p>
               )}
             </>
@@ -1426,6 +1424,58 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               </div>
             </div>
           )}
+
+          {/* The tax on this year's SPENDING — folded in here so there's no separate
+              tax page. Uses the spending-only plan (the conversion's tax is its own step). */}
+          {(() => {
+            const t = planNoConv.tax;
+            const fedZero = t.federalTax < 100 && t.taxableIncome > 1000;
+            const lowTax = t.taxableIncome < 2000;
+            return (
+              <div className="mt-5 border-t border-border pt-4">
+                <h3 className="text-base font-bold leading-snug">Set aside about {money(t.totalTax)} for tax</h3>
+                {lowTax ? (
+                  <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+                    Almost none of this year&apos;s <strong>{money(spending)}</strong> is taxable income — you funded it
+                    mostly from cash and dividends (money you&apos;ve already paid tax on, or that&apos;s taxed at the 0%
+                    rate), and your {money(t.deductions)} standard deduction covers the rest. So the bill is only about{" "}
+                    <strong>{money(t.totalTax)}</strong>.
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+                    Spending isn&apos;t the same as taxable income. Of your <strong>{money(spending)}</strong>, only{" "}
+                    <strong>{money(t.taxableIncome)}</strong> is taxed: the cash you spend is money you already paid tax on
+                    (and a brokerage sale is taxed only on its <em>gain</em>), and your {money(t.deductions)} standard
+                    deduction shields the first slice of the rest. Your top rate is{" "}
+                    <strong>{percent(t.marginalOrdinaryRate, 0)}</strong>, so the bill is about{" "}
+                    <strong>{money(t.totalTax)}</strong> — roughly {percent(t.effectiveRate)} of your income.
+                  </p>
+                )}
+                <div className="mt-2 grid grid-cols-2 gap-2 text-[12px]">
+                  <div className="rounded-xl border border-border bg-background/60 p-2 text-center">
+                    <div className="text-[10px] uppercase tracking-wide text-foreground/45">Federal</div>
+                    <div className="tabular text-sm font-bold text-tax">{moneyCompact(t.federalTax)}</div>
+                  </div>
+                  <div className="rounded-xl border border-border bg-background/60 p-2 text-center">
+                    <div className="text-[10px] uppercase tracking-wide text-foreground/45">{isIL ? "Illinois" : "State"} (4.95%)</div>
+                    <div className="tabular text-sm font-bold text-tax">{moneyCompact(t.stateTax)}</div>
+                  </div>
+                </div>
+                {fedZero ? (
+                  <p className="mt-2 text-[12px] leading-relaxed text-foreground/65">
+                    Federal is about $0 because most of your income is qualified dividends &amp; long-term gains, which
+                    get a <strong>0% federal rate</strong> while your taxable income stays under about{" "}
+                    {money(ltcgZeroCeiling(planNoConv.filingStatus))}
+                    {isIL ? <> — Illinois still taxes that investment income at 4.95% (the {moneyCompact(t.stateTax)}).</> : "."}
+                  </p>
+                ) : isIL ? (
+                  <p className="mt-2 text-[12px] text-foreground/55">
+                    🟢 Illinois taxes only your investment income — withdrawals, RMDs, pension, and Social Security are state-tax-free.
+                  </p>
+                ) : null}
+              </div>
+            );
+          })()}
         </div>
       );
     },
@@ -1667,60 +1717,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       },
     });
   }
-
-  steps.push({
-    key: "tax",
-    eyebrow: "the tax, and why",
-    render: () => (
-      <div>
-        <h2 className="text-xl font-bold leading-snug">Set aside {money(totalTax)} for tax</h2>
-        <p className="mt-1 text-[13px] text-foreground/60">
-          Here&apos;s exactly why it&apos;s that much — federal + {isIL ? "Illinois" : "state"}. That&apos;s about{" "}
-          {percent(plan.tax.effectiveRate)} of your total income.
-        </p>
-        <div className="mt-4 space-y-1 rounded-2xl border border-border p-3 text-[13px]">
-          <Row label="Taxable income this year" value={money(plan.tax.taxableIncome)} bold />
-          <Row label={`Highest tax rate you hit`} value={percent(plan.tax.marginalOrdinaryRate, 0)} />
-          <div className="my-1 border-t border-border/60" />
-          {ssNow > 0 && <Row label="…from taxable Social Security" value={money(plan.tax.taxableSocialSecurity)} sub />}
-          {w.pretax > 0.5 && <Row label="…from pre-tax withdrawals (incl. RMD)" value={money(w.pretax)} sub />}
-          {conversion > 0.5 && <Row label="…from the Roth rollover" value={money(conversion)} sub />}
-          {(allDividends > 0.5 || w.taxable > 0.5) && <Row label="…from dividends & brokerage sales" value={money(allDividends + w.taxable)} sub />}
-        </div>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <div className="rounded-xl border border-border bg-card/60 p-2 text-center">
-            <div className="text-[10px] uppercase tracking-wide text-foreground/50">Federal</div>
-            <div className="tabular text-sm font-bold text-tax">{moneyCompact(plan.tax.federalTax)}</div>
-          </div>
-          <div className="rounded-xl border border-border bg-card/60 p-2 text-center">
-            <div className="text-[10px] uppercase tracking-wide text-foreground/50">{isIL ? "Illinois" : "State"} (4.95%)</div>
-            <div className="tabular text-sm font-bold text-tax">{moneyCompact(plan.tax.stateTax)}</div>
-          </div>
-        </div>
-        {federalZero && (
-          <p className="mt-3 rounded-xl bg-ss/5 px-3 py-2 text-[12px] leading-relaxed text-foreground/75">
-            <strong>Wait — why $0 federal?</strong> Most of your income this year is long-term capital gains and
-            qualified dividends. {plan.filingStatus === "single" ? "Filing single" : "Filing jointly"}, those get a
-            special <strong>0% federal rate</strong> as long as your taxable income stays under about{" "}
-            {money(zeroCeiling)} — and your ordinary income is covered by the standard deduction, so there&apos;s
-            nothing left for the IRS to tax. {isIL ? "Illinois has no 0% bracket, so it still taxes that investment income at its flat 4.95% — that's the " + money(plan.tax.stateTax) + "." : ""}
-          </p>
-        )}
-        {conversion > 0.5 && (
-          <p className="mt-3 rounded-xl bg-foreground/5 px-3 py-2 text-[12px] text-foreground/70">
-            Of that, about <strong>{money(conversionTax)}</strong> is the tax on your rollover (best paid from cash, so the full{" "}
-            {money(conversion)} lands in Roth){isIL ? " — Illinois adds nothing on the conversion" : ""}. The other{" "}
-            {money(spendingTax)} covers your spending income.
-          </p>
-        )}
-        {isIL && !federalZero && (
-          <p className="mt-2 text-[12px] text-foreground/55">
-            🟢 Illinois taxes only your investment income — your withdrawals, RMDs, rollover, pension, and Social Security are state-tax-free.
-          </p>
-        )}
-      </div>
-    ),
-  });
 
   steps.push({
     key: "ahead",
