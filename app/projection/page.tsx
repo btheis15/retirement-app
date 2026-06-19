@@ -989,7 +989,7 @@ function MonteCarloResults({
   endAge: number;
   hasPension: boolean;
   guaranteedMonthly: number;
-  spendingStrategy: "constant" | "guardrails";
+  spendingStrategy: "constant" | "flatNominal" | "guardrails";
   selfBirthYear: number;
 }) {
   const band = real ? mc.bandReal : mc.band;

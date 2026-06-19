@@ -49,7 +49,7 @@ function fmtAge(years: number): string {
 }
 
 export default function AccountsPage() {
-  const { ready, mode, household, updateHousehold, upsertAccount, removeAccount, setMode, resetOwn } = useStore();
+  const { ready, mode, household, updateHousehold, upsertAccount, removeAccount, setMode, newExample, resetOwn } = useStore();
   const [editing, setEditing] = useState<Account | null>(null);
 
   if (!ready) return <div className="h-screen" />;
@@ -66,15 +66,27 @@ export default function AccountsPage() {
       {mode === "demo" && (
         <Card className="border-accent/30 bg-accent/5">
           <p className="text-sm text-foreground/75">
-            You&apos;re viewing the <strong>$5M example</strong>. Editing anything will start your own
-            plan (the example stays intact).
+            You&apos;re viewing a <strong>{moneyCompact(buckets.total)} sample household</strong>. Editing anything
+            will start your own plan (the example stays intact).
           </p>
-          <button
-            onClick={() => setMode("own")}
-            className="press mt-3 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white"
-          >
-            Start my own (blank)
-          </button>
+          <p className="mt-1 text-[12px] text-foreground/55">
+            🎲 <strong>New example</strong> rolls a fresh random household ($5M–$10M) — a different account mix,
+            Social Security claim ages, and spending — so you can see how the planner behaves across many situations.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              onClick={newExample}
+              className="press rounded-xl border border-primary px-4 py-2 text-sm font-semibold text-primary"
+            >
+              🎲 New example
+            </button>
+            <button
+              onClick={() => setMode("own")}
+              className="press rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white"
+            >
+              Start my own (blank)
+            </button>
+          </div>
         </Card>
       )}
 

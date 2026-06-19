@@ -37,7 +37,7 @@ const GOALS: GoalId[] = ["maxCapital", "lowestTax", "lowestRate"];
 const SPEND_MAX = 400_000;
 
 export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
-  const { household, settings, updateSettings, updateHousehold, mode, setMode } = useStore();
+  const { household, settings, updateSettings, updateHousehold, mode, setMode, newExample } = useStore();
   const year = useMemo(() => new Date().getFullYear(), []);
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState<"fwd" | "back">("fwd");
@@ -469,7 +469,16 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         <div>
           {mode === "demo" && (
             <div className="mb-3 rounded-xl border border-ss/25 bg-ss/[0.06] px-3 py-2 text-[12px] text-foreground/70">
-              📊 You&apos;re exploring a <strong>sample ~$5M household</strong> — nothing here is your real money.
+              <p>
+                📊 You&apos;re exploring a <strong>sample {moneyCompact(total)} household</strong> — nothing here is
+                your real money.
+              </p>
+              <button
+                onClick={newExample}
+                className="press mt-2 rounded-lg border border-ss/40 bg-card px-3 py-1.5 text-[12px] font-semibold text-foreground/80"
+              >
+                🎲 New example
+              </button>
             </div>
           )}
           <h2 className="text-xl font-bold leading-snug">{mode === "demo" ? "The example portfolio" : "Here’s what you have"}</h2>
