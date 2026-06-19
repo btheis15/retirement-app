@@ -220,11 +220,25 @@ const BOND_FUNDS: PoolEntry[] = [
   { ticker: "FXNAX", name: "Fidelity US Bond Index", price: 11, dps: 0.36, g: 0 },
   { ticker: "VBTLX", name: "Vanguard Total Bond Market Index", price: 9.6, dps: 0.31, g: 0 },
 ];
-/** Employer/self-employed pre-tax plan kinds — varied so examples show the planner
- *  handling more than just a rollover 401(k). */
-const PRETAX_EMPLOYER_KINDS: AccountKind[] = [
-  "rollover_401k", "traditional_401k", "traditional_401k", "rollover_401k",
-  "traditional_403b", "govt_457b", "sep_ira", "tsp_traditional",
+// Prevalence-weighted plan kinds. The weights approximate how common each account
+// type is among affluent near-retirees (a private-sector 401(k) is the norm; 403(b)
+// for teachers/hospitals/nonprofits; 457(b) for government; TSP for federal; SEP/
+// SIMPLE/Solo for the self-employed) — so a random example draws a realistic mix
+// rather than the same shape every time. Not exact survey figures; a sensible blend.
+const EMPLOYER_PRETAX_KINDS: [AccountKind, number][] = [
+  ["traditional_401k", 42],
+  ["traditional_403b", 13],
+  ["govt_457b", 8],
+  ["tsp_traditional", 5],
+  ["sep_ira", 7],
+  ["simple_ira", 4],
+  ["solo_401k", 3],
+];
+const ROTH_KINDS: [AccountKind, number][] = [
+  ["roth_ira", 80],
+  ["roth_401k", 13],
+  ["roth_403b", 4],
+  ["tsp_roth", 3],
 ];
 
 // Account-kind display labels (a local subset map; avoids importing the full meta
@@ -252,15 +266,26 @@ interface Rng {
   range: (lo: number, hi: number) => number;
   int: (lo: number, hi: number) => number;
   pick: <T>(arr: readonly T[]) => T;
+  weighted: <T>(entries: [T, number][]) => T;
   chance: (p: number) => boolean;
 }
 function makeRng(seed: number): Rng {
   const next = mulberry32(seed);
+  const weighted = <T>(entries: [T, number][]): T => {
+    const tot = entries.reduce((s, [, w]) => s + w, 0);
+    let r = next() * tot;
+    for (const [v, w] of entries) {
+      if (r < w) return v;
+      r -= w;
+    }
+    return entries[entries.length - 1][0];
+  };
   return {
     next,
     range: (lo, hi) => lo + (hi - lo) * next(),
     int: (lo, hi) => lo + Math.floor(next() * (hi - lo + 1)),
     pick: (arr) => arr[Math.floor(next() * arr.length)],
+    weighted,
     chance: (p) => next() < p,
   };
 }
@@ -335,7 +360,26 @@ function buildHoldings(
 let idSeq = 0;
 const nextId = () => `r${++idSeq}`;
 
-/** A randomized but realistic retired couple, fully determined by `seed`. */
+/** One planned account before dollars are allocated. `weight` is its relative size
+ *  WITHIN its tax bucket; `cash` flags the cash cap. */
+interface Slot {
+  owner: "self" | "spouse";
+  kind: AccountKind;
+  bucket: "pretax" | "roth" | "taxable";
+  label: string;
+  weight: number;
+  cash?: boolean;
+}
+
+/**
+ * A randomized but realistic retired couple, fully determined by `seed`.
+ *
+ * The SET of accounts varies, not just their sizes: each account type is included
+ * by an ownership-prevalence roll (many couples have no Roth, or no taxable
+ * brokerage, or only one spouse with retirement accounts, or a self-employed SEP/
+ * Solo plan, etc.), so pressing "New example" yields genuinely different shapes —
+ * not the same five accounts every time.
+ */
 export function randomDemoHousehold(seed: number): Household {
   idSeq = 0;
   const rng = makeRng(seed);
@@ -348,23 +392,18 @@ export function randomDemoHousehold(seed: number): Household {
   const ageGap = rng.int(0, 6) * (rng.chance(0.5) ? 1 : -1);
   const spouseAge = Math.min(75, Math.max(56, selfAge + ageGap));
 
-  // Social Security: a higher earner + a lower/secondary earner. Stored as the
-  // FULL benefit at FRA; the engine adjusts for each spouse's own claim age.
+  // Either spouse can be the higher lifetime earner. Stored as the FULL benefit at
+  // FRA; the engine adjusts for each spouse's own claim age. The higher earner is
+  // the more likely one to hold the big employer plan.
   const ssClaimAges = [62, 63, 64, 65, 66, 67, 68, 69, 70] as const;
-  const selfPiaHi = round(rng.range(30_000, 56_000), 1_000);
-  const spousePia = round(rng.range(0, selfPiaHi), 1_000);
+  const hiPia = round(rng.range(34_000, 56_000), 1_000);
+  const loPia = round(rng.range(0, hiPia * 0.9), 1_000);
+  const selfIsHigherEarner = rng.chance(0.5);
+  const selfPia = selfIsHigherEarner ? hiPia : loPia;
+  const spousePia = selfIsHigherEarner ? loPia : hiPia;
+  const primaryOwner: "self" | "spouse" = selfIsHigherEarner ? "self" : "spouse";
   const selfClaim = rng.pick(ssClaimAges);
   const spouseClaim = rng.pick(ssClaimAges);
-
-  // ── Total wealth, split across the three tax buckets ──────────────────────
-  const total = round(rng.range(5_000_000, 10_000_000), 50_000);
-  const wPre = rng.range(3.0, 7.0);
-  const wRoth = rng.range(0.5, 3.0);
-  const wTax = rng.range(1.2, 4.5);
-  const wSum = wPre + wRoth + wTax;
-  const pretaxTotal = (total * wPre) / wSum;
-  const rothTotal = (total * wRoth) / wSum;
-  const taxableTotal = (total * wTax) / wSum;
 
   // Older couples tilt a bit more to bonds (a light glidepath).
   const bondTilt = Math.max(0.12, Math.min(0.5, (selfAge - 55) / 60 + rng.range(-0.05, 0.1)));
@@ -372,60 +411,95 @@ export function randomDemoHousehold(seed: number): Household {
   const rothMix = { stocks: 1.6, etfs: 2.4, funds: 1, bonds: 0 }; // Roth → growth-tilted
   const brokerageMix = { stocks: 1.5, etfs: 2, funds: 1, bonds: bondTilt * 2 };
 
-  const accounts: Account[] = [];
-  const add = (label: string, kind: AccountKind, owner: "self" | "spouse", holdings: Holding[]) => {
-    if (holdings.length === 0) return;
-    accounts.push(syncAccountFromHoldings({ id: nextId(), label, kind, owner, balance: 0, holdings }));
-  };
+  // ── Decide WHICH accounts this household has (ownership prevalence) ────────
+  const slots: Slot[] = [];
+  const nameOf = (o: "self" | "spouse") => (o === "self" ? selfName : wifeName);
 
-  // ── Pre-tax: an employer plan + IRA for each spouse, split by an earner share.
-  const selfPretaxShare = rng.range(0.35, 0.78);
-  const selfPretax = pretaxTotal * selfPretaxShare;
-  const spousePretax = pretaxTotal * (1 - selfPretaxShare);
-  const buildPretaxFor = (owner: "self" | "spouse", name: string, amount: number) => {
-    if (amount < 20_000) return;
-    const employerKind = rng.pick(PRETAX_EMPLOYER_KINDS);
-    const employerLabel = ACCOUNT_KIND_LABEL[employerKind];
-    // Larger pre-tax balances split into an employer plan + a rollover/IRA.
-    if (amount > 700_000 && rng.chance(0.8)) {
-      const iraShare = rng.range(0.25, 0.5);
-      add(`${name} — ${employerLabel}`, employerKind, owner, buildHoldings(rng, amount * (1 - iraShare), pretaxMix, false));
-      add(`${name} — Traditional IRA`, "traditional_ira", owner, buildHoldings(rng, amount * iraShare, pretaxMix, false));
-    } else if (rng.chance(0.5)) {
-      add(`${name} — ${employerLabel}`, employerKind, owner, buildHoldings(rng, amount, pretaxMix, false));
-    } else {
-      add(`${name} — Traditional IRA`, "traditional_ira", owner, buildHoldings(rng, amount, pretaxMix, false));
+  // Per-spouse retirement accounts. The primary (higher) earner is much more likely
+  // to have a workplace plan; the secondary earner often does too, but not always.
+  for (const owner of ["self", "spouse"] as const) {
+    const isPrimary = owner === primaryOwner;
+    const name = nameOf(owner);
+
+    // Workplace pre-tax plan (401k/403b/457/TSP/SEP/SIMPLE/Solo).
+    if (rng.chance(isPrimary ? 0.86 : 0.5)) {
+      const kind = rng.weighted(EMPLOYER_PRETAX_KINDS);
+      slots.push({ owner, kind, bucket: "pretax", label: `${name} — ${ACCOUNT_KIND_LABEL[kind]}`, weight: rng.range(2.5, 6) });
+      // A rollover from a former employer is common on top of a current plan.
+      if (rng.chance(isPrimary ? 0.45 : 0.25)) {
+        const rollKind: AccountKind = rng.chance(0.6) ? "rollover_401k" : "traditional_ira";
+        const rollLabel = rollKind === "rollover_401k" ? "Rollover 401(k) (former employer)" : "Rollover IRA";
+        slots.push({ owner, kind: rollKind, bucket: "pretax", label: `${name} — ${rollLabel}`, weight: rng.range(1.2, 4) });
+      }
     }
-  };
-  buildPretaxFor("self", selfName, selfPretax);
-  buildPretaxFor("spouse", wifeName, spousePretax);
-
-  // ── Roth: a Roth IRA for one or both spouses (sometimes only one has one).
-  const selfRothShare = rng.range(0.3, 0.85);
-  const bothHaveRoth = rng.chance(0.7);
-  if (bothHaveRoth) {
-    const selfKind: AccountKind = rng.chance(0.2) ? "roth_401k" : "roth_ira";
-    add(`${selfName} — ${ACCOUNT_KIND_LABEL[selfKind]}`, selfKind, "self", buildHoldings(rng, rothTotal * selfRothShare, rothMix, false));
-    add(`${wifeName} — Roth IRA`, "roth_ira", "spouse", buildHoldings(rng, rothTotal * (1 - selfRothShare), rothMix, false));
-  } else {
-    const owner: "self" | "spouse" = rng.chance(0.5) ? "self" : "spouse";
-    add(`${owner === "self" ? selfName : wifeName} — Roth IRA`, "roth_ira", owner, buildHoldings(rng, rothTotal, rothMix, false));
+    // A standalone Traditional IRA (contributory or a long-ago rollover).
+    if (rng.chance(isPrimary ? 0.55 : 0.45)) {
+      slots.push({ owner, kind: "traditional_ira", bucket: "pretax", label: `${name} — Traditional IRA`, weight: rng.range(1.5, 4.5) });
+    }
+    // Roth — many households have none; balances skew smaller when present.
+    if (rng.chance(isPrimary ? 0.48 : 0.38)) {
+      const kind = rng.weighted(ROTH_KINDS);
+      slots.push({ owner, kind, bucket: "roth", label: `${name} — ${ACCOUNT_KIND_LABEL[kind]}`, weight: rng.range(0.4, 2.4) });
+    }
   }
 
-  // ── Taxable: a joint brokerage with embedded gains + a cash/CD account.
-  const cashTotal = Math.min(taxableTotal * rng.range(0.08, 0.3), round(rng.range(50_000, 500_000), 10_000));
-  const brokerageTotal = Math.max(0, taxableTotal - cashTotal);
-  add("Joint Brokerage", "brokerage", "self", buildHoldings(rng, brokerageTotal, brokerageMix, true));
-  if (cashTotal > 5_000) {
-    const half = Math.round(cashTotal / 2);
-    accounts.push(syncAccountFromHoldings({
-      id: nextId(), label: "Savings / CDs", kind: "cash", owner: "self", balance: 0,
-      holdings: [
-        { ticker: "CASH", name: "High-Yield Savings", type: "cash", shares: cashTotal - half, price: 1, costPerShare: 1 },
-        { ticker: "CD", name: "12-month CD", type: "cash", shares: half, price: 1, costPerShare: 1 },
-      ],
-    }));
+  // Household taxable money: a brokerage and/or cash — each only sometimes present.
+  if (rng.chance(0.62)) {
+    const joint = rng.chance(0.7);
+    slots.push({ owner: "self", kind: "brokerage", bucket: "taxable", label: joint ? "Joint Brokerage" : `${nameOf(primaryOwner)} — Brokerage`, weight: rng.range(1, 5) });
   }
+  if (rng.chance(0.72)) {
+    slots.push({ owner: "self", kind: "cash", bucket: "taxable", label: "Savings / CDs", weight: rng.range(0.3, 1.3), cash: true });
+  }
+
+  // Guarantee a sane household: at least one pre-tax account (retirees almost always
+  // have one), and never fewer than two accounts total.
+  if (!slots.some((s) => s.bucket === "pretax")) {
+    slots.push({ owner: primaryOwner, kind: "traditional_ira", bucket: "pretax", label: `${nameOf(primaryOwner)} — Rollover IRA`, weight: rng.range(3, 6) });
+  }
+  if (slots.length < 2) {
+    slots.push({ owner: "self", kind: "cash", bucket: "taxable", label: "Savings / CDs", weight: rng.range(0.3, 1.0), cash: true });
+  }
+
+  // ── Allocate the $5M–$10M total across the chosen accounts ────────────────
+  const total = round(rng.range(5_000_000, 10_000_000), 50_000);
+  const wSum = slots.reduce((s, sl) => s + sl.weight, 0);
+  const dollars = slots.map((sl) => (total * sl.weight) / wSum);
+  // Cap cash at a believable level; spill the excess back into the other accounts.
+  let cashTotal = 0;
+  slots.forEach((sl, i) => {
+    if (!sl.cash) return;
+    const cap = round(rng.range(50_000, 500_000), 10_000);
+    if (dollars[i] > cap) {
+      const excess = dollars[i] - cap;
+      dollars[i] = cap;
+      const otherW = slots.reduce((s, o, j) => (j !== i && !o.cash ? s + dollars[j] : s), 0);
+      if (otherW > 0) slots.forEach((o, j) => { if (j !== i && !o.cash) dollars[j] += (excess * dollars[j]) / otherW; });
+    }
+    cashTotal += dollars[i];
+  });
+
+  // ── Build the accounts ────────────────────────────────────────────────────
+  const accounts: Account[] = [];
+  slots.forEach((sl, i) => {
+    const amt = dollars[i];
+    if (amt < 5_000) return;
+    if (sl.cash) {
+      const half = Math.round(amt / 2);
+      accounts.push(syncAccountFromHoldings({
+        id: nextId(), label: sl.label, kind: "cash", owner: sl.owner, balance: 0,
+        holdings: [
+          { ticker: "CASH", name: "High-Yield Savings", type: "cash", shares: Math.round(amt - half), price: 1, costPerShare: 1 },
+          { ticker: "CD", name: "12-month CD", type: "cash", shares: half, price: 1, costPerShare: 1 },
+        ],
+      }));
+      return;
+    }
+    const mix = sl.bucket === "roth" ? rothMix : sl.bucket === "taxable" ? brokerageMix : pretaxMix;
+    const holdings = buildHoldings(rng, amt, mix, sl.bucket === "taxable");
+    if (holdings.length === 0) return;
+    accounts.push(syncAccountFromHoldings({ id: nextId(), label: sl.label, kind: sl.kind, owner: sl.owner, balance: 0, holdings }));
+  });
 
   // ── Derived income + spending ─────────────────────────────────────────────
   const taxableHoldings = accounts.filter((a) => a.kind === "brokerage" || a.kind === "cash").flatMap((a) => a.holdings ?? []);
@@ -437,7 +511,7 @@ export function randomDemoHousehold(seed: number): Household {
   const pensionAnnual = rng.chance(0.25) ? round(rng.range(20_000, 70_000), 1_000) : 0;
 
   return {
-    self: { label: selfName, birthYear: thisYear - selfAge, socialSecurityAnnual: selfPiaHi, ssClaimAge: selfClaim },
+    self: { label: selfName, birthYear: thisYear - selfAge, socialSecurityAnnual: selfPia, ssClaimAge: selfClaim },
     spouse: { label: wifeName, birthYear: thisYear - spouseAge, socialSecurityAnnual: spousePia, ssClaimAge: spouseClaim },
     pensionAnnual,
     annualSpending,
