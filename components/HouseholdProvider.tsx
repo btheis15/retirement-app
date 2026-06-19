@@ -20,6 +20,10 @@ interface Store {
   household: Household;
   settings: PlannerSettings;
   setMode: (m: Mode) => void;
+  /** Re-roll the example to a fresh randomized household (different size, account
+   *  mix, Social Security claim ages, spending). Switches into demo mode if needed.
+   *  Deterministic per seed; the example then stays put until you re-roll again. */
+  newExample: () => void;
   updateHousehold: (patch: Partial<Household>) => void;
   setAccounts: (accounts: Account[]) => void;
   upsertAccount: (a: Account) => void;
@@ -40,6 +44,7 @@ interface Store {
 const KEY_MODE = "rto-mode";
 const KEY_OWN = "rto-own-household";
 const KEY_SETTINGS = "rto-settings";
+const KEY_DEMO_SEED = "rto-demo-seed";
 
 const Ctx = createContext<Store | null>(null);
 
@@ -53,6 +58,11 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   // Held separately so the demo stays the demo while you explore it. (null = the
   // example's built-in spending.)
   const [demoSpending, setDemoSpending] = useState<number | null>(null);
+  // Which example to show: null = the classic fixed $5M example (the familiar
+  // first-load picture); any number = a randomized example deterministic in that
+  // seed. "New example" hands a fresh seed; it persists so the example stays put
+  // across navigation/reload until you re-roll.
+  const [demoSeed, setDemoSeed] = useState<number | null>(null);
 
   // Hydrate from localStorage after mount (avoids SSR mismatch).
   useEffect(() => {
@@ -63,6 +73,11 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       if (own) setOwnHousehold(JSON.parse(own));
       const s = localStorage.getItem(KEY_SETTINGS);
       if (s) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(s) });
+      const seed = localStorage.getItem(KEY_DEMO_SEED);
+      if (seed != null) {
+        const n = Number(seed);
+        if (Number.isFinite(n) && n !== 0) setDemoSeed(n);
+      }
     } catch {
       /* ignore */
     }
@@ -88,6 +103,22 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Re-roll the example. A fresh nonzero seed → a new randomized household; the
+  // generator is deterministic in the seed, so the new example is reproducible and
+  // stays put until the next re-roll. Math.random is fine here (browser UI event).
+  const newExample = useCallback(() => {
+    const seed = (Math.floor(Math.random() * 0x7fffffff) || 1) + 1; // nonzero
+    setDemoSeed(seed);
+    setDemoSpending(null); // a new example starts from its own built-in spending
+    setModeState("demo");
+    try {
+      localStorage.setItem(KEY_DEMO_SEED, String(seed));
+      localStorage.setItem(KEY_MODE, "demo");
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   // The demo household is read-only; editing while in demo mode silently forks
   // your edits into "own" mode so the example stays pristine. Memoized so it keeps
   // a STABLE reference across renders (demoHousehold() deep-copies on each call) —
@@ -97,9 +128,9 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     // Derive taxable dividend totals from per-holding data (when present) so the
     // tax engine and every view agree on the same per-share-based numbers.
     if (mode !== "demo") return syncHouseholdDividends(ownHousehold);
-    const h = demoHousehold();
+    const h = demoHousehold(demoSeed);
     return syncHouseholdDividends(demoSpending != null ? { ...h, annualSpending: demoSpending } : h);
-  }, [mode, ownHousehold, demoSpending]);
+  }, [mode, ownHousehold, demoSpending, demoSeed]);
 
   const editApply = useCallback(
     (next: Household) => {
@@ -122,36 +153,36 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         setDemoSpending(patch.annualSpending);
         return;
       }
-      const base = mode === "demo" ? { ...demoHousehold(), ...(demoSpending != null ? { annualSpending: demoSpending } : {}) } : ownHousehold;
+      const base = mode === "demo" ? { ...demoHousehold(demoSeed), ...(demoSpending != null ? { annualSpending: demoSpending } : {}) } : ownHousehold;
       editApply({ ...base, ...patch });
     },
-    [mode, ownHousehold, demoSpending, editApply],
+    [mode, ownHousehold, demoSpending, demoSeed, editApply],
   );
 
   const setAccounts = useCallback(
     (accounts: Account[]) => {
-      const base = mode === "demo" ? demoHousehold() : ownHousehold;
+      const base = mode === "demo" ? demoHousehold(demoSeed) : ownHousehold;
       editApply({ ...base, accounts });
     },
-    [mode, ownHousehold, editApply],
+    [mode, ownHousehold, demoSeed, editApply],
   );
 
   const upsertAccount = useCallback(
     (a: Account) => {
-      const base = mode === "demo" ? demoHousehold() : ownHousehold;
+      const base = mode === "demo" ? demoHousehold(demoSeed) : ownHousehold;
       const exists = base.accounts.some((x) => x.id === a.id);
       const accounts = exists ? base.accounts.map((x) => (x.id === a.id ? a : x)) : [...base.accounts, a];
       editApply({ ...base, accounts });
     },
-    [mode, ownHousehold, editApply],
+    [mode, ownHousehold, demoSeed, editApply],
   );
 
   const removeAccount = useCallback(
     (id: string) => {
-      const base = mode === "demo" ? demoHousehold() : ownHousehold;
+      const base = mode === "demo" ? demoHousehold(demoSeed) : ownHousehold;
       editApply({ ...base, accounts: base.accounts.filter((x) => x.id !== id) });
     },
-    [mode, ownHousehold, editApply],
+    [mode, ownHousehold, demoSeed, editApply],
   );
 
   const updateSettings = useCallback((patch: Partial<PlannerSettings>) => {
@@ -269,6 +300,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       household,
       settings,
       setMode,
+      newExample,
       updateHousehold,
       setAccounts,
       upsertAccount,
@@ -279,7 +311,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       applyLiveDividends,
       loadOwn,
     }),
-    [ready, mode, household, settings, setMode, updateHousehold, setAccounts, upsertAccount, removeAccount, updateSettings, resetOwn, applyLivePrices, applyLiveDividends, loadOwn],
+    [ready, mode, household, settings, setMode, newExample, updateHousehold, setAccounts, upsertAccount, removeAccount, updateSettings, resetOwn, applyLivePrices, applyLiveDividends, loadOwn],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
