@@ -891,6 +891,17 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     <p className="mt-1 text-[10px] text-foreground/45">
                       Spans good and bad market sequences, not a single average path.
                     </p>
+                    <Info q="How is this range figured?" sources={[SOURCES.monteCarlo, SOURCES.cma]}>
+                      We replay your whole plan across {(confidence?.runs ?? 300).toLocaleString()} different market histories
+                      (a &ldquo;Monte Carlo&rdquo; simulation). In each one, every year we roll the dice on stocks, bonds, cash,
+                      and inflation <em>together</em> — the way they actually move, so a 2022-style year where stocks and bonds
+                      fall while inflation spikes can happen — and we allow more big crashes and booms than a plain bell curve
+                      would (&ldquo;fat tails&rdquo;). Each year&apos;s spending is withdrawn <em>before</em> the market grows, so
+                      a bad early stretch hurts the way it really would (sequence-of-returns risk). The shaded band is the
+                      middle range (10th–90th percentile) of where you land; the dark line is the median. Returns use
+                      forward-looking 2026 capital-market assumptions (≈7.9% stocks / 4.9% bonds, cross-checked across J.P.
+                      Morgan, Vanguard &amp; Morningstar), not a backward-looking ~10% average.
+                    </Info>
                   </>
                 ) : (
                   <div className="flex items-center gap-2 py-6 text-[12px] text-foreground/55">
@@ -1032,12 +1043,25 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   </div>
                 </div>
 
+                {medicareEnrollees > 0 && (before?.inSurcharge || after?.inSurcharge) && (() => {
+                  const t = after?.inSurcharge ? after : before;
+                  const perMo = Math.round(t?.curPerPersonMo ?? 0);
+                  return (
+                    <p className="mt-1.5 px-1 text-[10px] leading-relaxed text-foreground/45">
+                      The Medicare figures are the <strong>yearly total for everyone on Medicare</strong>, not per person.{" "}
+                      {medicareEnrollees > 1
+                        ? `Both of you are enrolled — about ${money(perMo)}/mo each (${money(perMo)} × 12 × 2).`
+                        : `Only one of you is 65+ so far, so it covers one person (${money(perMo)}/mo × 12); your spouse adds the same once they reach 65.`}
+                    </p>
+                  );
+                })()}
+
                 {medicareEnrollees > 0 && irmaaJump > 1 && (
                   <p className="mt-2 rounded-xl border border-tax/30 bg-tax/[0.06] px-3 py-2 text-[12px] leading-relaxed text-foreground/80">
                     🏥 The rollover lifts your Medicare from <strong>{tierName(before?.curLabel ?? "")}</strong>{" "}to{" "}
                     <strong>{tierName(after?.curLabel ?? "")}</strong> — about <strong>+{money(irmaaJump)}/yr</strong>{" "}in extra
-                    premiums (billed two years out, for {medicareEnrollees > 1 ? "both of you" : "you"}). The next rollover step
-                    shows the full bracket math.
+                    premiums {medicareEnrollees > 1 ? "for both of you combined" : "for the one of you on Medicare"} (billed two
+                    years out). The next rollover step shows the full bracket math.
                   </p>
                 )}
                 {(() => {

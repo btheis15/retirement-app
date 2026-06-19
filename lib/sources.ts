@@ -47,4 +47,12 @@ export const SOURCES = {
     url: "https://tax.illinois.gov/content/dam/soi/en/web/tax/research/publications/pubs/documents/pub-120.pdf",
   },
   ilRate: { label: "IL Dept. of Revenue — individual income tax rate & exemptions", url: "https://tax.illinois.gov/research/taxrates/income.html" },
+  monteCarlo: {
+    label: "T. Rowe Price — How a Monte Carlo analysis works in retirement planning",
+    url: "https://www.troweprice.com/personal-investing/resources/insights/how-monte-carlo-analysis-could-improve-your-retirement-plan.html",
+  },
+  cma: {
+    label: "Vanguard Capital Markets Model — forward-looking return, volatility & correlation forecasts",
+    url: "https://corporate.vanguard.com/content/corporatesite/us/en/corp/vemo/vemo-return-forecasts.html",
+  },
 } as const;
