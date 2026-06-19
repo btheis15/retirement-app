@@ -624,18 +624,19 @@ export default function ProjectionPage() {
           <div className="border-t border-border/50 pt-2">
             <span className="text-[13px] font-medium">Spending strategy</span>
             <span className="mt-0.5 block text-[11px] leading-snug text-foreground/55">
-              <strong>Steady</strong> spends a fixed inflation-adjusted amount every year. <strong>Guardrails</strong>{" "}
-              (Guyton-Klinger) trims spending ~10% after bad markets and raises it after good ones — far more survivable,
-              the way a real retiree adjusts.
+              <strong>Rises with inflation</strong> keeps your lifestyle steady — the dollar amount grows ~
+              {percent(settings.inflationRate, 1)}/yr (the sensible default). <strong>Flat</strong> spends the same
+              dollars every year (buys less over time). <strong>Guardrails</strong> (Guyton-Klinger) trims ~10% after bad
+              markets and raises it after good ones — the most survivable, the way a real retiree adjusts.
             </span>
-            <div className="mt-1.5 grid grid-cols-2 gap-2">
-              {(["constant", "guardrails"] as const).map((s) => (
+            <div className="mt-1.5 grid grid-cols-3 gap-2">
+              {(["constant", "flatNominal", "guardrails"] as const).map((s) => (
                 <button
                   key={s}
                   onClick={() => updateSettings({ spendingStrategy: s })}
-                  className={`press rounded-xl border px-2 py-1.5 text-center text-[12px] font-semibold ${settings.spendingStrategy === s ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/70"}`}
+                  className={`press rounded-xl border px-2 py-1.5 text-center text-[11.5px] font-semibold ${settings.spendingStrategy === s ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/70"}`}
                 >
-                  {s === "constant" ? "Steady (fixed)" : "Guardrails (flex)"}
+                  {s === "constant" ? "Rises w/ inflation" : s === "flatNominal" ? "Flat (same $)" : "Guardrails"}
                 </button>
               ))}
             </div>
