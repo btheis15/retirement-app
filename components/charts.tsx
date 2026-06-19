@@ -327,7 +327,9 @@ export function FanChart({
           <g>
             <line x1={xAt(hoverI)} y1={padT} x2={xAt(hoverI)} y2={height - padB} stroke="var(--color-foreground)" strokeOpacity={0.35} strokeWidth="1" />
             <circle cx={xAt(hoverI)} cy={yAt(hb.p90)} r="2.5" fill={color} />
+            {hb.p75 != null && <circle cx={xAt(hoverI)} cy={yAt(hb.p75)} r="2.5" fill={color} fillOpacity={0.95} />}
             <circle cx={xAt(hoverI)} cy={yAt(hb.p50)} r="3" fill={lineColor} />
+            {hb.p25 != null && <circle cx={xAt(hoverI)} cy={yAt(hb.p25)} r="2.5" fill={color} fillOpacity={0.95} />}
             <circle cx={xAt(hoverI)} cy={yAt(hb.p10)} r="2.5" fill={color} />
           </g>
         )}
@@ -341,9 +343,14 @@ export function FanChart({
             {band[hoverI!].year}
             {startAge != null ? ` · age ${ageAt(hoverI!)}` : ""}
           </div>
-          <div className="mt-0.5 flex items-center gap-1 text-foreground/60"><span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color }} /> best 10%: {fmt(hb.p90)}</div>
+          <div className="mt-0.5 flex items-center gap-1 text-foreground/60"><span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color, opacity: 0.55 }} /> best 10%: {fmt(hb.p90)}</div>
+          {hb.p25 != null && hb.p75 != null && (
+            <div className="flex items-center gap-1 text-foreground/70">
+              <span className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ background: color, opacity: 0.45 }} /> middle 50%: {fmt(hb.p25)}–{fmt(hb.p75)}
+            </div>
+          )}
           <div className="flex items-center gap-1 font-semibold" style={{ color: lineColor }}><span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: lineColor }} /> typical: {fmt(hb.p50)}</div>
-          <div className="flex items-center gap-1 text-foreground/60"><span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color }} /> worst 10%: {fmt(hb.p10)}</div>
+          <div className="flex items-center gap-1 text-foreground/60"><span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color, opacity: 0.55 }} /> worst 10%: {fmt(hb.p10)}</div>
         </div>
       )}
     </div>

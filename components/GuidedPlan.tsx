@@ -810,6 +810,31 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </p>
           )}
 
+          {/* Why no IRMAA today can be temporary: a take-home spend funded largely from
+              already-taxed/non-taxable money (cash & CD principal, brokerage cost basis,
+              Roth) keeps MAGI low NOW — but as those drain and RMDs ramp, MAGI climbs and
+              a surcharge can arrive. Only shown when the gap is real AND the no-conversion
+              projection actually crosses into IRMAA in a future year. */}
+          {(() => {
+            if (irmaaCliff?.inSurcharge) return null; // already in surcharge — covered above
+            const magiNow = Math.round(liveImpact.magi);
+            const spendNow = Math.round(localSpend);
+            const gap = spendNow - magiNow;
+            const firstIrmaa = compare.none.rows.find((r) => r.irmaa > 0 && r.year > year);
+            if (!firstIrmaa || gap < 50_000) return null;
+            return (
+              <p className="mt-2 rounded-xl border border-ss/25 bg-ss/[0.06] px-3 py-2 text-[11.5px] leading-relaxed text-foreground/70">
+                ⏳ <strong>Don&apos;t count on $0 IRMAA forever — this is mostly a &ldquo;right now&rdquo; thing.</strong> A big
+                slice of your {money(spendNow)}{" "}comes from money that isn&apos;t taxable income — cash &amp; CD principal, the
+                original cost of your brokerage holdings (you already paid tax on it), and any Roth — so your taxable income
+                (MAGI) is only about {money(magiNow)} this year, well under the surcharge line. As those draw down and required
+                withdrawals (RMDs) ramp up, more of your spending comes from pre-tax accounts and your MAGI climbs: even funding
+                it the way you do now, your Forecast crosses into an IRMAA surcharge around <strong>{firstIrmaa.year}</strong>{" "}
+                (age {firstIrmaa.selfAge}). No surprise later — it&apos;s already in the projections.
+              </p>
+            );
+          })()}
+
           {medicareEnrollees > 0 && (
             <Info q="How is this Medicare (IRMAA) number figured — and why doesn't it match Medicare's premium table?" sources={[SOURCES.irmaa]}>
               <p>
@@ -1041,10 +1066,73 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </p>
 
             {rollAmt < 1 ? (
-              <Callout tone="info" icon="✓" title="No rollover recommended this year">
-                At your current income there&apos;s little or nothing to gain from converting right now — the plan revisits this
-                automatically each year.
-              </Callout>
+              (() => {
+                // Nothing to convert THIS year — so answer the real question: WHEN does
+                // it start to pay off? Read it straight from the projection. compare.smooth
+                // is the rate-arbitrage path; its first FUTURE conversion year is the answer.
+                const noneThis = compare.none.rows[0];
+                const convRows = compare.smooth.rows.filter((r) => r.conversion > 1);
+                const fc = convRows.find((r) => r.year > year);
+                const gainReal = compare.smooth.endingEstateAfterTaxReal - compare.none.endingEstateAfterTaxReal;
+                const peakRate = compare.none.peakMarginalRate;
+                const peakRmd = compare.none.peakRmd;
+                const thisRate = noneThis?.marginalRate ?? planNoConv.tax.marginalOrdinaryRate;
+                const thisMagi = Math.round(noneThis?.magi ?? planNoConv.tax.magi);
+
+                if (fc && gainReal > 1_000) {
+                  const total = compare.smooth.totalConverted;
+                  const yearsAway = fc.year - year;
+                  const avgPerYear = Math.round(total / Math.max(1, convRows.length));
+                  return (
+                    <>
+                      <Callout tone="info" icon="📅" title={`Start rolling over in ${fc.year} — at age ${fc.selfAge}`}>
+                        Not this year. Your plan converts only in years when moving the money costs less than letting it
+                        come out later as a forced withdrawal (RMD) — and <strong>{fc.year}</strong>
+                        {yearsAway > 0 ? <>, about {yearsAway} {yearsAway === 1 ? "year" : "years"} out,</> : null}{" "}is the
+                        first year that&apos;s true for you. Converting sooner would push your next dollars into a higher
+                        rate (counting how a rollover adds to your taxable Social Security and Medicare premiums), so the
+                        plan waits for the room to open.
+                      </Callout>
+
+                      <div className="mt-3 rounded-2xl border border-border p-3 text-[12.5px] leading-relaxed">
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-foreground/45">
+                          The math, straight from your projection
+                        </div>
+                        <ul className="mt-2 space-y-1.5 text-foreground/75">
+                          <li>
+                            📅 First rollover in <strong>{fc.year}</strong> (age {fc.selfAge}), then about{" "}
+                            <strong>{convRows.length} {convRows.length === 1 ? "year" : "years"}</strong> of conversions —
+                            roughly <strong>{moneyCompact(avgPerYear)}/yr</strong>, <strong>{moneyCompact(total)}</strong>{" "}
+                            moved into tax-free Roth in all.
+                          </li>
+                          <li>
+                            🪜 Each move is taxed around <strong>{percent(fc.marginalRate, 0)}</strong> — versus up to{" "}
+                            <strong>{percent(peakRate, 0)}</strong> on the RMDs it heads off (which would otherwise force
+                            out as much as <strong>{moneyCompact(peakRmd)}</strong> in a single year).
+                          </li>
+                          <li>
+                            💰 Net projected payoff: about <strong>{moneyCompact(gainReal)}</strong>{" "}more for your
+                            family after every tax is paid (in today&apos;s dollars).
+                          </li>
+                        </ul>
+                        <p className="mt-2 text-[11px] text-foreground/55">
+                          The plan does this for you automatically — there&apos;s nothing to act on this year.
+                        </p>
+                      </div>
+                    </>
+                  );
+                }
+
+                return (
+                  <Callout tone="info" icon="✓" title="No rollover pays off — this year or later">
+                    The plan checked every year through age <strong>{settings.convertUntilAge}</strong> and found none where
+                    converting clearly wins: your taxable income never drops far enough below the{" "}
+                    <strong>{percent(peakRate, 0)}</strong> your future RMDs are taxed at to make paying the tax early worth
+                    it. That&apos;s the right answer for your numbers — and the plan re-checks it automatically each year, so
+                    if a lower-income or down-market year opens up, it&apos;ll flag the conversion then.
+                  </Callout>
+                );
+              })()
             ) : (
               <>
                 <div className="mt-4 rounded-2xl border border-border p-3">
@@ -1072,8 +1160,13 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   </div>
                   <div className="grid grid-cols-[1fr_6.5rem_5.5rem] items-center gap-x-3 bg-gain/[0.05] px-3 py-2">
                     <span className="font-medium text-gain">+ Roth rollover</span>
-                    <span className="tabular text-right text-gain">+{money(Math.round(addlMagi))}</span>
-                    <span className="tabular text-right text-foreground/45">+{moneyCompact(rollTax)} tax</span>
+                    <span className="tabular text-right text-gain">
+                      +{money(Math.round(addlMagi))}
+                      <span className="block text-[10px] font-normal text-foreground/45">≈{moneyCompact(rollTax)} income tax</span>
+                    </span>
+                    <span className="tabular text-right text-foreground/70">
+                      {medicareEnrollees === 0 ? "—" : irmaaJump > 1 ? `+${moneyCompact(irmaaJump)}/yr` : "none"}
+                    </span>
                   </div>
                   <div className="grid grid-cols-[1fr_6.5rem_5.5rem] items-center gap-x-3 border-t border-border/60 px-3 py-2 font-semibold">
                     <span>{on ? "= Your full plan" : "= If you do it"}</span>
