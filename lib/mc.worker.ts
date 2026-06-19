@@ -12,12 +12,14 @@
 import { runMonteCarlo } from "./monteCarlo";
 import { runHistoricalBootstrap } from "./returnsHistorical";
 import { runRegimeSwitching } from "./returnsRegime";
-import type { MonteCarloRequest } from "./mcClient";
+import { runPairedMonteCarlo } from "./compareMonteCarlo";
+import type { MonteCarloRequest, PairedRequest } from "./mcClient";
 
 // `self` in a worker isn't a Window; cast to a minimal shape to avoid the DOM
 // `postMessage(message, targetOrigin)` typing leaking in.
+type IncomingMessage = (MonteCarloRequest | PairedRequest) & { id: number };
 const ctx = self as unknown as {
-  onmessage: ((e: MessageEvent<MonteCarloRequest & { id: number }>) => void) | null;
+  onmessage: ((e: MessageEvent<IncomingMessage>) => void) | null;
   postMessage: (message: unknown) => void;
 };
 
@@ -26,11 +28,13 @@ ctx.onmessage = (e) => {
   try {
     const opts = { model: msg.model, runs: msg.runs, seed: msg.seed };
     const result =
-      msg.kind === "mc"
-        ? runMonteCarlo(msg.household, msg.assumptions, opts)
-        : msg.kind === "bootstrap"
-          ? runHistoricalBootstrap(msg.household, msg.assumptions, opts)
-          : runRegimeSwitching(msg.household, msg.assumptions, opts);
+      msg.kind === "paired"
+        ? runPairedMonteCarlo(msg.household, msg.assumptionsA, msg.assumptionsB, opts)
+        : msg.kind === "mc"
+          ? runMonteCarlo(msg.household, msg.assumptions, opts)
+          : msg.kind === "bootstrap"
+            ? runHistoricalBootstrap(msg.household, msg.assumptions, opts)
+            : runRegimeSwitching(msg.household, msg.assumptions, opts);
     ctx.postMessage({ id: msg.id, result });
   } catch (err) {
     ctx.postMessage({ id: msg.id, error: err instanceof Error ? err.message : String(err) });
