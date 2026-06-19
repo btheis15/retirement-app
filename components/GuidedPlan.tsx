@@ -687,6 +687,42 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </>
           )}
 
+          {/* Each year after this: grow with inflation (sensible default) or stay flat.
+              Costs rise, so flat spending for decades quietly erodes your lifestyle — we
+              default to keeping it steady in real terms, but let you choose flat. */}
+          {(() => {
+            const isFlat = settings.spendingStrategy === "flatNominal";
+            const yearsToEnd = Math.max(0, settings.endAge - plan.selfAge);
+            const grownAtEnd = localSpend * Math.pow(1 + settings.inflationRate, yearsToEnd);
+            return (
+              <div className="mt-4 rounded-2xl border border-border p-3">
+                <div className="text-[12px] font-semibold">Each year after this…</div>
+                <p className="mt-0.5 text-[12px] leading-relaxed text-foreground/60">
+                  Prices rise over time, so by default we grow your spending with inflation (about{" "}
+                  {percent(settings.inflationRate, 1)}/yr) to keep your lifestyle the same — {money(localSpend)} today
+                  would be about <strong>{money(Math.round(grownAtEnd))}</strong>/yr at age {settings.endAge}. The
+                  forecasts below already do this.
+                </p>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => updateSettings({ spendingStrategy: "constant" })}
+                    className={`press rounded-xl border p-2 text-left ${!isFlat ? "border-primary bg-primary/10" : "border-border"}`}
+                  >
+                    <div className="text-[12px] font-semibold">Grow with inflation</div>
+                    <div className="text-[10px] text-foreground/55">keeps your lifestyle · recommended</div>
+                  </button>
+                  <button
+                    onClick={() => updateSettings({ spendingStrategy: "flatNominal" })}
+                    className={`press rounded-xl border p-2 text-left ${isFlat ? "border-primary bg-primary/10" : "border-border"}`}
+                  >
+                    <div className="text-[12px] font-semibold">Keep it flat</div>
+                    <div className="text-[10px] text-foreground/55">same dollars · buys less each year</div>
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Quick amounts — anchor the choice to a meaningful number in one tap.
               The recommended ~4% safe-pace amount leads, styled as the default. */}
           {(recSpend != null || chips.length > 0) && (

@@ -51,10 +51,11 @@ export interface ProjectionAssumptions {
   /** Marginal rate a non-spouse heir pays on inherited pre-tax, spread over the
    *  SECURE 10-year window. Drives the after-tax estate. Default 0.24. */
   heirTaxRate?: number;
-  /** Spending behavior. "constant" (default) = a fixed real (inflation-grown)
-   *  amount every year. "guardrails" = Guyton-Klinger dynamic spending: flex up in
-   *  good markets and trim in bad ones, which materially raises survivability. */
-  spendingStrategy?: "constant" | "guardrails";
+  /** Spending behavior. "constant" (default) = a fixed REAL amount — the nominal
+   *  spend grows with inflation each year, holding lifestyle steady. "flatNominal" =
+   *  the same DOLLAR amount every year (real value erodes). "guardrails" =
+   *  Guyton-Klinger dynamic spending: flex up in good markets and trim in bad ones. */
+  spendingStrategy?: "constant" | "flatNominal" | "guardrails";
 }
 
 export interface ProjectionRow {
@@ -403,6 +404,7 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
   // the planning withdrawal rate the guardrails defend. refSpend is dropped at the
   // survivor transition so the rate recenters on the survivor's lower baseline.
   const useGuardrails = assumptions.spendingStrategy === "guardrails";
+  const flatNominal = assumptions.spendingStrategy === "flatNominal";
   const W0 = h.annualSpending;
   const P0 = h.accounts.reduce((s, a) => s + a.balance, 0);
   let refSpend = W0; // the intended real spend (steps down at the survivor transition)
@@ -580,7 +582,12 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
     const yearInfl = inflationFor ? inflationFor(year - startYear) : inflationRate;
     if (useGuardrails) {
       h.annualSpending = guytonKlinger(h.annualSpending, endTotal, yearReturn, refSpend, P0, yearInfl, endAge - selfAge);
+    } else if (flatNominal) {
+      // "Flat" = the SAME dollar amount every year. Spending does NOT grow, so its
+      // real purchasing power erodes with inflation (an opt-in for those who want it).
     } else {
+      // Default: constant REAL spending — grow the nominal amount with inflation so
+      // the lifestyle stays the same year to year.
       h.annualSpending *= 1 + yearInfl;
     }
     // Social Security COLA (tracks realized inflation, like the indexed brackets).

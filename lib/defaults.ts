@@ -48,9 +48,9 @@ export interface PlannerSettings {
   /** Assumed marginal tax rate a non-spouse heir pays on the inherited pre-tax,
    *  spread over the SECURE Act 10-year window. Advanced; default 24%. */
   heirTaxRate: number;
-  /** Spending behavior: "constant" real (default) or "guardrails" (Guyton-Klinger
-   *  dynamic spending — flex up/down with the markets). Advanced. */
-  spendingStrategy: "constant" | "guardrails";
+  /** Spending behavior: "constant" real (default — grows with inflation), "flatNominal"
+   *  (same dollars every year), or "guardrails" (Guyton-Klinger dynamic spending). */
+  spendingStrategy: "constant" | "flatNominal" | "guardrails";
   /** Sex used for the Gompertz longevity model (survival curve / plan-to age).
    *  "blended" = unisex average; only affects the longevity display, not taxes. */
   selfSex: Sex;

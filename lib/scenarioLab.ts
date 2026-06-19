@@ -39,7 +39,7 @@ export interface LabAssumptions {
   convertUntilAge: number;
   survivor: { firstDeathAge: number; spendingFactor: number } | null;
   heirTaxRate: number;
-  spendingStrategy?: "constant" | "guardrails";
+  spendingStrategy?: "constant" | "flatNominal" | "guardrails";
 }
 
 function toProjAssumptions(base: LabAssumptions, c: PlanConfig): ProjectionAssumptions {
