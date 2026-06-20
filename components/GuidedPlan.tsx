@@ -51,10 +51,17 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     const clamped = Math.max(0, Math.min(next, 99));
     setDir(clamped >= step ? "fwd" : "back");
     setStep(clamped);
-    // Each step can be tall (esp. on mobile); always land the user at the top of
-    // the new step rather than wherever they'd scrolled on the previous one.
-    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
+  // Always land at the TOP of each new step (desktop AND mobile) — run it AFTER the
+  // new step renders, instantly, and cover whichever element is the scroller. Doing
+  // it in the click handler (pre-render) or with smooth behavior let the slide
+  // animation/layout shift cancel it, so on desktop you'd stay scrolled down.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.scrollTo({ top: 0, behavior: "auto" });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [step]);
 
   // Spending slider tracks at 60fps on LOCAL state; the (heavy) recompute is
   // committed to the store only ~250ms after you stop dragging — so a drag does
@@ -226,6 +233,10 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       if (c.metrics.depleted) continue;
       const sig = `${c.config.strategy}|${c.config.bracketTarget}|${c.config.useConversions ? c.config.convertMode : "none"}`;
       if (seen.has(sig)) continue;
+      // Also drop plans that land on effectively the SAME outcome as one already
+      // kept (e.g. rate-smart vs bracket-fill to the same bracket converge when the
+      // future rate sits at that bracket) — otherwise two identical-looking cards.
+      if (out.some((k) => Math.abs(k.metrics.netWealth - c.metrics.netWealth) < 2000)) continue;
       seen.add(sig);
       out.push(c);
       if (out.length >= 4) break;
@@ -327,16 +338,25 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   const ssNow = plan.fixed.socialSecurity;
   const allDividends = plan.fixed.dividends + plan.fixed.ordinaryDividends;
   const interestIncome = plan.fixed.taxableInterest + plan.fixed.taxExemptInterest;
-  const guaranteed = ssNow + plan.fixed.pension + allDividends + interestIncome;
+  // GUARANTEED income = Social Security + pension only — the money that arrives no
+  // matter what the markets do. Dividends & interest are NOT "guaranteed income":
+  // they're the yield your savings throw off (and are usually reinvested), so they
+  // belong on the "from your savings" side, not as a separate paycheck.
+  const divIntIncome = allDividends + interestIncome;
+  const guaranteed = ssNow + plan.fixed.pension;
   const spending = plan.spendingTarget;
   const conversion = plan.conversion;
   const totalTax = plan.tax.totalTax;
-  const coveredByIncome = totalDraw < 0.5;
+  // What your savings provide this year = the yield they paid out (no selling) + what
+  // you actually sold/withdrew to fill the gap.
+  const fromSavings = divIntIncome + totalDraw;
+  const coveredByIncome = totalDraw < 0.5; // no selling/withdrawal needed this year
   const isIL = (household.state ?? "IL") === "IL";
 
   // ---- "What pays for it" context ----
-  // Share of this year's funding that comes from guaranteed income vs. savings.
-  const coverageRatio = guaranteed + totalDraw > 0 ? guaranteed / (guaranteed + totalDraw) : 1;
+  // Share of this year's spending covered by guaranteed income (SS + pension) vs.
+  // what has to come out of savings.
+  const coverageRatio = guaranteed + fromSavings > 0 ? guaranteed / (guaranteed + fromSavings) : 1;
   // Withdrawal rate = what you pull from savings this year ÷ total savings. The
   // classic sustainability yardstick (the "4% rule" lives here).
   const portfolioTotal = household.accounts.reduce((s, a) => s + a.balance, 0);
@@ -649,8 +669,33 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             const ages = Array.from(new Set([62, fra, 70]));
             return (
               <div className="rounded-2xl border border-border p-3">
-                <div className="text-[14px] font-semibold">{p.label || (who === "self" ? "You" : "Spouse")}</div>
-                <div className="text-[11px] text-foreground/50">Full retirement age {fra}</div>
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-[14px] font-semibold">{p.label || (who === "self" ? "You" : "Spouse")}</div>
+                    <div className="text-[11px] text-foreground/50">Full retirement age {fra}</div>
+                  </div>
+                  {/* The user's OWN benefit — we can't know it, so let them enter it. This
+                      is the full (FRA) monthly amount from their SSA statement; the buttons
+                      below adjust it for the claim age. */}
+                  <label className="flex items-center gap-1 rounded-xl border border-border bg-background/50 px-2.5 py-1.5">
+                    <span className="text-foreground/50">$</span>
+                    <input
+                      inputMode="numeric"
+                      aria-label={`${p.label || who} full monthly Social Security benefit at age ${fra}`}
+                      value={p.socialSecurityAnnual ? String(Math.round(p.socialSecurityAnnual / 12)) : ""}
+                      placeholder="0"
+                      onChange={(e) => {
+                        const v = Math.max(0, Number(e.target.value.replace(/[^0-9]/g, "")) || 0);
+                        updateHousehold({ [who]: { ...p, socialSecurityAnnual: v * 12 } } as never);
+                      }}
+                      className="tabular w-16 bg-transparent text-right text-[14px] font-semibold outline-none"
+                    />
+                    <span className="text-[11px] text-foreground/45">/mo</span>
+                  </label>
+                </div>
+                <p className="mt-1 text-[10px] leading-snug text-foreground/45">
+                  Your <strong>full benefit at {fra}</strong> (from your SSA statement). The buttons below adjust it for when you claim.
+                </p>
                 <div className="mt-2 grid grid-cols-3 gap-2">
                   {ages.map((a) => {
                     const on = p.ssClaimAge === a;
@@ -796,29 +841,53 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 <span className="inline-block animate-pulse">↻ Running your plans through the markets…</span>
               </div>
             ) : (
-              <div className="mt-4 space-y-2">
-                {ranked.map(({ f, s }, i) => {
-                  if (!s) return null;
-                  const winner = i === 0;
-                  return (
-                    <div key={f.label} className={`rounded-2xl border p-3 ${winner ? "border-primary bg-primary/[0.06]" : "border-border"}`}>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className={`text-[13px] font-semibold ${winner ? "text-primary" : ""}`}>{f.label}</span>
-                        {winner && <Pill tone="roth">Recommended</Pill>}
-                      </div>
-                      <div className="mt-2 grid grid-cols-3 gap-2 text-center">
-                        <Stat label="Wins" value={`${Math.round(s.winRate * 100)}%`} hot={metric === "winRate"} />
-                        <Stat label="Typical" value={moneyCompact(s.median)} hot={metric === "median"} />
-                        <Stat label="Average" value={moneyCompact(s.mean)} hot={metric === "mean"} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <>
+                <div className="mt-4 space-y-2">
+                  {ranked.map(({ f, s }, i) => {
+                    if (!s) return null;
+                    const winner = i === 0; // best under the current measure
+                    const active = configMatches(
+                      { strategy: settings.strategy, bracketTarget: settings.bracketTarget, useConversions: settings.useConversions, convertMode: settings.convertMode },
+                      f.config,
+                    );
+                    return (
+                      <button
+                        key={f.label}
+                        onClick={() =>
+                          updateSettings({
+                            strategy: f.config.strategy,
+                            bracketTarget: f.config.bracketTarget,
+                            useConversions: f.config.useConversions,
+                            convertMode: f.config.convertMode,
+                            convertUntilAge: rec.chosenConvertUntilAge,
+                            planCustomized: true,
+                          })
+                        }
+                        className={`press block w-full rounded-2xl border p-3 text-left ${active ? "border-primary bg-primary/[0.06]" : "border-border"}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`text-[13px] font-semibold ${active ? "text-primary" : ""}`}>{f.label}</span>
+                          <span className="flex shrink-0 items-center gap-1">
+                            {winner && <Pill tone="roth">Recommended</Pill>}
+                            {active && <Pill tone="gain">✓ Active</Pill>}
+                          </span>
+                        </div>
+                        <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                          <Stat label="Wins" value={`${(s.winRate * 100).toFixed(1)}%`} hot={metric === "winRate"} />
+                          <Stat label="Typical" value={money(Math.round(s.median))} hot={metric === "median"} />
+                          <Stat label="Average" value={money(Math.round(s.mean))} hot={metric === "mean"} />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-center text-[11px] text-foreground/45">Tap any plan to make it your active plan.</p>
+              </>
             )}
             <p className="mt-3 rounded-xl bg-gain/[0.06] px-3 py-2 text-[12px] leading-relaxed text-foreground/70">
-              💡 The top plan is now your <strong>active plan</strong> — everything after this reflects it. Switch the measure
-              above and it re-picks instantly. Win-rate is the default a planner would call &ldquo;most likely to leave you the
+              💡 The <strong>Recommended</strong> plan (best under the measure you picked) is applied as your{" "}
+              <strong>active plan</strong> — but you can tap any plan above to use it instead. Switch the measure and it
+              re-picks the recommendation. Win-rate is the default a planner would call &ldquo;most likely to leave you the
               most&rdquo;; median is the steadier choice; average chases upside.
             </p>
           </div>
@@ -844,14 +913,18 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       // Ticks under the slider: the safe ceilings (green/amber) and every IRMAA
       // cliff the chosen plan would hit (red), each placed at the spending level
       // where it bites.
-      const markers: { key: string; value: number; cls: string; title: string }[] = [];
+      const markers: { key: string; value: number; cls: string; title: string; dotted?: boolean }[] = [];
       if (hasRoom && sweep.comfortableMax > 0 && sweep.comfortableMax < SPEND_MAX)
         markers.push({ key: "comf", value: sweep.comfortableMax, cls: "bg-gain", title: "Comfortable ceiling" });
       if (hasRoom && sweep.sustainableMax > sweep.comfortableMax + 5_000 && sweep.sustainableMax < SPEND_MAX)
         markers.push({ key: "sust", value: sweep.sustainableMax, cls: "bg-accent", title: "Most you can safely spend" });
+      // The IRMAA lines are drawn DOTTED — they mark where this year's income would
+      // cross a Medicare surcharge. Because spending is funded partly from cash/Roth/
+      // basis (not taxable income), this line sits far to the right of your spending:
+      // it's the "typical" cliff that doesn't bind you yet.
       impact.irmaaCliffs
         .filter((c) => c.spend > 0 && c.spend < SPEND_MAX)
-        .forEach((c, i) => markers.push({ key: `irmaa${i}`, value: c.spend, cls: "bg-tax", title: `Medicare cliff → ${c.toLabel}` }));
+        .forEach((c, i) => markers.push({ key: `irmaa${i}`, value: c.spend, cls: "bg-tax", title: `Medicare (IRMAA) line → ${c.toLabel}`, dotted: true }));
 
       // The RECOMMENDED amount: the spend whose savings draw lands at the classic
       // ~4% safe-withdrawal pace (capped so it's never above what the downside
@@ -868,7 +941,13 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             break;
           }
         }
-        if (recSpend != null && hasRoom) recSpend = Math.min(recSpend, floor5(sweep.sustainableMax));
+        // Fallback for large portfolios: a 4% DRAW can land beyond the slider's max
+        // spending (you'd never spend that much), so the crossing above isn't found.
+        // Anchor the recommended on ~4% of savings as a spend instead, so there's
+        // always a sensible default chip. Either way, cap at the sustainable ceiling.
+        if (recSpend == null) recSpend = floor5(Math.min(SPEND_MAX, target));
+        if (recSpend != null && hasRoom && sweep.sustainableMax > 5_000) recSpend = Math.min(recSpend, floor5(sweep.sustainableMax));
+        if (recSpend != null && recSpend < 5_000) recSpend = null;
       }
 
       // Secondary "quick amounts": just under each IRMAA cliff, and the most you
@@ -940,23 +1019,32 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               spending terms — so the cliffs aren't a surprise you only meet later. */}
           {markers.length > 0 && (
             <>
-              <div className="relative mt-1 h-3">
-                {markers.map((m) => (
-                  <div
-                    key={m.key}
-                    className={`absolute top-0 h-3 w-[2px] -translate-x-1/2 rounded-full ${m.cls}`}
-                    style={{ left: `${pos(m.value)}%` }}
-                    title={`${m.title} — ${money(m.value)}/yr`}
-                  />
-                ))}
+              <div className="relative mt-1 h-4">
+                {markers.map((m) =>
+                  m.dotted ? (
+                    <div
+                      key={m.key}
+                      className="absolute top-0 h-4 w-0 -translate-x-1/2 border-l-2 border-dotted border-tax"
+                      style={{ left: `${pos(m.value)}%` }}
+                      title={`${m.title} — kicks in around ${money(m.value)}/yr of spending`}
+                    />
+                  ) : (
+                    <div
+                      key={m.key}
+                      className={`absolute top-0 h-3 w-[2px] -translate-x-1/2 rounded-full ${m.cls}`}
+                      style={{ left: `${pos(m.value)}%` }}
+                      title={`${m.title} — ${money(m.value)}/yr`}
+                    />
+                  ),
+                )}
               </div>
               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-foreground/45">
                 <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-gain" /> comfortable</span>
                 {markers.some((m) => m.key === "sust") && (
                   <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-accent" /> max safe</span>
                 )}
-                {impact.irmaaCliffs.length > 0 && (
-                  <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-tax" /> 🏥 Medicare cliff</span>
+                {markers.some((m) => m.dotted) && (
+                  <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-0 border-l-2 border-dotted border-tax" /> 🏥 where IRMAA would start (you&apos;re under it now)</span>
                 )}
               </div>
             </>
@@ -1506,10 +1594,15 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
                 {medicareEnrollees > 0 && irmaaJump > 1 && (
                   <p className="mt-2 rounded-xl border border-tax/30 bg-tax/[0.06] px-3 py-2 text-[12px] leading-relaxed text-foreground/80">
-                    🏥 The rollover lifts your Medicare from <strong>{tierName(before?.curLabel ?? "")}</strong>{" "}to{" "}
-                    <strong>{tierName(after?.curLabel ?? "")}</strong> — about <strong>+{money(irmaaJump)}/yr</strong>{" "}in extra
-                    premiums {medicareEnrollees > 1 ? "for both of you combined" : "for the one of you on Medicare"} (billed two
-                    years out). The next rollover step shows the full bracket math.
+                    🏥 <strong>Only in the years you convert.</strong> Adding this {money(rollAmt)} rollover on top of your
+                    income lifts your taxable income (MAGI) this year from{" "}
+                    <strong>{money(Math.round(planNoConv.tax.magi))}</strong>{" "}to{" "}
+                    <strong>{money(Math.round(planWithRoll.tax.magi))}</strong> — high enough to reach Medicare&apos;s{" "}
+                    <strong>{tierName(after?.curLabel ?? "")}</strong> surcharge band, about <strong>+{money(irmaaJump)}/yr</strong>{" "}
+                    {medicareEnrollees > 1 ? "for both of you combined" : "for the one of you on Medicare"} (billed two years
+                    out). You&apos;re <strong>not</strong> in that tier today — without the rollover you&apos;d owe no surcharge
+                    (the top row) — and you&apos;d pay it only in years you actually convert. The next step shows the full
+                    bracket math.
                   </p>
                 )}
                 {(() => {
@@ -1641,11 +1734,10 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             : pendingSS > 0.5
               ? "This year, most comes from your accounts"
               : "Here's what funds your spending";
-      // Itemize guaranteed income so "guaranteed" isn't a black box.
+      // Itemize guaranteed income (SS + pension) so it isn't a black box.
       const gItems = [
         { label: "Social Security", value: ssNow },
         { label: "Pension", value: plan.fixed.pension },
-        { label: "Dividends & interest", value: allDividends + interestIncome },
       ].filter((g) => g.value > 0.5);
       // Withdrawal-rate read: is the savings draw a sustainable pace?
       const wrPct = (withdrawalRate * 100).toFixed(1);
@@ -1674,44 +1766,50 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         <div>
           <h2 className="text-xl font-bold leading-snug">{heading}</h2>
           <p className="mt-1 text-[13px] text-foreground/60">
-            Your guaranteed income comes in first; you only pull from your accounts to fill the gap. Here&apos;s the split for {year} —
-            and exactly which accounts that draw comes from.
+            Two sources fund your spending: <strong>guaranteed income</strong> (Social Security &amp; pension — arrives no
+            matter what) and <strong>your savings</strong>. Here&apos;s the split for {year}, and exactly which accounts the
+            savings draw comes from.
           </p>
           <div className="mt-4">
             <StackedBar
               segments={[
                 { value: guaranteed, className: "bg-ss", label: "Guaranteed income" },
-                { value: totalDraw, className: "bg-taxable", label: "From your accounts" },
+                { value: fromSavings, className: "bg-taxable", label: "From your savings" },
               ].filter((s) => s.value > 0.5)}
             />
             <div className="mt-1 flex justify-between text-[11px] text-foreground/45">
               <span>{pct}% guaranteed income</span>
-              <span>{100 - pct}% from your accounts</span>
+              <span>{100 - pct}% from your savings</span>
             </div>
             <div className="mt-3 space-y-1 text-[13px]">
-              <Row label="Income you get without selling anything" value={money(guaranteed)} tone="ss" bold />
-              {gItems.map((g) => (
-                <div key={g.label}>
-                  <Row label={`…${g.label}`} value={money(g.value)} sub />
-                  {g.label === "Dividends & interest" && (
-                    <div className="pl-2">
-                      <DividendInterestDetail
-                        household={household}
-                        qualified={plan.fixed.dividends}
-                        ordinary={plan.fixed.ordinaryDividends}
-                        taxableInt={plan.fixed.taxableInterest}
-                        taxExemptInt={plan.fixed.taxExemptInterest}
-                      />
-                    </div>
-                  )}
-                </div>
-              ))}
+              <Row label="Guaranteed income — Social Security &amp; pension" value={money(guaranteed)} tone="ss" bold />
+              {guaranteed > 0.5 ? (
+                gItems.map((g) => <Row key={g.label} label={`…${g.label}`} value={money(g.value)} sub />)
+              ) : (
+                <Row label="…not yet — Social Security hasn't started" value="$0" sub />
+              )}
               <div className="my-1 border-t border-border/60" />
-              <Row label="You pull this from your accounts" value={money(totalDraw)} tone="taxable" bold />
+              <Row label="From your savings" value={money(fromSavings)} tone="taxable" bold />
+              {divIntIncome > 0.5 && (
+                <>
+                  <Row label="…Dividends &amp; interest your accounts paid out (no selling)" value={money(divIntIncome)} sub />
+                  <div className="pl-2">
+                    <DividendInterestDetail
+                      household={household}
+                      qualified={plan.fixed.dividends}
+                      ordinary={plan.fixed.ordinaryDividends}
+                      taxableInt={plan.fixed.taxableInterest}
+                      taxExemptInt={plan.fixed.taxExemptInterest}
+                    />
+                  </div>
+                </>
+              )}
+              <Row label={divIntIncome > 0.5 ? "…Sold or withdrawn from your accounts" : "…Sold or withdrawn from your accounts"} value={money(totalDraw)} sub />
             </div>
             <p className="mt-1 text-[10px] leading-snug text-foreground/45">
-              &ldquo;Your accounts&rdquo; means everything you&apos;ve saved — pre-tax (IRA/401k), taxable (cash &amp;
-              brokerage), and Roth combined. The steps below show which of them this year&apos;s draw comes from.
+              &ldquo;Your savings&rdquo; means everything you&apos;ve saved — pre-tax (IRA/401k), taxable (cash &amp;
+              brokerage), and Roth combined. Dividends &amp; interest are the yield those accounts pay out (often reinvested);
+              the steps below show which accounts this year&apos;s <em>sold/withdrawn</em> draw comes from.
             </p>
           </div>
 
@@ -1758,6 +1856,31 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                       : ca.delayWho === "both"
                         ? "both of you"
                         : "you";
+                const hasSp = !!household.spouse && household.spouse.birthYear > 1900;
+                const Picker = ({ who }: { who: "self" | "spouse" }) => {
+                  const p = household[who];
+                  const fra = Math.round(fullRetirementAge(p.birthYear));
+                  const ages = Array.from(new Set([62, fra, 70]));
+                  return (
+                    <div className="mt-2">
+                      <div className="text-[11px] font-medium text-foreground/60">{p.label || (who === "self" ? "You" : "Spouse")} claims at</div>
+                      <div className="mt-1 grid grid-cols-3 gap-1.5">
+                        {ages.map((a) => {
+                          const on = p.ssClaimAge === a;
+                          return (
+                            <button
+                              key={a}
+                              onClick={() => updateHousehold({ [who]: { ...p, ssClaimAge: a } } as never)}
+                              className={`press rounded-lg border py-1 text-[11px] ${on ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/65"}`}
+                            >
+                              {a} · {moneyCompact(adjustedAnnualBenefit(p.socialSecurityAnnual, p.birthYear, a))}/yr
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                };
                 return (
                   <>
                     On your numbers, having <strong>{who}</strong> claim Social Security at{" "}
@@ -1766,7 +1889,11 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     {ca.delayWho === "both" ? ` / ${ca.currentSpouse}` : ""} is projected to leave about{" "}
                     <strong>{money(ca.lift)}</strong>{" "}more over your lifetime — partly because delaying the higher earner
                     also locks in a larger benefit for whoever lives longer. It&apos;s a personal decision (health, cash
-                    needs); you can set claim ages on the Accounts page. This estimate already reflects your plan-to age.
+                    needs); <strong>change it right here</strong> — this estimate already reflects your plan-to age.
+                    <div className="mt-2 rounded-xl border border-gain/30 bg-card/60 p-2">
+                      <Picker who="self" />
+                      {hasSp && <Picker who="spouse" />}
+                    </div>
                   </>
                 );
               })()}
@@ -2886,7 +3013,7 @@ function Row({ label, value, tone, bold, sub }: { label: string; value: ReactNod
 function Stat({ label, value, hot }: { label: string; value: string; hot?: boolean }) {
   return (
     <div className={`rounded-lg px-1 py-1.5 ${hot ? "bg-primary/10" : ""}`}>
-      <div className={`tabular text-[15px] font-bold ${hot ? "text-primary" : "text-foreground/80"}`}>{value}</div>
+      <div className={`tabular text-[12.5px] font-bold leading-tight ${hot ? "text-primary" : "text-foreground/80"}`}>{value}</div>
       <div className="text-[10px] uppercase tracking-wide text-foreground/45">{label}</div>
     </div>
   );

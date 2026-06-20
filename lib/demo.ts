@@ -397,7 +397,10 @@ export function randomDemoHousehold(seed: number): Household {
   // the more likely one to hold the big employer plan.
   const ssClaimAges = [62, 63, 64, 65, 66, 67, 68, 69, 70] as const;
   const hiPia = round(rng.range(34_000, 56_000), 1_000);
-  const loPia = round(rng.range(0, hiPia * 0.9), 1_000);
+  // The lower earner is realistic: even a spouse who barely worked claims the
+  // SPOUSAL benefit (~50% of the higher earner's), so it's essentially never $0 for
+  // a married couple. Dual earners land near parity. 50–95% of the higher PIA.
+  const loPia = round(rng.range(0.5, 0.95) * hiPia, 1_000);
   const selfIsHigherEarner = rng.chance(0.5);
   const selfPia = selfIsHigherEarner ? hiPia : loPia;
   const spousePia = selfIsHigherEarner ? loPia : hiPia;
