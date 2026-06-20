@@ -18,7 +18,7 @@
  * ⚠️ Educational estimates only — not tax advice.
  */
 
-import { computeTaxes, ordinaryBracketCeiling, ordinaryBracketFloor, TaxResult } from "./tax/engine";
+import { computeTaxes, ordinaryBracketCeiling, arbitrageCeiling, TaxResult } from "./tax/engine";
 import { StateCode } from "./tax/state";
 import { rmdStartAge, uniformLifetimeFactor, FilingStatus } from "./tax/constants";
 import {
@@ -461,7 +461,7 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
       // future rate we're avoiding (futureRate is likewise an effective rate).
       const rNow = finalEval.tax.effectiveMarginalRate;
       if (conv.futureRate > 0 && rNow < conv.futureRate - 1e-9) {
-        const arbCeiling = ordinaryBracketFloor(conv.futureRate, ctx.filingStatus);
+        const arbCeiling = arbitrageCeiling(conv.futureRate, ctx.filingStatus);
         const comfortCeiling = ordinaryBracketCeiling(bracketTarget, ctx.filingStatus);
         const fillTo = Math.min(arbCeiling, comfortCeiling);
         targetOTI = fillTo * ctx.inflationFactor;

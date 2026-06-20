@@ -51,6 +51,11 @@ export interface PlannerSettings {
   /** Spending behavior: "constant" real (default — grows with inflation), "flatNominal"
    *  (same dollars every year), or "guardrails" (Guyton-Klinger dynamic spending). */
   spendingStrategy: "constant" | "flatNominal" | "guardrails";
+  /** For the "most money" goal: how to rank candidate plans across simulated markets.
+   *  "winRate" (most often ends richest — the default), "median" (highest typical
+   *  ending estate), or "mean" (highest average/upside). All run on common random
+   *  numbers. Only affects the maxCapital recommendation. */
+  mostMoneyMetric: "winRate" | "median" | "mean";
   /** Sex used for the Gompertz longevity model (survival curve / plan-to age).
    *  "blended" = unisex average; only affects the longevity display, not taxes. */
   selfSex: Sex;
@@ -86,6 +91,7 @@ export const DEFAULT_SETTINGS: PlannerSettings = {
   realDollars: false,
   heirTaxRate: 0.24,
   spendingStrategy: "constant",
+  mostMoneyMetric: "winRate",
   selfSex: "blended",
   spouseSex: "blended",
   planCustomized: false,

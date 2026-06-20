@@ -222,9 +222,10 @@ export function Callout({
 }
 
 /** A short muted helper paragraph that sits under a SectionTitle to explain
- *  what the reader is looking at. */
+ *  what the reader is looking at. Desktop-only: it's "why/what this is" context, so
+ *  on a phone the view stays decision-focused (the title + the numbers remain). */
 export function Explainer({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <p className={`-mt-1 mb-2 text-[12px] leading-relaxed text-foreground/55 ${className}`}>{children}</p>;
+  return <p className={`hidden md:block -mt-1 mb-2 text-[12px] leading-relaxed text-foreground/55 ${className}`}>{children}</p>;
 }
 
 /** A tappable "what's this?" click-through: a question row that expands to a

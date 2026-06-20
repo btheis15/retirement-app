@@ -335,7 +335,7 @@ const TOPICS: Topic[] = [
       "Illinois has a flat 4.95% income tax, but it does NOT tax retirement income. Distributions from 401(k)s, 403(b)s, and IRAs (including your RMDs), pensions and government/military retirement, and Social Security are all subtracted on the Illinois return (IL-1040 Line 5). So at the state level, those are tax-free.",
       "The big one for planning: a Traditional-IRA-to-Roth CONVERSION is also subtracted — Illinois doesn't tax the conversion at all. You only pay FEDERAL tax to convert. That makes Roth conversions more attractive in Illinois than in most states, because the state takes nothing on the way over.",
       "What Illinois DOES tax (at the flat 4.95%, with no preferential capital-gains rate): your investment income — taxable interest, dividends, and capital gains in a brokerage account. So the state-tax lever here is mostly about your taxable brokerage, not your retirement accounts.",
-      "One catch: a very large conversion can push your AGI over $500,000 (married filing jointly), which phases out the Illinois personal exemption (about $2,850 per person) — a small effect, but the planner accounts for it. Illinois figures are 2025 (verified against the IL Dept. of Revenue). This tool now models Illinois; more states are coming.",
+      "One catch: a very large conversion can push your AGI over $500,000 (married filing jointly), which phases out the Illinois personal exemption (about $2,925 per person) — a small effect, but the planner accounts for it. Illinois figures are 2026 (verified against the IL Dept. of Revenue). This tool now models Illinois; more states are coming.",
     ],
     sources: [SOURCES.ilRetirement, SOURCES.ilRate, SOURCES.rothConversion],
   },
