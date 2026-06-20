@@ -29,7 +29,8 @@ export const SWEEP_DOWNSIDE_HAIRCUT = 0.02;
 
 export interface SweepPoint {
   spend: number;
-  endingEstate: number; // gross account value left at the end ("overall value")
+  endingEstate: number; // gross account value left at the end, NOMINAL (future $)
+  endingEstateReal: number; // same, deflated to today's dollars (matches the fan chart)
   depleted: boolean;
   depletionAge: number; // self age money runs short, or Infinity if it lasts
 }
@@ -69,6 +70,7 @@ export function spendingSweep(
     points.push({
       spend,
       endingEstate: proj.endingEstate,
+      endingEstateReal: proj.endingEstateReal,
       depleted: proj.depleted,
       depletionAge: shortRow ? shortRow.selfAge : Infinity,
     });
@@ -78,16 +80,18 @@ export function spendingSweep(
   for (const p of points) if (!p.depleted) sustainableMax = p.spend;
 
   // "Comfortable" = lasts AND ends with a real cushion (~5 years of that spend,
-  // floored at $100k) so we don't call a barely-surviving plan comfortable.
+  // floored at $100k). Compare a REAL (today's-dollar) ending estate to a today's-
+  // dollar spend — using the nominal future estate here would inflate the cushion
+  // over a 30-year horizon and call a thin plan comfortable.
   let comfortableMax = 0;
   for (const p of points) {
-    if (!p.depleted && p.endingEstate >= Math.max(100_000, p.spend * 5)) comfortableMax = p.spend;
+    if (!p.depleted && p.endingEstateReal >= Math.max(100_000, p.spend * 5)) comfortableMax = p.spend;
   }
 
   const startingTotal = household.accounts.reduce((s, a) => s + a.balance, 0);
 
   const at = (spend: number): SweepPoint => {
-    if (points.length === 0) return { spend, endingEstate: 0, depleted: false, depletionAge: Infinity };
+    if (points.length === 0) return { spend, endingEstate: 0, endingEstateReal: 0, depleted: false, depletionAge: Infinity };
     const clamped = Math.max(0, Math.min(spend, max));
     const step = max / steps;
     const lo = Math.min(points.length - 1, Math.floor(clamped / step));
@@ -99,6 +103,7 @@ export function spendingSweep(
     return {
       spend: clamped,
       endingEstate: a.endingEstate + (b.endingEstate - a.endingEstate) * t,
+      endingEstateReal: a.endingEstateReal + (b.endingEstateReal - a.endingEstateReal) * t,
       // depletion is a property of the higher-spend bracket (conservative)
       depleted: b.depleted,
       depletionAge: b.depleted ? b.depletionAge : Infinity,

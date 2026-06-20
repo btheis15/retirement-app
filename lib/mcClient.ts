@@ -18,6 +18,8 @@ import { runHistoricalBootstrap } from "./returnsHistorical";
 import { runRegimeSwitching } from "./returnsRegime";
 import type { PairedResult } from "./compareMonteCarlo";
 import { runPairedMonteCarlo } from "./compareMonteCarlo";
+import type { MostMoneyStat } from "./recommendMonteCarlo";
+import { rankMostMoney } from "./recommendMonteCarlo";
 
 export type MCKind = "mc" | "bootstrap" | "regime";
 
@@ -42,12 +44,25 @@ export interface PairedRequest {
   seed?: number;
 }
 
+/** "Most money" ranking: score a set of candidate plans across the SAME simulated
+ *  markets (common random numbers) and return each plan's win-rate / median / mean. */
+export interface MostMoneyRequest {
+  kind: "mostMoney";
+  household: Household;
+  candidates: ProjectionAssumptions[];
+  model: ReturnModel;
+  runs: number;
+  seed?: number;
+}
+
+type AnyResult = MonteCarloResult | PairedResult | MostMoneyStat[];
+
 let worker: Worker | null = null;
 let workerBroken = false;
 let nextId = 1;
-// Results may be a MonteCarloResult or a PairedResult; the caller knows which it
-// asked for, so the pending resolver is intentionally loose.
-const pending = new Map<number, { resolve: (r: MonteCarloResult | PairedResult) => void; reject: (e: unknown) => void }>();
+// Results may be a MonteCarloResult, a PairedResult, or a MostMoneyStat[]; the caller
+// knows which it asked for, so the pending resolver is intentionally loose.
+const pending = new Map<number, { resolve: (r: AnyResult) => void; reject: (e: unknown) => void }>();
 
 function getWorker(): Worker | null {
   if (typeof window === "undefined" || typeof Worker === "undefined" || workerBroken) return null;
@@ -55,12 +70,12 @@ function getWorker(): Worker | null {
   try {
     worker = new Worker(new URL("./mc.worker.ts", import.meta.url));
     worker.onmessage = (e: MessageEvent) => {
-      const { id, result, error } = e.data as { id: number; result?: MonteCarloResult | PairedResult; error?: string };
+      const { id, result, error } = e.data as { id: number; result?: AnyResult; error?: string };
       const p = pending.get(id);
       if (!p) return;
       pending.delete(id);
       if (error) p.reject(new Error(error));
-      else p.resolve(result as MonteCarloResult | PairedResult);
+      else p.resolve(result as AnyResult);
     };
     worker.onerror = () => {
       // Disable the worker and surface to callers; they'll fall back next time.
@@ -92,7 +107,7 @@ export function computeMonteCarlo(req: MonteCarloRequest): Promise<MonteCarloRes
   }
   const id = nextId++;
   return new Promise<MonteCarloResult>((resolve, reject) => {
-    pending.set(id, { resolve: resolve as (r: MonteCarloResult | PairedResult) => void, reject });
+    pending.set(id, { resolve: resolve as (r: AnyResult) => void, reject });
     try {
       w.postMessage({ id, ...req });
     } catch (err) {
@@ -115,7 +130,28 @@ export function computePaired(req: PairedRequest): Promise<PairedResult> {
   if (!w) return new Promise((resolve) => setTimeout(() => resolve(runMain()), 0));
   const id = nextId++;
   return new Promise<PairedResult>((resolve, reject) => {
-    pending.set(id, { resolve: resolve as (r: MonteCarloResult | PairedResult) => void, reject });
+    pending.set(id, { resolve: resolve as (r: AnyResult) => void, reject });
+    try {
+      w.postMessage({ id, ...req });
+    } catch (err) {
+      pending.delete(id);
+      try {
+        resolve(runMain());
+      } catch {
+        reject(err);
+      }
+    }
+  });
+}
+
+/** Run the "most money" probability ranking off the main thread (sync fallback). */
+export function computeMostMoney(req: MostMoneyRequest): Promise<MostMoneyStat[]> {
+  const runMain = () => rankMostMoney(req.household, req.candidates, { model: req.model, runs: req.runs, seed: req.seed });
+  const w = getWorker();
+  if (!w) return new Promise((resolve) => setTimeout(() => resolve(runMain()), 0));
+  const id = nextId++;
+  return new Promise<MostMoneyStat[]>((resolve, reject) => {
+    pending.set(id, { resolve: resolve as (r: AnyResult) => void, reject });
     try {
       w.postMessage({ id, ...req });
     } catch (err) {

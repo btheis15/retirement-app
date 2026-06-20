@@ -895,15 +895,20 @@ function GoalAndRecommendation() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [household, confKey]);
-  const matches = configMatches(
-    {
-      strategy: settings.strategy,
-      bracketTarget: settings.bracketTarget,
-      useConversions: settings.useConversions,
-      convertMode: settings.convertMode,
-    },
-    rec.best.config,
-  );
+  const matches =
+    configMatches(
+      {
+        strategy: settings.strategy,
+        bracketTarget: settings.bracketTarget,
+        useConversions: settings.useConversions,
+        convertMode: settings.convertMode,
+      },
+      rec.best.config,
+    ) &&
+    // The conversion WINDOW isn't part of PlanConfig, so compare it here: a rollover
+    // through 75 is a different plan than through 80. Only then is "✓ active
+    // everywhere" truthful. rec.best.metrics are computed at chosenConvertUntilAge.
+    (!settings.useConversions || settings.convertUntilAge === rec.chosenConvertUntilAge);
 
   const applyGoal = (goal: GoalId) => {
     const r = recommendPlan(household, inputs, goal);
@@ -958,7 +963,7 @@ function GoalAndRecommendation() {
           )}
         </div>
         <p className="-mt-0.5 mb-1 text-[11px] text-foreground/45">
-          Technical version: {describePlan(rec.best.config, settings.convertUntilAge)}.
+          Technical version: {describePlan(rec.best.config, rec.chosenConvertUntilAge)}.
         </p>
         <p className="mt-1">{rec.rationale}</p>
         {rec.claimAdvice && (

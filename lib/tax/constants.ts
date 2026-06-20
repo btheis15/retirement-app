@@ -14,8 +14,8 @@
  *    additional standard deduction for age 65+.
  *  - Social Security taxability thresholds ($32,000 / $44,000 MFJ) and the NIIT
  *    threshold ($250,000 MFJ) are set by statute and are NOT inflation-indexed.
- *  - IRMAA tiers are approximate 2026 figures and are surfaced as awareness
- *    flags, not exact premium math.
+ *  - IRMAA tiers use the published 2026 CMS thresholds and Part B/D surcharge
+ *    amounts; only the combined household figures are rounded for display.
  *
  * ⚠️ Educational estimates only — not tax advice. State taxes are not modeled.
  */

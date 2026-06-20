@@ -322,18 +322,29 @@ export function ordinaryBracketCeiling(rate: number, status: FilingStatus = "mfj
 }
 
 /**
- * Income level where bracket `rate` BEGINS = top of the bracket just below it
- * (0 if `rate` is the lowest bracket). A NOMINAL 2026 value — scale by the
- * year's inflationFactor in a projection. Used for rate-arbitrage conversions:
- * to convert only dollars taxed STRICTLY below a future rate, fill to this floor.
+ * Rate-arbitrage conversion ceiling: the income level at which the STATUTORY
+ * marginal rate first reaches the projected future rate you're avoiding. Filling
+ * pre-tax up to here converts only dollars taxed STRICTLY below that future cost —
+ * so every converted dollar is cheaper now than it would be as a later RMD.
+ *
+ * `futureEffRate` is an EFFECTIVE rate (it folds in the Social-Security torpedo,
+ * IRMAA, and NIIT), so it almost never equals a statutory bracket rate exactly —
+ * we therefore compare against each bracket's rate rather than matching by equality
+ * (the old exact-match version returned Infinity for any effective rate, which
+ * silently disabled this ceiling). Returns a NOMINAL 2026 value; scale by the
+ * year's inflationFactor in a projection.
+ *
+ * Examples (MFJ): a 24% future rate → top of the 22% bracket (converts 10/12/22,
+ * a wash at 24% is excluded). A ~27% effective future rate → top of the 24%
+ * bracket (24% < 27%, so the 24% bracket is still strictly cheaper and included).
  */
-export function ordinaryBracketFloor(rate: number, status: FilingStatus = "mfj"): number {
+export function arbitrageCeiling(futureEffRate: number, status: FilingStatus = "mfj"): number {
   let prevTop = 0;
   for (const b of FILING_CONSTANTS[status].ordinary) {
-    if (b.rate === rate) return prevTop;
+    if (b.rate >= futureEffRate - 1e-9) return prevTop; // floor of the first bracket at/above the future rate
     prevTop = b.upTo;
   }
-  return prevTop;
+  return prevTop; // future rate sits above the top bracket → convert across all brackets
 }
 
 /** The taxable-income ceiling that keeps long-term gains in the 0% band (MFJ). */

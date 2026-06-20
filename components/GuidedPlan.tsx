@@ -12,7 +12,7 @@
 import { useMemo, useState, useEffect, useDeferredValue, useTransition, ReactNode } from "react";
 import Link from "next/link";
 import { useStore } from "@/components/HouseholdProvider";
-import { Card, Pill, Info, Callout } from "@/components/ui";
+import { Card, Pill, Info, Callout, DesktopOnly } from "@/components/ui";
 import { SOURCES } from "@/lib/sources";
 import { StackedBar } from "@/components/ui";
 import { spendingSweep } from "@/lib/spendingSweep";
@@ -25,11 +25,14 @@ import { FILING_CONSTANTS, FilingStatus } from "@/lib/tax/constants";
 import { projectLifetime, ProjectionAssumptions } from "@/lib/projection";
 import { recommendPlan, planGist, configMatches, GOAL_META } from "@/lib/goals";
 import { MonteCarloResult } from "@/lib/monteCarlo";
-import { computeMonteCarlo } from "@/lib/mcClient";
+import { computeMonteCarlo, computeMostMoney } from "@/lib/mcClient";
+import { MostMoneyStat, MostMoneyMetric, argmaxByMetric } from "@/lib/recommendMonteCarlo";
+import { planAssumptions } from "@/lib/scenarioLab";
 import { returnModel } from "@/lib/returns";
 import { buildActionPlan, PlanYear, PlanAction } from "@/lib/actionPlan";
 import { GoalId, survivorFromSettings } from "@/lib/defaults";
-import { adjustedAnnualBenefit } from "@/lib/socialSecurity";
+import { adjustedAnnualBenefit, fullRetirementAge } from "@/lib/socialSecurity";
+import { rmdStartAge } from "@/lib/tax/constants";
 import { bucketOf, ACCOUNT_KIND_META, TaxBucket, Household } from "@/lib/accounts";
 import { money, moneyCompact, percent } from "@/lib/format";
 
@@ -209,6 +212,69 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   );
   const rec = useMemo(() => recommendPlan(recHousehold, inputs, settings.goal), [recHousehold, settings.goal]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── "Most money" by PROBABILITY across simulated markets ──────────────────
+  // For the maxCapital goal, "best" isn't the single-path winner — it's the plan
+  // most likely to leave you the most. We curate a few DISTINCT candidate plans
+  // (so the odds aren't diluted across near-duplicates), then run them all through
+  // the SAME simulated markets on the worker and rank by the user's chosen metric
+  // (win-rate / median / mean). The winner becomes the recommended plan.
+  const finalists = useMemo(() => {
+    if (settings.goal !== "maxCapital") return [];
+    const seen = new Set<string>();
+    const out: typeof rec.ranked = [];
+    for (const c of rec.ranked) {
+      if (c.metrics.depleted) continue;
+      const sig = `${c.config.strategy}|${c.config.bracketTarget}|${c.config.useConversions ? c.config.convertMode : "none"}`;
+      if (seen.has(sig)) continue;
+      seen.add(sig);
+      out.push(c);
+      if (out.length >= 4) break;
+    }
+    return out;
+  }, [rec, settings.goal]);
+  const finalistSig = finalists.map((f) => f.label).join("|");
+  const labBase = useMemo(
+    () => ({ ...inputs, convertUntilAge: rec.chosenConvertUntilAge, spendingStrategy: settings.spendingStrategy }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [inputs.returnRate, inputs.inflationRate, inputs.endAge, rec.chosenConvertUntilAge, settings.spendingStrategy, settings.survivorModel, settings.firstDeathAge, settings.heirTaxRate],
+  );
+  const [mostMoney, setMostMoney] = useState<MostMoneyStat[] | null>(null);
+  const [mostMoneyFor, setMostMoneyFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (settings.goal !== "maxCapital" || finalists.length < 2) {
+      setMostMoney(null);
+      setMostMoneyFor(null);
+      return;
+    }
+    let cancelled = false;
+    const candidates = finalists.map((f) => planAssumptions(labBase, f.config));
+    computeMostMoney({
+      kind: "mostMoney",
+      household: dHousehold,
+      candidates,
+      model: returnModel(dHousehold.accounts),
+      runs: 400,
+      seed: 424242,
+    })
+      .then((stats) => {
+        if (!cancelled) {
+          setMostMoney(stats);
+          setMostMoneyFor(finalistSig);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setMostMoney(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [finalistSig, dHousehold, labBase, settings.goal]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The probability winner under the user's chosen metric (only when fresh stats
+  // match the current finalist set — otherwise we're mid-recompute).
+  const mmFresh = mostMoney && mostMoneyFor === finalistSig && mostMoney.length === finalists.length;
+  const winnerIdx = mmFresh ? argmaxByMetric(mostMoney!, settings.mostMoneyMetric) : -1;
+  const probWinner = winnerIdx >= 0 ? finalists[winnerIdx] : null;
+
   // What plan EACH goal would pick — so the goal step can show the tradeoff (or
   // reassure when all three agree). Deferred + display-only, and run in LIGHT mode
   // (no claim-age / window search — those are only needed for the active plan), so
@@ -358,7 +424,10 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   // dashboard) showing the SAME plan. It backs off the moment the user manually
   // adjusts the rollover (planCustomized), and converges in one pass (it only
   // writes when the active config actually differs from the recommendation).
-  const rc = rec.best.config;
+  // For maxCapital, the target is the PROBABILITY winner (once the worker MC lands);
+  // until then — and for the tax/rate goals — it's the deterministic best. One target,
+  // one effect, so the two never fight.
+  const rc = probWinner ? probWinner.config : rec.best.config;
   const recWindow = rec.chosenConvertUntilAge;
   useEffect(() => {
     if (settings.planCustomized) return;
@@ -504,6 +573,129 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     },
   });
 
+  // STEP — plan-to age + survivor (longevity). The horizon drives every number; the
+  // survivor model captures the widow's-penalty single-filer years.
+  if (!needsOwnSetup) {
+    const hasSpouse = !!household.spouse && household.spouse.birthYear > 1900;
+    steps.push({
+      key: "longevity",
+      eyebrow: "how long should the plan cover?",
+      render: () => {
+        const btn = (on: boolean) =>
+          `press rounded-xl border py-2 text-center ${on ? "border-primary bg-primary/10 text-primary font-semibold" : "border-border text-foreground/70"}`;
+        return (
+          <div>
+            <h2 className="text-xl font-bold leading-snug">How long should your plan cover?</h2>
+            <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+              We run every number out to this age. Planning to a longer age is the safe choice — you won&apos;t outlive the
+              plan. Most advisors use about 95.
+            </p>
+            <div className="mt-4 grid grid-cols-4 gap-2">
+              {[90, 95, 100, 105].map((a) => (
+                <button key={a} onClick={() => updateSettings({ endAge: a })} className={btn(settings.endAge === a)}>
+                  <div className="text-lg font-bold leading-none">{a}</div>
+                  <div className="mt-0.5 text-[10px]">{a === 95 ? "typical" : a >= 100 ? "cautious" : "shorter"}</div>
+                </button>
+              ))}
+            </div>
+            {hasSpouse && (
+              <div className="mt-5 rounded-2xl border border-border p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[14px] font-semibold">Model the surviving spouse</div>
+                    <div className="mt-0.5 text-[12px] leading-snug text-foreground/55">
+                      When one of you passes, the survivor files taxes as single (narrower brackets) and keeps the larger
+                      Social Security — the &ldquo;widow&apos;s penalty.&rdquo; On by default so the plan is realistic.
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => updateSettings({ survivorModel: !settings.survivorModel })}
+                    className={`press shrink-0 rounded-full border px-3 py-1.5 text-[12px] font-semibold ${settings.survivorModel ? "border-primary bg-primary text-white" : "border-border text-foreground/60"}`}
+                  >
+                    {settings.survivorModel ? "On" : "Off"}
+                  </button>
+                </div>
+                {settings.survivorModel && (
+                  <div className="mt-3">
+                    <div className="mb-1 text-[12px] text-foreground/60">First passing around age</div>
+                    <div className="grid grid-cols-5 gap-2 text-[13px]">
+                      {[80, 85, 88, 90, 92].map((a) => (
+                        <button key={a} onClick={() => updateSettings({ firstDeathAge: a })} className={btn(settings.firstDeathAge === a)}>
+                          {a}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      },
+    });
+
+    // STEP — Social Security claim age (the highest-value lever). Only when there's a
+    // benefit to time; surfaces the optimizer's suggestion.
+    const hasSS = household.self.socialSecurityAnnual > 0 || (hasSpouse && household.spouse.socialSecurityAnnual > 0);
+    if (hasSS) {
+      steps.push({
+        key: "ssclaim",
+        eyebrow: "when to claim Social Security",
+        render: () => {
+          const adv = rec.claimAdvice;
+          const ClaimPicker = ({ who }: { who: "self" | "spouse" }) => {
+            const p = household[who];
+            const fra = Math.round(fullRetirementAge(p.birthYear));
+            const ages = Array.from(new Set([62, fra, 70]));
+            return (
+              <div className="rounded-2xl border border-border p-3">
+                <div className="text-[14px] font-semibold">{p.label || (who === "self" ? "You" : "Spouse")}</div>
+                <div className="text-[11px] text-foreground/50">Full retirement age {fra}</div>
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  {ages.map((a) => {
+                    const on = p.ssClaimAge === a;
+                    return (
+                      <button
+                        key={a}
+                        onClick={() => updateHousehold({ [who]: { ...p, ssClaimAge: a } } as never)}
+                        className={`press rounded-xl border py-1.5 ${on ? "border-primary bg-primary/10" : "border-border"}`}
+                      >
+                        <div className={`text-[13px] font-bold ${on ? "text-primary" : ""}`}>Age {a}</div>
+                        <div className="text-[10px] text-foreground/55">{moneyCompact(adjustedAnnualBenefit(p.socialSecurityAnnual, p.birthYear, a))}/yr</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          };
+          return (
+            <div>
+              <h2 className="text-xl font-bold leading-snug">When should you claim Social Security?</h2>
+              <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+                This is often the single highest-value lever. Claiming later means a bigger, inflation-protected check for
+                life — but you lean on savings more in the meantime.
+              </p>
+              {adv && adv.delayWho && (
+                <Callout tone="info" icon="🎯" title={`Our math suggests ${adv.self}${hasSpouse ? ` / ${adv.spouse}` : ""}`}>
+                  {settings.goal === "maxCapital" && adv.lift > 1000 ? (
+                    <>For your numbers and a plan to {settings.endAge}, this is projected to leave about <strong>{moneyCompact(adv.lift)}</strong> more over your lifetime than your current ages. It&apos;s a suggestion — set what you prefer below.</>
+                  ) : (
+                    <>For your numbers and a plan to {settings.endAge}, this is the best pair for your goal. It&apos;s a suggestion — set what you prefer below.</>
+                  )}
+                </Callout>
+              )}
+              <div className="mt-4 space-y-2">
+                <ClaimPicker who="self" />
+                {hasSpouse && <ClaimPicker who="spouse" />}
+              </div>
+            </div>
+          );
+        },
+      });
+    }
+  }
+
   steps.push({
     key: "goal",
     eyebrow: "what matters most",
@@ -541,8 +733,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           {goalsAgree ? (
             <>
               🤖 Good news — for your numbers, all three goals lead to the <strong>same plan</strong> (the line under each
-              is identical). Moving some money to a Roth wins on every measure here, so you can&apos;t go wrong. Next
-              we&apos;ll show exactly what it means.
+              is identical){recAll.maxCapital.useConversions ? <>, and it does include some Roth conversions</> : <>, and it does <strong>not</strong> call for Roth conversions</>} — so
+              you can&apos;t go wrong. Next we&apos;ll show exactly what it means.
             </>
           ) : (
             <>
@@ -554,6 +746,86 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       </div>
     ),
   });
+
+  // STEP — "most money" method (only for maxCapital, when there are distinct plans to
+  // weigh). Ranks the finalists by how they do across the SAME simulated markets, by
+  // the metric the user picks. The winner is auto-applied as the active plan.
+  if (settings.goal === "maxCapital" && finalists.length >= 2) {
+    steps.push({
+      key: "mostmoney",
+      eyebrow: "the most-money method",
+      render: () => {
+        const metric = settings.mostMoneyMetric;
+        const METRIC_BTN: Record<MostMoneyMetric, string> = {
+          winRate: "Wins most often",
+          median: "Highest typical",
+          mean: "Highest average",
+        };
+        const valueOf = (s: MostMoneyStat) => (metric === "winRate" ? s.winRate : metric === "median" ? s.median : s.mean);
+        const ranked = mmFresh
+          ? finalists.map((f, i) => ({ f, s: mostMoney![i] })).sort((a, b) => valueOf(b.s) - valueOf(a.s))
+          : finalists.map((f) => ({ f, s: null as MostMoneyStat | null }));
+        return (
+          <div>
+            <h2 className="text-xl font-bold leading-snug">Which plan most likely leaves you the most?</h2>
+            <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+              &ldquo;Most money&rdquo; depends on the markets you get. So we run your top {finalists.length} plans through the{" "}
+              <strong>same</strong>{" "}hundreds of simulated markets and rank them. How do you want &ldquo;most&rdquo; measured?
+            </p>
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {(["winRate", "median", "mean"] as const).map((k) => (
+                <button
+                  key={k}
+                  onClick={() => updateSettings({ mostMoneyMetric: k, planCustomized: false })}
+                  className={`press rounded-xl border px-2 py-2 text-[12px] font-semibold ${metric === k ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/65"}`}
+                >
+                  {METRIC_BTN[k]}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-[11px] leading-snug text-foreground/45">
+              {metric === "winRate"
+                ? "Ends up with the most in the largest share of markets (it can lose some — it wins most)."
+                : metric === "median"
+                  ? "Highest typical (middle) ending estate — the steadiest, most-likely outcome."
+                  : "Highest average ending estate — rewards upside, can favor a riskier plan."}
+            </p>
+
+            {!mmFresh ? (
+              <div className="mt-4 rounded-2xl border border-border p-5 text-center text-[13px] text-foreground/55">
+                <span className="inline-block animate-pulse">↻ Running your plans through the markets…</span>
+              </div>
+            ) : (
+              <div className="mt-4 space-y-2">
+                {ranked.map(({ f, s }, i) => {
+                  if (!s) return null;
+                  const winner = i === 0;
+                  return (
+                    <div key={f.label} className={`rounded-2xl border p-3 ${winner ? "border-primary bg-primary/[0.06]" : "border-border"}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`text-[13px] font-semibold ${winner ? "text-primary" : ""}`}>{f.label}</span>
+                        {winner && <Pill tone="roth">Recommended</Pill>}
+                      </div>
+                      <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                        <Stat label="Wins" value={`${Math.round(s.winRate * 100)}%`} hot={metric === "winRate"} />
+                        <Stat label="Typical" value={moneyCompact(s.median)} hot={metric === "median"} />
+                        <Stat label="Average" value={moneyCompact(s.mean)} hot={metric === "mean"} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <p className="mt-3 rounded-xl bg-gain/[0.06] px-3 py-2 text-[12px] leading-relaxed text-foreground/70">
+              💡 The top plan is now your <strong>active plan</strong> — everything after this reflects it. Switch the measure
+              above and it re-picks instantly. Win-rate is the default a planner would call &ldquo;most likely to leave you the
+              most&rdquo;; median is the steadier choice; average chases upside.
+            </p>
+          </div>
+        );
+      },
+    });
+  }
 
   steps.push({
     key: "spend",
@@ -892,12 +1164,14 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               }`}
             >
               {zone === "comfortable" && (
-                <>✅ <strong>Comfortable.</strong> Even in a weak market your money lasts to {settings.endAge}, leaving about{" "}
-                  <strong>{money(cur.endingEstate)}</strong>.</>
+                <>✅ <strong>Comfortable.</strong> Even on a single cautious (below-average) market path your money lasts to{" "}
+                  {settings.endAge}, leaving about <strong>{money(cur.endingEstateReal)}</strong>{" "}in today&apos;s dollars. The
+                  range below stress-tests that across hundreds of markets.</>
               )}
               {zone === "tight" && (
-                <>🟡 <strong>Doable, but tight.</strong> It lasts to {settings.endAge}, but in a weak market you&apos;d end with only about{" "}
-                  <strong>{money(cur.endingEstate)}</strong>.</>
+                <>🟡 <strong>Doable, but tight.</strong> On a cautious market path it lasts to {settings.endAge}, ending with
+                  only about <strong>{money(cur.endingEstateReal)}</strong>{" "}in today&apos;s dollars. The range below shows
+                  how much the markets could swing that.</>
               )}
               {zone === "short" && (
                 <>🔴 <strong>Too high.</strong> At this level your savings would run short around <strong>age {Number.isFinite(cur.depletionAge) ? cur.depletionAge : settings.endAge}</strong>.</>
@@ -1036,6 +1310,48 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     },
   });
 
+  // STEP — market assumptions (return + inflation). These set the MIDDLE of every
+  // projection; the forecast still stress-tests across hundreds of paths around them.
+  steps.push({
+    key: "markets",
+    eyebrow: "market assumptions",
+    render: () => {
+      const btn = (on: boolean) =>
+        `press rounded-xl border py-2 text-center ${on ? "border-primary bg-primary/10 text-primary font-semibold" : "border-border text-foreground/70"}`;
+      const near = (a: number, b: number) => Math.abs(a - b) < 1e-9;
+      return (
+        <div>
+          <h2 className="text-xl font-bold leading-snug">What should we assume about markets?</h2>
+          <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+            These set the middle of every projection. We default to cautious, professional long-run numbers — nudge them
+            if you like. (The forecast then stress-tests hundreds of market paths around this.)
+          </p>
+          <div className="mt-4">
+            <div className="mb-1 text-[12px] font-medium text-foreground/60">Average yearly return, after fees</div>
+            <div className="grid grid-cols-3 gap-2">
+              {[{ r: 0.04, l: "Cautious" }, { r: 0.05, l: "Moderate" }, { r: 0.06, l: "Optimistic" }].map((o) => (
+                <button key={o.r} onClick={() => updateSettings({ returnRate: o.r })} className={btn(near(settings.returnRate, o.r))}>
+                  <div className="text-lg font-bold leading-none">{percent(o.r, 0)}</div>
+                  <div className="mt-0.5 text-[10px]">{o.l}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="mt-4">
+            <div className="mb-1 text-[12px] font-medium text-foreground/60">Inflation</div>
+            <div className="grid grid-cols-4 gap-2 text-[13px]">
+              {[0.02, 0.025, 0.03, 0.035].map((r) => (
+                <button key={r} onClick={() => updateSettings({ inflationRate: r })} className={btn(near(settings.inflationRate, r))}>
+                  {percent(r, 1)}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    },
+  });
+
   // ── Confirm the Roth rollover — its own step right after spending, so the picture
   // builds up in order: spending first (previous step), then we add the rollover's
   // taxable income on top and re-show the Medicare (IRMAA) tier. ──
@@ -1147,7 +1463,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 <div className="mt-3 overflow-hidden rounded-2xl border border-border text-[12px]">
                   <div className="grid grid-cols-[1fr_6.5rem_5.5rem] gap-x-3 border-b border-border/60 px-3 py-1.5 text-[9px] uppercase tracking-wide text-foreground/40">
                     <span />
-                    <span className="text-right">Taxable income</span>
+                    <span className="text-right">Income (MAGI)</span>
                     <span className="text-right">Medicare</span>
                   </div>
                   <div className="grid grid-cols-[1fr_6.5rem_5.5rem] items-center gap-x-3 px-3 py-2">
@@ -1206,6 +1522,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   const surPct = irmaaJump > 1 && portfolioTotal > 0 ? irmaaJump / portfolioTotal : 0;
                   const surStr = surPct < 0.001 ? "under 0.1%" : `${(surPct * 100).toFixed(surPct < 0.01 ? 2 : 1)}%`;
                   return (
+                    <DesktopOnly>
                     <p className="mt-2 rounded-xl bg-gain/[0.06] px-3 py-2 text-[12px] leading-relaxed text-foreground/75">
                       💡 <strong>Why it&apos;s worth it.</strong> Leave this money in pre-tax and your biggest forced withdrawal
                       (RMD) climbs to about <strong>{moneyCompact(peakBomb)}</strong>{" "}in a single year, taxed up at{" "}
@@ -1225,6 +1542,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                         savings — is small next to that.</>
                       ) : null}
                     </p>
+                    </DesktopOnly>
                   );
                 })()}
 
@@ -1260,6 +1578,49 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 </div>
               </>
             )}
+
+            {/* The two remaining levers, tucked in an expander so they don't crowd the
+                decision: how many years to keep converting, and the heir's tax rate. */}
+            <Info q="Advanced — conversion window & your heirs' tax rate">
+              <div className="space-y-3">
+                <div>
+                  <div className="mb-1 text-[12px] font-medium text-foreground/70">Keep converting through age</div>
+                  <div className="grid grid-cols-4 gap-2 text-[13px]">
+                    {[70, 73, 75, 80].map((a) => (
+                      <button
+                        key={a}
+                        onClick={() => updateSettings({ convertUntilAge: a, planCustomized: true })}
+                        className={`press rounded-xl border py-1.5 ${settings.convertUntilAge === a ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/70"}`}
+                      >
+                        {a}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-1 text-[11px] leading-snug text-foreground/50">
+                    How long the plan keeps moving pre-tax → Roth. Longer can shift more before RMDs start, but spreads the
+                    tax over more years.
+                  </p>
+                </div>
+                <div>
+                  <div className="mb-1 text-[12px] font-medium text-foreground/70">If a non-spouse heir inherits your pre-tax, assume they pay</div>
+                  <div className="grid grid-cols-4 gap-2 text-[13px]">
+                    {[0.12, 0.22, 0.24, 0.32].map((r) => (
+                      <button
+                        key={r}
+                        onClick={() => updateSettings({ heirTaxRate: r })}
+                        className={`press rounded-xl border py-1.5 ${Math.abs(settings.heirTaxRate - r) < 1e-9 ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/70"}`}
+                      >
+                        {percent(r, 0)}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-1 text-[11px] leading-snug text-foreground/50">
+                    Inherited pre-tax money is taxed as the heir&apos;s income (SECURE Act 10-year rule). This sets how the
+                    &ldquo;money your family keeps&rdquo; figures discount it — Roth is inherited tax-free.
+                  </p>
+                </div>
+              </div>
+            </Info>
           </div>
         );
       },
@@ -1328,7 +1689,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               <span>{100 - pct}% from your accounts</span>
             </div>
             <div className="mt-3 space-y-1 text-[13px]">
-              <Row label="Guaranteed income (doesn't depend on markets)" value={money(guaranteed)} tone="ss" bold />
+              <Row label="Income you get without selling anything" value={money(guaranteed)} tone="ss" bold />
               {gItems.map((g) => (
                 <div key={g.label}>
                   <Row label={`…${g.label}`} value={money(g.value)} sub />
@@ -1452,7 +1813,9 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               )}
 
               {/* Why THIS order — proven on the user's own numbers, and honest about the
-                  "spend taxable first" rule of thumb. */}
+                  "spend taxable first" rule of thumb. Desktop-only: it's the evidence; the
+                  order itself is already shown in the breakdown above. */}
+              <DesktopOnly>
               <div className="mt-3 rounded-2xl border border-border p-3">
                 {chosen.key === ranked[0].key ? (
                   <>
@@ -1524,6 +1887,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   </p>
                 </Info>
               </div>
+              </DesktopOnly>
             </div>
           )}
 
@@ -1536,7 +1900,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             return (
               <div className="mt-5 border-t border-border pt-4">
                 <h3 className="text-base font-bold leading-snug">Set aside about {money(t.totalTax)} for tax</h3>
-                {lowTax ? (
+                <DesktopOnly>{lowTax ? (
                   <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
                     Almost none of this year&apos;s <strong>{money(spending)}</strong> is taxable income — you funded it
                     mostly from cash and dividends (money you&apos;ve already paid tax on, or that&apos;s taxed at the 0%
@@ -1552,7 +1916,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     <strong>{percent(t.marginalOrdinaryRate, 0)}</strong>, so the bill is about{" "}
                     <strong>{money(t.totalTax)}</strong> — roughly {percent(t.effectiveRate)} of your income.
                   </p>
-                )}
+                )}</DesktopOnly>
                 <div className="mt-2 grid grid-cols-2 gap-2 text-[12px]">
                   <div className="rounded-xl border border-border bg-background/60 p-2 text-center">
                     <div className="text-[10px] uppercase tracking-wide text-foreground/45">Federal</div>
@@ -1563,7 +1927,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     <div className="tabular text-sm font-bold text-tax">{moneyCompact(t.stateTax)}</div>
                   </div>
                 </div>
-                {fedZero ? (
+                <DesktopOnly>{fedZero ? (
                   <p className="mt-2 text-[12px] leading-relaxed text-foreground/65">
                     Federal is about $0 because most of your income is qualified dividends &amp; long-term gains, which
                     get a <strong>0% federal rate</strong> while your taxable income stays under about{" "}
@@ -1574,7 +1938,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   <p className="mt-2 text-[12px] text-foreground/55">
                     🟢 Illinois taxes only your investment income — withdrawals, RMDs, pension, and Social Security are state-tax-free.
                   </p>
-                ) : null}
+                ) : null}</DesktopOnly>
               </div>
             );
           })()}
@@ -1671,6 +2035,18 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         }
 
         return (
+          <DesktopOnly
+            mobileNote={
+              <div>
+                <h2 className="text-xl font-bold leading-snug">Smooth your future tax bill</h2>
+                <p className="mt-2 text-[13px] leading-relaxed text-foreground/65">
+                  Your plan moves small amounts to Roth across your low-tax years instead of facing one big forced
+                  withdrawal (RMD) later — projected to keep about <strong>{moneyCompact(gainVsNothing)}</strong>{" "}more
+                  after every tax. Open this on a larger screen for the full year-by-year comparison and bracket math.
+                </p>
+              </div>
+            }
+          >
           <div>
             <h2 className="text-xl font-bold leading-snug">Smooth your future tax bill</h2>
             <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
@@ -1815,6 +2191,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               </p>
             )}
           </div>
+          </DesktopOnly>
         );
       },
     });
@@ -1839,7 +2216,13 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
   steps.push({
     key: "done",
-    eyebrow: "You're set",
+    eyebrow: confidence
+      ? confidence.successPct >= 0.8
+        ? "you're set"
+        : confidence.successPct >= 0.6
+          ? "looking good"
+          : "worth a closer look"
+      : "the verdict",
     render: () => (
       <div className="text-center">
         {confidence ? (
@@ -1850,9 +2233,9 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               <AnimatedNumber value={confidence.successPct * 100} format={(n) => `${Math.round(n)}%`} />
             </div>
             <p className="mt-1 text-[13px] text-foreground/65">
-              In {confidence.runs.toLocaleString()} simulations of random market returns (correlated, fat-tailed), your money lasted to age{" "}
-              {settings.endAge} this often — a likely range of {Math.round(confidence.successCI[0] * 100)}–
-              {Math.round(confidence.successCI[1] * 100)}%.
+              Across {confidence.runs.toLocaleString()} simulated market futures — including crashes and long slumps — your
+              money lasted to age {settings.endAge} this often. Give or take a couple of points ({Math.round(confidence.successCI[0] * 100)}–
+              {Math.round(confidence.successCI[1] * 100)}%), since it&apos;s based on {confidence.runs.toLocaleString()} sample runs.
             </p>
           </>
         ) : (
@@ -2042,9 +2425,14 @@ function AccountOverview({ household, total }: { household: Household; total: nu
   const sumOf = (b: TaxBucket) =>
     household.accounts.filter((a) => bucketOf(a.kind) === b).reduce((s, a) => s + a.balance, 0);
   const groups: { bucket: TaxBucket; title: string; note: string; dot: string }[] = [
-    { bucket: "pretax", title: "Pre-tax (Traditional)", note: "Taxed as income when withdrawn · RMDs apply", dot: "bg-deferred" },
-    { bucket: "roth", title: "Roth", note: "Already taxed · grows tax-free · no RMDs", dot: "bg-roth" },
-    { bucket: "taxable", title: "Taxable (brokerage & cash)", note: "Only the gains are taxed", dot: "bg-taxable" },
+    { bucket: "pretax", title: "Pre-tax (Traditional)", note: "Taxed as income when withdrawn · the IRS forces withdrawals (RMDs) starting at 73", dot: "bg-deferred" },
+    { bucket: "roth", title: "Roth", note: "Already taxed · grows tax-free · no forced withdrawals", dot: "bg-roth" },
+    { bucket: "taxable", title: "Taxable (brokerage & cash)", note: "Only the gains are taxed when you sell — not the original money you put in", dot: "bg-taxable" },
+  ];
+  const legend: { label: string; dot: string; value: number }[] = [
+    { label: "Pre-tax", dot: "bg-deferred", value: sumOf("pretax") },
+    { label: "Taxable", dot: "bg-taxable", value: sumOf("taxable") },
+    { label: "Roth", dot: "bg-roth", value: sumOf("roth") },
   ];
   return (
     <div className="mt-4">
@@ -2055,6 +2443,14 @@ function AccountOverview({ household, total }: { household: Household; total: nu
           { value: sumOf("roth"), className: "bg-roth", label: "Roth" },
         ].filter((s) => s.value > 0.5)}
       />
+      <div className="mt-1.5 flex flex-wrap justify-center gap-x-4 gap-y-1 text-[11px] text-foreground/55">
+        {legend.filter((l) => l.value > 0.5).map((l) => (
+          <span key={l.label} className="flex items-center gap-1.5">
+            <span className={`inline-block h-2 w-2 rounded-full ${l.dot}`} />
+            {l.label} <span className="text-foreground/40">{Math.round((l.value / total) * 100)}%</span>
+          </span>
+        ))}
+      </div>
       <div className="mt-3 space-y-2.5">
         {groups
           .map((g) => ({ ...g, accts: household.accounts.filter((a) => bucketOf(a.kind) === g.bucket), subtotal: sumOf(g.bucket) }))
@@ -2121,7 +2517,7 @@ function AheadYearRow({ y, i }: { y: PlanYear; i: number }) {
           {y.year} <span className="text-foreground/50">· age {y.selfAge}</span>
         </span>
         <span className="flex shrink-0 items-center gap-2">
-          <span className="tabular text-[12px] text-foreground/55">tax {moneyCompact(y.tax)}</span>
+          <span className="tabular text-[12px] text-foreground/55">est. tax {moneyCompact(y.tax)}</span>
           <span className={`text-foreground/40 transition-transform ${open ? "rotate-180" : ""}`}>⌄</span>
         </span>
       </button>
@@ -2482,6 +2878,16 @@ function Row({ label, value, tone, bold, sub }: { label: string; value: ReactNod
     <div className={`flex items-center justify-between gap-2 ${sub ? "pl-2" : ""}`}>
       <span className={`${bold ? "font-semibold" : sub ? "text-foreground/55" : "text-foreground/70"} text-[13px]`}>{label}</span>
       <span className={`tabular shrink-0 ${bold ? "font-bold" : "font-medium"} ${color}`}>{value}</span>
+    </div>
+  );
+}
+
+/** A small labeled stat cell; `hot` highlights the metric the user is ranking by. */
+function Stat({ label, value, hot }: { label: string; value: string; hot?: boolean }) {
+  return (
+    <div className={`rounded-lg px-1 py-1.5 ${hot ? "bg-primary/10" : ""}`}>
+      <div className={`tabular text-[15px] font-bold ${hot ? "text-primary" : "text-foreground/80"}`}>{value}</div>
+      <div className="text-[10px] uppercase tracking-wide text-foreground/45">{label}</div>
     </div>
   );
 }
