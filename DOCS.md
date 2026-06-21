@@ -10,7 +10,7 @@
 - The Lifetime Projection
 - The Optimizer, Recommender & the "Most Money" Probability Engine
 - Monte Carlo & Capital-Market Assumptions
-- The Start Walkthrough (13 steps)
+- The Start Walkthrough (14 steps)
 - Verification & Quality Bar
 - Developing, Running & Deploying
 
@@ -569,9 +569,9 @@ All four engines emit the same `MonteCarloResult` shape and share `wilsonInterva
 
 ---
 
-## The Start Walkthrough (13 steps)
+## The Start Walkthrough (14 steps)
 
-The guided walkthrough is the app's primary on-ramp, defined entirely in `components/GuidedPlan.tsx`. Steps are not JSX-in-a-switch; they are pushed in order into a `steps: Step[]` array (`type Step = { key; eyebrow; render }`), so the *order of the `steps.push(...)` calls is the literal screen order*. Several steps are conditional (see "Which steps appear" below), so a given household sees between roughly 8 and 13 screens; the canonical full path is 13. The footer shows `{safeStep + 1} / {steps.length}` and a row of tappable progress dots, so the count the user sees is the count of steps that actually apply to them.
+The guided walkthrough is the app's primary on-ramp, defined entirely in `components/GuidedPlan.tsx`. Steps are not JSX-in-a-switch; they are pushed in order into a `steps: Step[]` array (`type Step = { key; eyebrow; render }`), so the *order of the `steps.push(...)` calls is the literal screen order*. Several steps are conditional (see "Which steps appear" below), so a given household sees between roughly 9 and 14 screens; the canonical full path is 14. The footer shows `{safeStep + 1} / {steps.length}` and a row of tappable progress dots, so the count the user sees is the count of steps that actually apply to them.
 
 Two cross-cutting behaviors apply to every step and are covered once here rather than repeated per step:
 
@@ -584,56 +584,59 @@ Two cross-cutting behaviors apply to every step and are covered once here rather
 |---|-------|-------------------------|
 | 1 | `start` | The one-time fork: **own numbers vs. the $5M example**. |
 | 2 | `accounts` | Your portfolio, totaled and broken out **by tax bucket**. |
-| 3 | `longevity` | **Plan-to age** + the survivor (widow's-penalty) model. |
-| 4 | `ssclaim` | **Social Security claim age**, with the optimizer's suggestion. |
-| 5 | `goal` | maxCapital / lowestTax / lowestRate. |
-| 6 | `mostmoney` | The win-rate / median / mean tie-break (**maxCapital only**). |
-| 7 | `spend` | Spending level + inflation-growth toggle + live tax/IRMAA preview. |
-| 8 | `markets` | Return + inflation assumptions. |
-| 9 | `rollconfirm` | Confirm this year's Roth rollover (+ Advanced expander). |
-| 10 | `fund` | What pays for it + withdrawal order. |
-| 11 | `roll` | The lifetime tax-smoothing comparison. |
-| 12 | `ahead` | The multi-year action plan. |
-| 13 | `done` | The Monte-Carlo confidence verdict. |
+| 3 | `aboutyou` | **Birth year(s)** (you + optional spouse) and the **year you plan to start retirement**. |
+| 4 | `longevity` | **Plan-to age** + the survivor (widow's-penalty) model. |
+| 5 | `ssclaim` | **Social Security claim age**, with the optimizer's suggestion. |
+| 6 | `goal` | maxCapital / lowestTax / lowestRate. |
+| 7 | `mostmoney` | The win-rate / median / mean tie-break (**maxCapital only**). |
+| 8 | `spend` | Spending level + inflation-growth toggle + live tax/IRMAA preview. |
+| 9 | `markets` | Return + inflation assumptions. |
+| 10 | `rollconfirm` | Confirm this year's Roth rollover (+ Advanced expander). |
+| 11 | `fund` | What pays for it + withdrawal order. |
+| 12 | `roll` | The lifetime tax-smoothing comparison. |
+| 13 | `ahead` | The multi-year action plan. |
+| 14 | `done` | The Monte-Carlo confidence verdict. |
 
 **1. `start` — own vs. example.** The fork that the whole walkthrough runs on. Two buttons: "Use my own numbers" (`setMode("own")`) and "Explore the $5M example" (`setMode("demo")`). There is deliberately no mid-flow toggle — to switch, you come back here (Back from step 2, or "Start over" at the end) and re-pick. `needsOwnSetup = mode === "own" && household.accounts.length === 0` is computed here and gates later steps.
 
 **2. `accounts` — portfolio by tax bucket.** Shows the total across all accounts (animated) and `AccountOverview`, which lays the holdings out *by tax treatment*. In `demo` mode it banners the sample `{moneyCompact(total)}` household and offers "🎲 New example"; in `own` mode it offers "Edit my accounts." If `needsOwnSetup`, this step instead shows an "Add my accounts" call to action linking to `/accounts` and the rest of the flow's body is suppressed.
 
-**3. `longevity` — plan-to age + survivor model.** *(Skipped when `needsOwnSetup`.)* Picks `endAge` from {90, 95, 100, 105} (95 labeled "typical"). The horizon drives every downstream number. If there's a spouse, a `survivorModel` toggle (**on by default**) models the survivor filing as single (narrower brackets) and keeping the larger Social Security — the widow's penalty — with a `firstDeathAge` picker {80, 85, 88, 90, 92}.
+**3. `aboutyou` — birth year(s) + planned retirement year.** A plain-English identity step. Each person (you, plus an *optional* spouse/partner) gets a birth-year input, with the derived current age shown alongside; a toggle adds or drops the spouse by flipping `spouse.birthYear` to/from the `<= 1900` "no spouse" sentinel the rest of the app keys off (so a single household files single everywhere). A **planned-retirement-year** field (free entry plus quick-pick buttons at *now*, age 65/67/70, clamped to a sane window) writes `household.retirementYear`, showing how many years away it is and your age that year. These are all *exploratory* fields (`EXPLORATORY_KEYS` in `HouseholdProvider`), so editing them on the example layers onto the demo in place instead of forking into "your own numbers." `retirementYear` is captured to frame the plan; the year-by-year projection still begins at the present year (`startYear = new Date().getFullYear()` in `lib/projection.ts`) — wiring it through the engine is a planned follow-up.
 
-**4. `ssclaim` — claim age with the optimizer's suggestion.** *(Skipped when `needsOwnSetup`; only shown when `hasSS`, i.e. someone has a positive `socialSecurityAnnual`.)* A per-person `ClaimPicker` offers {62, FRA, 70} (FRA from `fullRetirementAge(birthYear)`), each button showing the `adjustedAnnualBenefit(...)` for that age. When `rec.claimAdvice.delayWho` exists, a Callout surfaces the optimizer's suggested pair (`adv.self / adv.spouse`); for `maxCapital` with `adv.lift > 1000` it quantifies the projected lifetime gain (`moneyCompact(adv.lift)` more than the current ages). It is explicitly framed as a suggestion — the user still sets what they prefer.
+**4. `longevity` — plan-to age + survivor model.** *(Skipped when `needsOwnSetup`.)* Picks `endAge` from {90, 95, 100, 105} (95 labeled "typical"). The horizon drives every downstream number. If there's a spouse, a `survivorModel` toggle (**on by default**) models the survivor filing as single (narrower brackets) and keeping the larger Social Security — the widow's penalty — with a `firstDeathAge` picker {80, 85, 88, 90, 92}.
 
-**5. `goal` — maxCapital / lowestTax / lowestRate.** Maps over `GOALS = ["maxCapital", "lowestTax", "lowestRate"]` (`GuidedPlan.tsx` L39). Tapping a goal calls `applyGoal(g)`, which recommends at the stable reference spending and writes the goal's recommended config with `planCustomized: false`. Each button shows a one-line `planGist(recAll[g])`, so differences between goals are visible. A footer note checks `goalsAgree` (via `configMatches`): if all three goals converge on the *same* plan it says so (and whether that plan includes Roth conversions); if they diverge it points the user at the per-button summaries.
+**5. `ssclaim` — claim age with the optimizer's suggestion.** *(Skipped when `needsOwnSetup`; only shown when `hasSS`, i.e. someone has a positive `socialSecurityAnnual`.)* A per-person `ClaimPicker` offers {62, FRA, 70} (FRA from `fullRetirementAge(birthYear)`), each button showing the `adjustedAnnualBenefit(...)` for that age. When `rec.claimAdvice.delayWho` exists, a Callout surfaces the optimizer's suggested pair (`adv.self / adv.spouse`); for `maxCapital` with `adv.lift > 1000` it quantifies the projected lifetime gain (`moneyCompact(adv.lift)` more than the current ages). It is explicitly framed as a suggestion — the user still sets what they prefer.
 
-**6. `mostmoney` — the win-rate / median / mean choice.** *(Only when `settings.goal === "maxCapital" && finalists.length >= 2`.)* Runs the top finalists through the *same* hundreds of simulated markets and ranks them by the chosen `mostMoneyMetric`: `winRate` ("Wins most often" — default, the planner's "most likely to leave you the most"), `median` ("Highest typical" — steadiest), or `mean` ("Highest average" — chases upside). The top-ranked plan becomes the active plan immediately (changing the metric writes `mostMoneyMetric` with `planCustomized: false` so it re-picks and auto-applies). While the worker runs (`!mmFresh`) it shows a "Running your plans through the markets…" placeholder; once fresh it renders each finalist with Wins% / Typical / Average and a "Recommended" pill on the winner.
+**6. `goal` — maxCapital / lowestTax / lowestRate.** Maps over `GOALS = ["maxCapital", "lowestTax", "lowestRate"]` (`GuidedPlan.tsx` L39). Tapping a goal calls `applyGoal(g)`, which recommends at the stable reference spending and writes the goal's recommended config with `planCustomized: false`. Each button shows a one-line `planGist(recAll[g])`, so differences between goals are visible. A footer note checks `goalsAgree` (via `configMatches`): if all three goals converge on the *same* plan it says so (and whether that plan includes Roth conversions); if they diverge it points the user at the per-button summaries.
 
-**7. `spend` — spending + inflation-growth toggle + tax/IRMAA preview.** The core spending screen. A slider over a `sweep` exposes a comfortable ceiling (green), a sustainable max (amber), and a recommended ~4%-pace "quick amount"; a marker rail places those ceilings and every IRMAA cliff (`impact.irmaaCliffs`, red) at the spend level where each bites. The headline readout shows annual after-tax spend; a live tax/IRMAA preview card (fed by the live slider MAGI, not the committed plan) shows the resulting marginal rate, Medicare (IRMAA) tier, and ending-savings value, including whether the IRMAA tier is `irmaaPinned` by other income. A **`spendingStrategy` toggle** chooses "Grow with inflation" (`constant` — the default, keeps real spending steady, showing the grown value at `endAge`) vs. "Stay flat" (`flatNominal`).
+**7. `mostmoney` — the win-rate / median / mean choice.** *(Only when `settings.goal === "maxCapital" && finalists.length >= 2`.)* Runs the top finalists through the *same* hundreds of simulated markets and ranks them by the chosen `mostMoneyMetric`: `winRate` ("Wins most often" — default, the planner's "most likely to leave you the most"), `median` ("Highest typical" — steadiest), or `mean` ("Highest average" — chases upside). The top-ranked plan becomes the active plan immediately (changing the metric writes `mostMoneyMetric` with `planCustomized: false` so it re-picks and auto-applies). While the worker runs (`!mmFresh`) it shows a "Running your plans through the markets…" placeholder; once fresh it renders each finalist with Wins% / Typical / Average and a "Recommended" pill on the winner.
 
-**8. `markets` — return + inflation assumptions.** Sets the *middle* of every projection (the forecast then stress-tests hundreds of paths around it). Return after fees from {4% Cautious, 5% Moderate, 6% Optimistic}; inflation from {2%, 2.5%, 3%, 3.5%}.
+**8. `spend` — spending + inflation-growth toggle + tax/IRMAA preview.** The core spending screen. A slider over a `sweep` exposes a comfortable ceiling (green), a sustainable max (amber), and a recommended ~4%-pace "quick amount"; a marker rail places those ceilings and every IRMAA cliff (`impact.irmaaCliffs`, red) at the spend level where each bites. The headline readout shows annual after-tax spend; a live tax/IRMAA preview card (fed by the live slider MAGI, not the committed plan) shows the resulting marginal rate, Medicare (IRMAA) tier, and ending-savings value, including whether the IRMAA tier is `irmaaPinned` by other income. A **`spendingStrategy` toggle** chooses "Grow with inflation" (`constant` — the default, keeps real spending steady, showing the grown value at `endAge`) vs. "Stay flat" (`flatNominal`).
 
-**9. `rollconfirm` — confirm this year's Roth rollover.** *(Only when `pretaxShare > 0.2`.)* Builds the picture in order: it adds the rollover's taxable income *on top of* the spending just chosen and re-shows the Medicare (IRMAA) tier before vs. after (`irmaaCliffInfo` on `planNoConv` vs `planWithRoll`). Two branches:
+**9. `markets` — return + inflation assumptions.** Sets the *middle* of every projection (the forecast then stress-tests hundreds of paths around it). Return after fees from {4% Cautious, 5% Moderate, 6% Optimistic}; inflation from {2%, 2.5%, 3%, 3.5%}.
+
+**10. `rollconfirm` — confirm this year's Roth rollover.** *(Only when `pretaxShare > 0.2`.)* Builds the picture in order: it adds the rollover's taxable income *on top of* the spending just chosen and re-shows the Medicare (IRMAA) tier before vs. after (`irmaaCliffInfo` on `planNoConv` vs `planWithRoll`). Two branches:
 - If there's an amount to convert this year (`rollAmt >= 1`): Yes/Skip buttons (`useConversions` with `planCustomized: true`), a desktop-only "Why it's worth it" paragraph contrasting the avoided RMD tax bomb (`peakRmd` at `peakMarginalRate`) and lifetime IRMAA against the in-conversion surcharge, and a confirmation line stating exactly what changed.
 - If nothing converts this year (`rollAmt < 1`): it answers *when* to start instead, reading the first future conversion year (`fc.year`, age `fc.selfAge`) straight off `compare.smooth`, and shows the projection's math (real gain vs. doing nothing).
 
 An **Advanced expander** (`<Info q="Advanced — conversion window & your heirs' tax rate">`) holds the two secondary levers so they don't crowd the decision: **convert-until age** {70, 73, 75, 80} (`convertUntilAge`) and the **non-spouse heir tax rate** {12%, 22%, 24%, 32%} (`heirTaxRate`, applying the SECURE Act 10-year rule to how "money your family keeps" discounts inherited pre-tax). Both set `planCustomized: true`.
 
-**10. `fund` — what pays for it + withdrawal order.** Shows the funding split for the current year: guaranteed income first (Social Security, pension, dividends & interest, itemized so "guaranteed" isn't a black box), then the savings draw to fill the gap, with a withdrawal-rate read color-coded against the ~4.5%/6% thresholds. The savings draw is itemized in spend order — RMD first (forced, ordinary income), then voluntary pre-tax (low-bracket fill), then **taxable cash-first then brokerage**, then Roth last (tax-free, used last so it compounds longest). It also ranks the three withdrawal *orders* — `conventional` (brokerage & cash first), `smart` (pre-tax first / fill low brackets), `proportional` (a little from everything) — by after-tax keep and marks the chosen one with its edge over the runner-up.
+**11. `fund` — what pays for it + withdrawal order.** Shows the funding split for the current year: guaranteed income first (Social Security, pension, dividends & interest, itemized so "guaranteed" isn't a black box), then the savings draw to fill the gap, with a withdrawal-rate read color-coded against the ~4.5%/6% thresholds. The savings draw is itemized in spend order — RMD first (forced, ordinary income), then voluntary pre-tax (low-bracket fill), then **taxable cash-first then brokerage**, then Roth last (tax-free, used last so it compounds longest). It also ranks the three withdrawal *orders* — `conventional` (brokerage & cash first), `smart` (pre-tax first / fill low brackets), `proportional` (a little from everything) — by after-tax keep and marks the chosen one with its edge over the runner-up.
 
-**11. `roll` — the lifetime smoothing comparison.** *(Only when `pretaxShare > 0.2`.)* Compares three lifetime strategies side by side from `compare`: "Do nothing extra" (`compare.none` — RMDs arrive in big high-bracket chunks), "Smooth (recommended)" (`compare.smooth` — small rollovers staying in low brackets), and "Convert aggressively" (`compare.aggressive` — fill the bracket every year). It quantifies how much of the best-case gain smoothing captures (`captured`), the smoothing gain vs. doing nothing, and the aggressive plan's remaining edge — with every numeric claim dynamic and phrased to stay true whether aggressive helps, ties, or loses. The long per-scenario explanations and the low-tax / zero-federal-bracket explainers are `DesktopOnly`.
+**12. `roll` — the lifetime smoothing comparison.** *(Only when `pretaxShare > 0.2`.)* Compares three lifetime strategies side by side from `compare`: "Do nothing extra" (`compare.none` — RMDs arrive in big high-bracket chunks), "Smooth (recommended)" (`compare.smooth` — small rollovers staying in low brackets), and "Convert aggressively" (`compare.aggressive` — fill the bracket every year). It quantifies how much of the best-case gain smoothing captures (`captured`), the smoothing gain vs. doing nothing, and the aggressive plan's remaining edge — with every numeric claim dynamic and phrased to stay true whether aggressive helps, ties, or loses. The long per-scenario explanations and the low-tax / zero-federal-bracket explainers are `DesktopOnly`.
 
-**12. `ahead` — the multi-year action plan.** "Your next few years, at a glance": maps `lookAhead` into tappable `AheadYearRow`s, each expandable to everything that year involves (the concrete year-by-year actions implied by the chosen plan).
+**13. `ahead` — the multi-year action plan.** "Your next few years, at a glance": maps `lookAhead` into tappable `AheadYearRow`s, each expandable to everything that year involves (the concrete year-by-year actions implied by the chosen plan).
 
-**13. `done` — the Monte-Carlo confidence verdict.** The closing screen. While the simulation runs it shows a spinner; once `confidence` lands it shows the success percentage (money lasting to `endAge`) as the headline number, color- and emoji-keyed by band (≥80% 🎉 "you're set" / ≥60% 👍 "looking good" / else ⚠️ "worth a closer look"), the number of simulated futures (`confidence.runs`), and the confidence interval (`successCI`). Closes with "Walk through it again" (`setStep(0)`) and "See all the numbers & charts" (`onSeeDetails`), reminding the user the plan updates automatically whenever they adjust anything.
+**14. `done` — the Monte-Carlo confidence verdict.** The closing screen. While the simulation runs it shows a spinner; once `confidence` lands it shows the success percentage (money lasting to `endAge`) as the headline number, color- and emoji-keyed by band (≥80% 🎉 "you're set" / ≥60% 👍 "looking good" / else ⚠️ "worth a closer look"), the number of simulated futures (`confidence.runs`), and the confidence interval (`successCI`). Closes with "Walk through it again" (`setStep(0)`) and "See all the numbers & charts" (`onSeeDetails`), reminding the user the plan updates automatically whenever they adjust anything.
 
 ### Which steps appear (conditionals)
 
 - `longevity`, `ssclaim`: suppressed while `needsOwnSetup` (own-mode, no accounts yet); `ssclaim` additionally requires `hasSS`.
 - `mostmoney`: only `goal === "maxCapital"` with `finalists.length >= 2`.
 - `rollconfirm` and `roll`: only when `pretaxShare > 0.2` (meaningful pre-tax balance to smooth).
-- `start`, `accounts`, `goal`, `spend`, `markets`, `fund`, `ahead`, `done` are always present.
+- `start`, `accounts`, `aboutyou`, `goal`, `spend`, `markets`, `fund`, `ahead`, `done` are always present.
 
-**Key source locations** (`components/GuidedPlan.tsx`): step pushes at L475 (`start`), L516 (`accounts`), L580 (`longevity`), L641 (`ssclaim`), L699 (`goal`), L754 (`mostmoney`), L830 (`spend`), L1315 (`markets`), L1359 (`rollconfirm`), L1630 (`fund`), L1948 (`roll`), L2184 (`ahead`), L2201 (`done`); auto-apply effect L432; `applyGoal` L404; `DesktopOnly` in `components/ui.tsx` L25; `GOALS`/`GoalId` from `lib/goals.ts`.
+**Key source locations** (`components/GuidedPlan.tsx`): step pushes at L495 (`start`), L536 (`accounts`), L604 (`aboutyou`), L737 (`longevity`), L798 (`ssclaim`), L881 (`goal`), L936 (`mostmoney`), L1036 (`spend`), L1540 (`markets`), L1584 (`rollconfirm`), L1860 (`fund`), L2215 (`roll`), L2464 (`ahead`), L2481 (`done`); `defaultRetirementYear` in `lib/accounts.ts`; demo-vs-own exploratory layering via `EXPLORATORY_KEYS` in `components/HouseholdProvider.tsx`; `DesktopOnly` in `components/ui.tsx` L25; `GOALS`/`GoalId` from `lib/goals.ts`.
 
 ---
 

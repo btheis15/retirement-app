@@ -419,7 +419,11 @@ export function describePlan(config: PlanConfig, convertUntilAge: number): strin
 /** Does the user's current manual settings match a goal's recommended config? */
 export function configMatches(a: PlanConfig, b: PlanConfig): boolean {
   if (a.strategy !== b.strategy) return false;
-  if (a.strategy === "smart" && a.bracketTarget !== b.bracketTarget) return false;
+  // bracketTarget is meaningful in two cases: it's the fill-to ceiling for the
+  // "smart" withdrawal order, AND it's the conversion ceiling whenever conversions
+  // are on (the "to N%" in plan labels). Compare it in either case — otherwise
+  // plans that differ only by conversion bracket all read as the same active plan.
+  if ((a.strategy === "smart" || a.useConversions) && a.bracketTarget !== b.bracketTarget) return false;
   if (a.useConversions !== b.useConversions) return false;
   if (a.useConversions && a.convertMode !== b.convertMode) return false;
   return true;
