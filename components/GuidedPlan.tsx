@@ -33,7 +33,7 @@ import { buildActionPlan, PlanYear, PlanAction } from "@/lib/actionPlan";
 import { GoalId, survivorFromSettings } from "@/lib/defaults";
 import { adjustedAnnualBenefit, fullRetirementAge } from "@/lib/socialSecurity";
 import { rmdStartAge } from "@/lib/tax/constants";
-import { bucketOf, ACCOUNT_KIND_META, TaxBucket, Household } from "@/lib/accounts";
+import { bucketOf, ACCOUNT_KIND_META, TaxBucket, Household, defaultRetirementYear } from "@/lib/accounts";
 import { money, moneyCompact, percent } from "@/lib/format";
 
 const GOALS: GoalId[] = ["maxCapital", "lowestTax", "lowestRate"];
@@ -592,6 +592,143 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       );
     },
   });
+
+  // STEP — about you: birth year(s) and the year you plan to start retirement. The
+  // birth years already drive ages, RMD timing, and Social Security; the retirement
+  // year is captured here up front so the plan is framed around it. Editable on the
+  // example too (these are exploratory levers — see HouseholdProvider), so it never
+  // silently turns the example into "your own numbers".
+  {
+    const aboutHasSpouse = !!household.spouse && household.spouse.birthYear > 1900;
+    const retYear = household.retirementYear ?? defaultRetirementYear(household.self.birthYear);
+    steps.push({
+      key: "aboutyou",
+      eyebrow: "a little about you",
+      render: () => {
+        const YearInput = ({
+          value,
+          onChange,
+          ariaLabel,
+          min,
+          max,
+        }: {
+          value: number;
+          onChange: (v: number) => void;
+          ariaLabel: string;
+          min: number;
+          max: number;
+        }) => (
+          <input
+            inputMode="numeric"
+            aria-label={ariaLabel}
+            defaultValue={String(value)}
+            key={value}
+            onBlur={(e) => {
+              const n = Number(e.target.value.replace(/[^0-9]/g, "")) || 0;
+              if (n >= min && n <= max) onChange(n);
+              else e.target.value = String(value); // out of range → snap back
+            }}
+            className="tabular w-20 rounded-xl border border-border bg-background/50 px-2.5 py-1.5 text-center text-[16px] font-semibold outline-none focus:border-primary"
+          />
+        );
+        const BirthRow = ({ who }: { who: "self" | "spouse" }) => {
+          const p = household[who];
+          return (
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-border p-3">
+              <div className="min-w-0">
+                <div className="text-[14px] font-semibold">{p.label || (who === "self" ? "You" : "Spouse")}</div>
+                <div className="mt-0.5 text-[11px] text-foreground/55">Born {p.birthYear} · age {year - p.birthYear} this year</div>
+              </div>
+              <label className="flex shrink-0 items-center gap-2">
+                <span className="text-[11px] text-foreground/50">Birth year</span>
+                <YearInput
+                  value={p.birthYear}
+                  ariaLabel={`${p.label || who} birth year`}
+                  min={1920}
+                  max={year}
+                  onChange={(v) => updateHousehold({ [who]: { ...p, birthYear: v } } as never)}
+                />
+              </label>
+            </div>
+          );
+        };
+        const yearsAway = retYear - year;
+        const selfAgeAtRet = retYear - household.self.birthYear;
+        return (
+          <div>
+            <h2 className="text-xl font-bold leading-snug">A little about you</h2>
+            <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+              The year you were born sets your ages, when RMDs begin, and how Social Security grows. Tell us when you plan
+              to start retirement, too — you can change any of this anytime.
+            </p>
+
+            <div className="mt-4 space-y-2">
+              <BirthRow who="self" />
+              {aboutHasSpouse && <BirthRow who="spouse" />}
+            </div>
+
+            {/* Optional spouse/partner */}
+            <button
+              onClick={() =>
+                updateHousehold({
+                  spouse: aboutHasSpouse
+                    ? { ...household.spouse, birthYear: 1900 } // sentinel → filed single everywhere
+                    : { ...household.spouse, birthYear: household.spouse.birthYear > 1900 ? household.spouse.birthYear : year - 61 },
+                } as never)
+              }
+              className="press mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-border px-3 py-2.5 text-left"
+            >
+              <span className="text-[13px] text-foreground/70">
+                {aboutHasSpouse ? "Planning as a couple" : "Planning just for myself"}
+              </span>
+              <span className={`shrink-0 rounded-full border px-3 py-1 text-[12px] font-semibold ${aboutHasSpouse ? "border-primary bg-primary text-white" : "border-border text-foreground/60"}`}>
+                {aboutHasSpouse ? "I have a spouse/partner" : "Add a spouse/partner"}
+              </span>
+            </button>
+
+            {/* Planned retirement year */}
+            <div className="mt-5 rounded-2xl border border-border p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[14px] font-semibold">Year you plan to start retirement</div>
+                  <div className="mt-0.5 text-[11px] text-foreground/55">
+                    {yearsAway <= 0 ? "This is now or in the past" : `${yearsAway} ${yearsAway === 1 ? "year" : "years"} from now`} ·
+                    you&apos;d be {selfAgeAtRet} that year
+                  </div>
+                </div>
+                <YearInput
+                  value={retYear}
+                  ariaLabel="Year you plan to start retirement"
+                  min={year - 5}
+                  max={year + 40}
+                  onChange={(v) => updateHousehold({ retirementYear: v })}
+                />
+              </div>
+              <div className="mt-3 grid grid-cols-4 gap-2">
+                {[year, household.self.birthYear + 65, household.self.birthYear + 67, household.self.birthYear + 70]
+                  .map((y) => Math.max(year - 5, Math.min(year + 40, y)))
+                  .filter((y, i, arr) => arr.indexOf(y) === i)
+                  .map((y) => (
+                    <button
+                      key={y}
+                      onClick={() => updateHousehold({ retirementYear: y })}
+                      className={`press rounded-xl border py-2 text-center ${retYear === y ? "border-primary bg-primary/10 text-primary font-semibold" : "border-border text-foreground/65"}`}
+                    >
+                      <div className="text-[14px] font-bold leading-none">{y}</div>
+                      <div className="mt-0.5 text-[10px]">{y === year ? "now" : `age ${y - household.self.birthYear}`}</div>
+                    </button>
+                  ))}
+              </div>
+              <p className="mt-2 text-[11px] leading-snug text-foreground/45">
+                We use this to frame your plan. The year-by-year projection currently begins this year; tying it fully to
+                your retirement year is coming next.
+              </p>
+            </div>
+          </div>
+        );
+      },
+    });
+  }
 
   // STEP — plan-to age + survivor (longevity). The horizon drives every number; the
   // survivor model captures the widow's-penalty single-filer years.

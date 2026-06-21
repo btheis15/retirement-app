@@ -131,7 +131,19 @@ export interface Household {
   taxExemptInterestAnnual?: number;
   /** State of residence for state income tax (defaults to Illinois). */
   state?: StateCode;
+  /** Calendar year the household plans to start retirement. Captured up front so
+   *  the plan can be framed around it; the projection currently still begins at the
+   *  present year (see lib/projection.ts), so this is an informational input for now. */
+  retirementYear?: number;
   accounts: Account[];
+}
+
+/** A sensible default planned-retirement year for someone born in `birthYear`:
+ *  the year they turn 65, but never earlier than this year (you can't plan to have
+ *  retired in the past). Used to seed the input when none is set. */
+export function defaultRetirementYear(birthYear: number): number {
+  const thisYear = new Date().getFullYear();
+  return Math.max(thisYear, birthYear + 65);
 }
 
 export const ACCOUNT_KIND_META: Record<

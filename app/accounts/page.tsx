@@ -15,6 +15,7 @@ import {
   sumBuckets,
   holdingValue,
   syncAccountFromHoldings,
+  defaultRetirementYear,
 } from "@/lib/accounts";
 import { holdingDps, holdingDivGrowth, dividendKind, holdingDividendKind } from "@/lib/dividends";
 import { rmdStartAge } from "@/lib/tax/constants";
@@ -153,6 +154,21 @@ export default function AccountsPage() {
           </Card>
         );
       })}
+
+      <Card className="mb-3">
+        <Field label="Year you plan to start retirement">
+          <input
+            className={INPUT}
+            inputMode="numeric"
+            value={household.retirementYear ?? defaultRetirementYear(household.self.birthYear)}
+            onChange={(e) => updateHousehold({ retirementYear: num(e.target.value) })}
+          />
+          <p className="mt-1 text-[11px] text-foreground/55">
+            You&apos;d be age {(household.retirementYear ?? defaultRetirementYear(household.self.birthYear)) - household.self.birthYear} that
+            year. Used to frame your plan; the year-by-year projection currently still begins this year.
+          </p>
+        </Field>
+      </Card>
 
       {/* Income & spending */}
       <SectionTitle>Income & spending</SectionTitle>
