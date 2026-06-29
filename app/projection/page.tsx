@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import { useStore } from "@/components/HouseholdProvider";
-import { Card, PageTitle, SectionTitle, Stat, Pill, Disclaimer, Callout, Explainer, Info, PageSkeleton, DesktopOnly, Collapsible } from "@/components/ui";
+import { Card, PageTitle, SectionTitle, Stat, Pill, Disclaimer, Callout, Explainer, Info, PageSkeleton, DesktopOnly, Collapsible, AdjustLink } from "@/components/ui";
 import { StackedArea, Bars, CompareBars, AnimatedNumber, FanChart } from "@/components/charts";
 import { projectLifetime } from "@/lib/projection";
 import { detectMilestones } from "@/lib/milestones";
@@ -522,54 +522,27 @@ export default function ProjectionPage() {
         defaultOpenDesktop={false}
         className="mt-2"
       >
-        <span className="mb-1 block text-[12px] font-medium text-foreground/60">Return scenario</span>
-        <div className="flex gap-2">
-          {scenarios.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => updateSettings({ returnRate: s.rate })}
-              className={`press flex-1 rounded-xl border py-2 text-center ${
-                Math.abs(settings.returnRate - s.rate) < 0.0025
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border"
-              }`}
-            >
-              <div className="text-[12px] font-semibold">{s.label}</div>
-              <div className="text-[11px] text-foreground/55">{percent(s.rate, 1)}/yr</div>
-            </button>
-          ))}
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2.5">
+          <div className="min-w-0">
+            <div className="text-[12px] font-medium text-foreground/60">Markets</div>
+            <div className="text-[13px] font-semibold">{percent(settings.returnRate, 1)}/yr return · {percent(settings.inflationRate, 1)} inflation</div>
+            <div className="mt-0.5 text-[11px] leading-snug text-foreground/55">
+              Based on your holdings ({percent(rm.equityPct, 0)} stocks · {percent(rm.bondPct, 0)} bonds · {percent(rm.cashPct, 0)} cash).
+              {rm.basis !== "holdings" && " Add holdings for precision."}
+            </div>
+          </div>
+          <AdjustLink step="markets" />
         </div>
-        <p className="mt-1.5 text-[11px] text-foreground/55">
-          Based on your holdings ({percent(rm.equityPct, 0)} stocks · {percent(rm.bondPct, 0)} bonds · {percent(rm.cashPct, 0)} cash).
-          Stocks have averaged ~10%/yr long-term, so a stock-heavy mix sits high; these scenarios bracket your blend.
-          {rm.basis !== "holdings" && " (Accounts without itemized holdings use an assumed mix — add holdings for precision.)"}
-        </p>
         <ReturnMethodInfo rm={rm} />
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <label className="block">
-            <span className="mb-1 block text-[12px] font-medium text-foreground/60">Inflation</span>
-            <select
-              className="w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm"
-              value={settings.inflationRate}
-              onChange={(e) => updateSettings({ inflationRate: Number(e.target.value) })}
-            >
-              {[0.02, 0.025, 0.03, 0.035].map((v) => (
-                <option key={v} value={v}>{percent(v, 1)}</option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-[12px] font-medium text-foreground/60">Plan to age</span>
-            <select
-              className="w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm"
-              value={settings.endAge}
-              onChange={(e) => updateSettings({ endAge: Number(e.target.value) })}
-            >
-              {[85, 90, 95, 100, 105].map((v) => (
-                <option key={v} value={v}>{v}</option>
-              ))}
-            </select>
-          </label>
+        <div className="mt-2 flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2.5">
+          <div className="min-w-0">
+            <div className="text-[12px] font-medium text-foreground/60">Plan horizon</div>
+            <div className="text-[13px] font-semibold">
+              To age {settings.endAge}
+              {settings.survivorModel ? ` · survivor years modeled from ${settings.firstDeathAge}` : " · survivor years off"}
+            </div>
+          </div>
+          <AdjustLink step="longevity" />
         </div>
 
         <div className="mt-3 space-y-1 border-t border-border/50 pt-2">
@@ -590,74 +563,25 @@ export default function ProjectionPage() {
           </label>
 
           <div className="border-t border-border/50 pt-2">
-            <label className="flex items-center justify-between gap-3 py-1">
-              <span className="text-[13px]">
-                <span className="font-medium">Model the survivor years</span>
-                <span className="mt-0.5 block text-[11px] leading-snug text-foreground/55">
-                  The &quot;widow&apos;s penalty&quot;: after the first spouse passes, the survivor files Single — harder
-                  brackets and a smaller deduction.
-                </span>
-              </span>
-              <button
-                onClick={() => updateSettings({ survivorModel: !settings.survivorModel })}
-                className={`press shrink-0 rounded-full px-3 py-1 text-[12px] font-semibold ${settings.survivorModel ? "bg-gain/15 text-gain" : "bg-foreground/10 text-foreground/60"}`}
-              >
-                {settings.survivorModel ? "✓ On" : "Off"}
-              </button>
-            </label>
-            {settings.survivorModel && (
-              <label className="flex items-center justify-between gap-3 py-1">
-                <span className="text-[12px] text-foreground/60">First spouse passes at age</span>
-                <select
-                  className="rounded-xl border border-border bg-background/60 px-3 py-1.5 text-sm"
-                  value={settings.firstDeathAge}
-                  onChange={(e) => updateSettings({ firstDeathAge: Number(e.target.value) })}
-                >
-                  {[80, 82, 85, 88, 90, 92].map((v) => (
-                    <option key={v} value={v}>{v}</option>
-                  ))}
-                </select>
-              </label>
-            )}
-          </div>
-
-          <div className="border-t border-border/50 pt-2">
-            <span className="text-[13px] font-medium">Spending strategy</span>
-            <span className="mt-0.5 block text-[11px] leading-snug text-foreground/55">
-              <strong>Rises with inflation</strong> keeps your lifestyle steady — the dollar amount grows ~
-              {percent(settings.inflationRate, 1)}/yr (the sensible default). <strong>Flat</strong> spends the same
-              dollars every year (buys less over time). <strong>Guardrails</strong> (Guyton-Klinger) trims ~10% after bad
-              markets and raises it after good ones — the most survivable, the way a real retiree adjusts.
-            </span>
-            <div className="mt-1.5 grid grid-cols-3 gap-2">
-              {(["constant", "flatNominal", "guardrails"] as const).map((s) => (
-                <button
-                  key={s}
-                  onClick={() => updateSettings({ spendingStrategy: s })}
-                  className={`press rounded-xl border px-2 py-1.5 text-center text-[11.5px] font-semibold ${settings.spendingStrategy === s ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/70"}`}
-                >
-                  {s === "constant" ? "Rises w/ inflation" : s === "flatNominal" ? "Flat (same $)" : "Guardrails"}
-                </button>
-              ))}
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[13px] font-medium">Spending strategy</div>
+                <div className="mt-0.5 text-[12px] leading-snug text-foreground/60">
+                  {settings.spendingStrategy === "constant"
+                    ? "Rises with inflation — keeps your lifestyle steady"
+                    : settings.spendingStrategy === "flatNominal"
+                      ? "Flat — the same dollars every year"
+                      : "Guardrails (Guyton-Klinger) — trims after bad markets, raises after good"}
+                </div>
+              </div>
+              <AdjustLink step="spend" />
             </div>
           </div>
 
-          <label className="block border-t border-border/50 pt-2">
-            <span className="text-[13px] font-medium">Heir&apos;s tax rate on inherited pre-tax</span>
-            <span className="mt-0.5 block text-[11px] leading-snug text-foreground/55">
-              A non-spouse heir must drain an inherited IRA within 10 years (SECURE Act), taxed at their own bracket.
-              Drives the &quot;after-tax estate.&quot; Default 24%.
-            </span>
-            <select
-              className="mt-1.5 w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm"
-              value={settings.heirTaxRate}
-              onChange={(e) => updateSettings({ heirTaxRate: Number(e.target.value) })}
-            >
-              {[0.12, 0.22, 0.24, 0.32].map((v) => (
-                <option key={v} value={v}>{percent(v, 0)}</option>
-              ))}
-            </select>
-          </label>
+          <p className="border-t border-border/50 pt-2 text-[11px] leading-snug text-foreground/45">
+            Fine-tuning like the heir&apos;s tax rate and the longevity model lives in the walkthrough&apos;s Advanced
+            section, so every assumption has one home.
+          </p>
         </div>
       </Collapsible>
 
@@ -716,8 +640,8 @@ export default function ProjectionPage() {
             <p className="text-[13px] leading-relaxed text-foreground/65">
               📊 The full detail — balances over time, your RMD schedule, the rollover comparison, smart-vs-conventional,
               key milestones, and the year-by-year table — is on the <strong>desktop version</strong>, where there&apos;s room
-              to lay it out. Open this on a laptop to dig in. Roth conversions are turned on and tuned on the{" "}
-              <strong>Plan tab</strong>.
+              to lay it out. Open this on a laptop to dig in. Roth conversions are turned on and tuned in the{" "}
+              <strong>walkthrough</strong>.
             </p>
           </Card>
         }
@@ -788,7 +712,7 @@ export default function ProjectionPage() {
       <SectionTitle>Roth conversions — the lifetime impact</SectionTitle>
       <Explainer>
         Your forecast with and without rolling pre-tax money to Roth in your low-tax years. This view is read-only —
-        turn the plan on/off and tune it on the Plan tab; it flows through every chart and the table here.
+        turn the plan on/off and tune it in the walkthrough; it flows through every chart and the table here.
       </Explainer>
       <Card>
         <div className="flex items-center justify-between gap-3">
@@ -800,12 +724,7 @@ export default function ProjectionPage() {
                 : "No Roth conversions in the current plan."}
             </p>
           </div>
-          <a
-            href="/plan"
-            className="press shrink-0 rounded-full border border-primary/30 bg-primary/5 px-3 py-1.5 text-[12px] font-semibold text-primary"
-          >
-            Adjust on Plan →
-          </a>
+          <AdjustLink step="rollconfirm" />
         </div>
         <p className="mb-2 mt-4 text-[13px] text-foreground/70">Worst-year RMD — the forced &quot;tax bomb&quot;:</p>
         <CompareBars

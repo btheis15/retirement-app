@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/components/HouseholdProvider";
 import { GuidedPlan } from "@/components/GuidedPlan";
@@ -16,7 +17,9 @@ export default function HomePage() {
   return (
     <div>
       <PageTitle title={`What to do in ${new Date().getFullYear()}`} subtitle="A step-by-step walkthrough — one thing at a time, in plain English." />
-      <GuidedPlan onSeeDetails={() => router.push("/plan")} />
+      <Suspense fallback={<PageSkeleton />}>
+        <GuidedPlan onSeeDetails={() => router.push("/plan")} />
+      </Suspense>
       <div className="mt-6">
         <Disclaimer />
       </div>

@@ -9,8 +9,9 @@
  * numbers"); this is the calm front door so nobody has to study the page.
  */
 
-import { useMemo, useState, useEffect, useDeferredValue, useTransition, ReactNode } from "react";
+import { useMemo, useState, useEffect, useRef, useDeferredValue, useTransition, ReactNode } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useStore } from "@/components/HouseholdProvider";
 import { Card, Pill, Info, Callout, DesktopOnly } from "@/components/ui";
 import { SOURCES } from "@/lib/sources";
@@ -33,18 +34,144 @@ import { buildActionPlan, PlanYear, PlanAction } from "@/lib/actionPlan";
 import { GoalId, survivorFromSettings } from "@/lib/defaults";
 import { adjustedAnnualBenefit, fullRetirementAge } from "@/lib/socialSecurity";
 import { rmdStartAge } from "@/lib/tax/constants";
-import { bucketOf, ACCOUNT_KIND_META, TaxBucket, Household, defaultRetirementYear } from "@/lib/accounts";
+import { bucketOf, ACCOUNT_KIND_META, TaxBucket, Household, Account, AccountKind, defaultRetirementYear } from "@/lib/accounts";
 import { money, moneyCompact, percent } from "@/lib/format";
 
 const GOALS: GoalId[] = ["maxCapital", "lowestTax", "lowestRate"];
 const SPEND_MAX = 400_000;
 
+// The walkthrough is organized into ordered "chapters" so a longer, fully-guided
+// flow still reads as a coherent journey and the client always knows where they
+// are. Steps are tagged with a chapter and stable-sorted into this order; the
+// visible chapter list is derived from whichever steps are actually present
+// (conditional steps never make the "of N" count lie).
+type ChapterId = "opening" | "you" | "money" | "income" | "goal" | "spending" | "markets" | "review";
+const CHAPTER_ORDER: ChapterId[] = ["opening", "you", "money", "income", "goal", "spending", "markets", "review"];
+const CHAPTERS: { id: ChapterId; label: string; icon: string; blurb: string }[] = [
+  { id: "you", label: "You", icon: "👤", blurb: "A couple of quick things about you, so the plan fits your life." },
+  { id: "money", label: "Your money", icon: "💼", blurb: "Now your savings — just the totals, grouped by type of account." },
+  { id: "income", label: "Income", icon: "🏦", blurb: "Money coming in — Social Security, and any pension." },
+  { id: "goal", label: "Your goal", icon: "🎯", blurb: "What you want this money to do. We build the whole plan around it." },
+  { id: "spending", label: "Spending", icon: "💵", blurb: "How much you want to spend, and how it changes over the years." },
+  { id: "markets", label: "Markets & taxes", icon: "📈", blurb: "The assumptions behind the forecast, and your Roth rollover." },
+  { id: "review", label: "Review", icon: "✅", blurb: "Your plan at a glance — and how solid it looks." },
+];
+
+// Deep-link target → chapter, so an "Adjust →" that points at a step which is
+// conditioned out of the current flow can still land on that step's chapter.
+const STEP_CHAPTER: Record<string, ChapterId> = {
+  longevity: "you",
+  survivor: "you",
+  accounts: "money",
+  ssclaim: "income",
+  goal: "goal",
+  spend: "spending",
+  "spend-growth": "spending",
+  markets: "markets",
+  rollconfirm: "markets",
+  roll: "markets",
+};
+
+/** Build an href that opens the walkthrough at a specific step (its single home).
+ *  Pairs with the `?step=` seeding in GuidedPlan and the `<AdjustLink>` pill. */
+export function adjustHref(stepKey: string): string {
+  return `/?step=${stepKey}`;
+}
+
+// "Simple balances first": four buckets are all the engine needs to run the
+// projection. Each maps to ONE synthesized account with a FIXED id, so editing a
+// balance is idempotent (upsert replaces by id — no duplicates if you re-walk),
+// and a $0 bucket is removed. The rich holdings/ticker editor on /accounts stays
+// available as opt-in detail; once a bucket is itemized there, this step shows it
+// read-only so that data is never overwritten.
+const GUIDED_BUCKETS: {
+  key: string;
+  id: string;
+  kind: AccountKind;
+  label: string;
+  q: string;
+  help: string;
+  gains?: boolean;
+}[] = [
+  {
+    key: "bucket-pretax",
+    id: "guided-pretax",
+    kind: "traditional_ira",
+    label: "Pre-tax retirement",
+    q: "How much is in pre-tax retirement accounts?",
+    help: "Traditional IRA, 401(k), 403(b), or a rollover IRA — money you haven’t paid income tax on yet. Add them all into one total.",
+  },
+  {
+    key: "bucket-roth",
+    id: "guided-roth",
+    kind: "roth_ira",
+    label: "Roth",
+    q: "How much is in Roth accounts?",
+    help: "Roth IRA and Roth 401(k) — already taxed, so it grows and comes out completely tax-free.",
+  },
+  {
+    key: "bucket-brokerage",
+    id: "guided-brokerage",
+    kind: "brokerage",
+    label: "Brokerage",
+    gains: true,
+    q: "How much is in a regular brokerage account?",
+    help: "An ordinary taxable investment account — not a retirement account. You owe tax on its dividends, and on the gain when you sell.",
+  },
+  {
+    key: "bucket-cash",
+    id: "guided-cash",
+    kind: "cash",
+    label: "Cash & savings",
+    q: "How much is in cash, savings, or CDs?",
+    help: "Bank savings, money-market, and CDs — money you could spend tomorrow.",
+  },
+];
+
+/** Debounced dollar entry for a bucket step. Commits ~300ms after typing stops so
+ *  the engine doesn't recompute on every keystroke. While the field is focused, an
+ *  external value change won't yank what you're typing. */
+function BucketInput({ value, onCommit, ariaLabel }: { value: number; onCommit: (n: number) => void; ariaLabel?: string }) {
+  const [local, setLocal] = useState(value ? String(value) : "");
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!focused.current) setLocal(value ? String(value) : "");
+  }, [value]);
+  const n = Math.max(0, Number(local.replace(/[^0-9]/g, "")) || 0);
+  useEffect(() => {
+    if (n === value) return;
+    const t = setTimeout(() => onCommit(n), 300);
+    return () => clearTimeout(t);
+  }, [n, value, onCommit]);
+  return (
+    <div>
+      <label className="flex items-center gap-2 rounded-2xl border border-border bg-background/50 px-4 py-3 focus-within:border-primary">
+        <span className="text-2xl font-semibold text-foreground/40">$</span>
+        <input
+          inputMode="numeric"
+          value={local}
+          placeholder="0"
+          aria-label={ariaLabel ?? "Balance"}
+          onFocus={() => (focused.current = true)}
+          onBlur={() => (focused.current = false)}
+          onChange={(e) => setLocal(e.target.value.replace(/[^0-9]/g, ""))}
+          className="tabular w-full bg-transparent text-2xl font-bold outline-none"
+        />
+      </label>
+      <div className="mt-1 h-4 text-right text-[12px] text-foreground/45">{n > 0 ? moneyCompact(n) : ""}</div>
+    </div>
+  );
+}
+
 export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
-  const { household, settings, updateSettings, updateHousehold, mode, setMode, newExample } = useStore();
+  const { household, settings, updateSettings, updateHousehold, upsertAccount, removeAccount, mode, setMode, newExample } = useStore();
   const year = useMemo(() => new Date().getFullYear(), []);
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState<"fwd" | "back">("fwd");
   const [, startTransition] = useTransition();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const seededRef = useRef(false);
 
   // Step navigation: remember direction so the slide goes the way you're moving.
   const go = (next: number) => {
@@ -482,7 +609,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   ]);
 
   // ---- Steps ----
-  type Step = { key: string; eyebrow: string; render: () => ReactNode };
+  type Step = { key: string; chapter: ChapterId; eyebrow: string; render: () => ReactNode };
   const steps: Step[] = [];
   const total = household.accounts.reduce((s, a) => s + a.balance, 0);
   // Truly empty only when the user is on their OWN data with nothing entered yet.
@@ -494,6 +621,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   // here (Back from step 1, or "Start over" at the end) and re-pick.
   steps.push({
     key: "start",
+    chapter: "opening",
     eyebrow: "let's begin",
     render: () => (
       <div>
@@ -501,6 +629,21 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
           Pick one — the whole walkthrough runs on that choice. You can start over anytime to switch.
         </p>
+        <div className="mt-4 rounded-2xl border border-border bg-background/40 p-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/45">Here&apos;s what we&apos;ll cover</div>
+          <ol className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
+            {CHAPTERS.map((c, i) => (
+              <li key={c.id} className="flex items-center gap-2 text-[12px] text-foreground/70">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border text-[10px] font-bold text-foreground/45">{i + 1}</span>
+                <span aria-hidden>{c.icon}</span>
+                <span className="truncate">{c.label}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-2 text-[11px] leading-snug text-foreground/50">
+            About 5–10 minutes · your answers save automatically, so you can stop and pick up where you left off anytime.
+          </p>
+        </div>
         <div className="mt-5 grid gap-3">
           <button
             onClick={() => { setMode("own"); go(safeStep + 1); }}
@@ -533,23 +676,100 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     ),
   });
 
+  // STEPS — "simple balances first". Shown only on the simple-balance path: own
+  // mode, with no custom or itemized accounts of the user's own (every account is
+  // a guided-* bucket, or there are none yet). Adding a custom/itemized account on
+  // /accounts switches this off and the flow falls back to the read-only overview.
+  const usingSimpleBuckets = mode === "own" && household.accounts.every((a) => a.id.startsWith("guided-"));
+  if (usingSimpleBuckets) {
+    GUIDED_BUCKETS.forEach((b, bi) => {
+      steps.push({
+        key: b.key,
+        chapter: "money",
+        eyebrow: bi === 0 ? "your savings — just the totals" : "your savings",
+        render: () => {
+          const acct = household.accounts.find((a) => a.id === b.id);
+          const itemized = !!acct?.holdings && acct.holdings.length > 0;
+          return (
+            <div>
+              <h2 className="text-xl font-bold leading-snug">{b.q}</h2>
+              <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">{b.help}</p>
+              {itemized ? (
+                <div className="mt-4 rounded-2xl border border-border bg-background/50 p-4">
+                  <div className="text-[12px] text-foreground/55">Itemized into {acct!.holdings!.length} holdings</div>
+                  <div className="tabular mt-1 text-2xl font-bold text-primary">{money(acct!.balance)}</div>
+                  <Link
+                    href="/accounts"
+                    className="press mt-3 inline-block rounded-xl border border-border px-3 py-1.5 text-[13px] font-semibold text-primary"
+                  >
+                    Edit holdings on the Accounts page →
+                  </Link>
+                </div>
+              ) : (
+                <div className="mt-4">
+                  <BucketInput
+                    ariaLabel={b.q}
+                    value={acct?.balance ?? 0}
+                    onCommit={(n) => {
+                      if (n <= 0) {
+                        if (acct) removeAccount(b.id);
+                        return;
+                      }
+                      upsertAccount({
+                        id: b.id,
+                        label: b.label,
+                        kind: b.kind,
+                        owner: "self",
+                        balance: n,
+                        ...(b.kind === "brokerage" || b.kind === "cash" ? { costBasis: acct?.costBasis ?? n } : {}),
+                      });
+                    }}
+                  />
+                  {b.gains && acct && acct.balance > 0 && (
+                    <div className="mt-3 rounded-xl border border-border bg-background/40 p-3">
+                      <div className="text-[12px] font-medium text-foreground/70">Roughly how much of that is profit (gains)?</div>
+                      <p className="mt-0.5 text-[11px] leading-snug text-foreground/55">
+                        Only the gain is taxed when you sell, so this sharpens the tax math. Not sure? Leave it — we’ll
+                        assume no gain for now, and you can refine it on the Accounts page.
+                      </p>
+                      <div className="mt-2">
+                        <BucketInput
+                          ariaLabel="Approximate investment gains in the brokerage account"
+                          value={Math.max(0, acct.balance - (acct.costBasis ?? acct.balance))}
+                          onCommit={(g) => upsertAccount({ ...acct, costBasis: Math.max(0, acct.balance - g) })}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <p className="mt-3 text-[12px] text-foreground/50">Don’t have this kind of account? Leave it at $0.</p>
+                </div>
+              )}
+            </div>
+          );
+        },
+      });
+    });
+  }
+
   steps.push({
     key: "accounts",
+    chapter: "money",
     eyebrow: "start with your money",
     render: () => {
       if (needsOwnSetup) {
         return (
           <div>
-            <h2 className="text-xl font-bold leading-snug">Let&apos;s use your real numbers</h2>
+            <h2 className="text-xl font-bold leading-snug">Add your savings to continue</h2>
             <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
-              You haven&apos;t added any accounts yet. Add your IRAs, 401(k)s, Roth, and brokerage — balances and which
-              funds — and this whole plan recalculates around what you actually have.
+              Go back a step and enter at least one balance — pre-tax, Roth, brokerage, or cash — and the whole plan
+              builds around it. Want to list specific funds (tickers, cost basis, dividends)? You can itemize any
+              account on the Accounts page.
             </p>
             <Link
               href="/accounts"
-              className="press mt-4 block rounded-2xl bg-primary px-4 py-3 text-center text-sm font-semibold text-white"
+              className="press mt-4 block rounded-2xl border border-border px-4 py-3 text-center text-sm font-semibold text-primary"
             >
-              Add my accounts →
+              Add detailed accounts on the Accounts page →
             </Link>
           </div>
         );
@@ -603,6 +823,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     const retYear = household.retirementYear ?? defaultRetirementYear(household.self.birthYear);
     steps.push({
       key: "aboutyou",
+      chapter: "you",
       eyebrow: "a little about you",
       render: () => {
         const YearInput = ({
@@ -731,11 +952,14 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   }
 
   // STEP — plan-to age + survivor (longevity). The horizon drives every number; the
-  // survivor model captures the widow's-penalty single-filer years.
-  if (!needsOwnSetup) {
+  // survivor model captures the widow's-penalty single-filer years. Always shown
+  // (it needs no account data) — so entering a balance in own-setup never inserts
+  // an earlier step and shifts the index out from under the user mid-flow.
+  {
     const hasSpouse = !!household.spouse && household.spouse.birthYear > 1900;
     steps.push({
       key: "longevity",
+      chapter: "you",
       eyebrow: "how long should the plan cover?",
       render: () => {
         const btn = (on: boolean) =>
@@ -751,7 +975,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               {[90, 95, 100, 105].map((a) => (
                 <button key={a} onClick={() => updateSettings({ endAge: a })} className={btn(settings.endAge === a)}>
                   <div className="text-lg font-bold leading-none">{a}</div>
-                  <div className="mt-0.5 text-[10px]">{a === 95 ? "typical" : a >= 100 ? "cautious" : "shorter"}</div>
+                  <div className="mt-0.5 text-[10px]">{a === 95 ? "typical ★" : a >= 100 ? "cautious" : "shorter"}</div>
                 </button>
               ))}
             </div>
@@ -797,6 +1021,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     if (hasSS) {
       steps.push({
         key: "ssclaim",
+        chapter: "income",
         eyebrow: "when to claim Social Security",
         render: () => {
           const adv = rec.claimAdvice;
@@ -880,6 +1105,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
   steps.push({
     key: "goal",
+    chapter: "goal",
     eyebrow: "what matters most",
     render: () => (
       <div>
@@ -897,16 +1123,19 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 }`}
               >
                 <span className="text-2xl leading-none">{GOAL_META[g].icon}</span>
-                <span className="min-w-0">
-                  <span className={`block font-semibold ${active ? "text-primary" : ""}`}>{GOAL_META[g].short}</span>
-                  <span className={`mt-0.5 block text-[12px] font-medium leading-snug ${active ? "text-foreground/70" : "text-foreground/45"}`}>
-                    {planGist(recAll[g])}
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className={`font-semibold ${active ? "text-primary" : ""}`}>{GOAL_META[g].short}</span>
+                    {g === "maxCapital" && (
+                      <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-accent">Most common</span>
+                    )}
                   </span>
-                  {active && (
-                    <span className="mt-1 block text-[12px] leading-snug text-foreground/55">{GOAL_META[g].blurb}</span>
-                  )}
+                  <span className="mt-0.5 block text-[12px] leading-snug text-foreground/60">{GOAL_META[g].blurb}</span>
+                  <span className={`mt-1 block text-[12px] font-medium leading-snug ${active ? "text-foreground/70" : "text-foreground/45"}`}>
+                    → {planGist(recAll[g])}
+                  </span>
                 </span>
-                {active && <span className="ml-auto shrink-0 text-primary">✓</span>}
+                {active && <span className="ml-auto shrink-0 self-start text-primary">✓</span>}
               </button>
             );
           })}
@@ -935,6 +1164,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   if (settings.goal === "maxCapital" && finalists.length >= 2) {
     steps.push({
       key: "mostmoney",
+      chapter: "goal",
       eyebrow: "the most-money method",
       render: () => {
         const metric = settings.mostMoneyMetric;
@@ -1035,6 +1265,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
   steps.push({
     key: "spend",
+    chapter: "spending",
     eyebrow: "how much you can spend",
     render: () => {
       const cur = sweep.at(localSpend);
@@ -1539,6 +1770,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   // projection; the forecast still stress-tests across hundreds of paths around them.
   steps.push({
     key: "markets",
+    chapter: "markets",
     eyebrow: "market assumptions",
     render: () => {
       const btn = (on: boolean) =>
@@ -1557,20 +1789,31 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               {[{ r: 0.04, l: "Cautious" }, { r: 0.05, l: "Moderate" }, { r: 0.06, l: "Optimistic" }].map((o) => (
                 <button key={o.r} onClick={() => updateSettings({ returnRate: o.r })} className={btn(near(settings.returnRate, o.r))}>
                   <div className="text-lg font-bold leading-none">{percent(o.r, 0)}</div>
-                  <div className="mt-0.5 text-[10px]">{o.l}</div>
+                  <div className="mt-0.5 text-[10px]">{o.l}{o.r === 0.05 ? " ★" : ""}</div>
                 </button>
               ))}
             </div>
+            <p className="mt-1.5 text-[11px] leading-snug text-foreground/55">
+              {near(settings.returnRate, 0.04)
+                ? "Cautious — a conservative long-run estimate; your plan looks safer if markets disappoint."
+                : near(settings.returnRate, 0.06)
+                  ? "Optimistic — closer to the historical stock average; assumes a strong, stock-heavy run."
+                  : "Moderate — a professional middle estimate for a balanced mix. ★ Suggested unless you have a reason to differ."}
+            </p>
           </div>
           <div className="mt-4">
             <div className="mb-1 text-[12px] font-medium text-foreground/60">Inflation</div>
             <div className="grid grid-cols-4 gap-2 text-[13px]">
               {[0.02, 0.025, 0.03, 0.035].map((r) => (
                 <button key={r} onClick={() => updateSettings({ inflationRate: r })} className={btn(near(settings.inflationRate, r))}>
-                  {percent(r, 1)}
+                  {percent(r, 1)}{r === 0.025 ? " ★" : ""}
                 </button>
               ))}
             </div>
+            <p className="mt-1.5 text-[11px] leading-snug text-foreground/55">
+              How fast prices rise each year. <strong>2.5%</strong> (★) is about the long-run average and the Fed&apos;s
+              target — a sensible default.
+            </p>
           </div>
         </div>
       );
@@ -1583,6 +1826,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   if (pretaxShare > 0.2) {
     steps.push({
       key: "rollconfirm",
+      chapter: "markets",
       eyebrow: "confirm your rollover",
       render: () => {
         const on = settings.useConversions;
@@ -1859,6 +2103,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
   steps.push({
     key: "fund",
+    chapter: "markets",
     eyebrow: "what pays for it — and from where",
     render: () => {
       const pct = Math.round(coverageRatio * 100);
@@ -2214,6 +2459,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   if (pretaxShare > 0.2) {
     steps.push({
       key: "roll",
+      chapter: "markets",
       eyebrow: "smoothing your future taxes",
       render: () => {
         const rows = [
@@ -2463,6 +2709,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
   steps.push({
     key: "ahead",
+    chapter: "review",
     eyebrow: "looking ahead",
     render: () => (
       <div>
@@ -2480,6 +2727,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
   steps.push({
     key: "done",
+    chapter: "review",
     eyebrow: confidence
       ? confidence.successPct >= 0.8
         ? "you're set"
@@ -2524,9 +2772,40 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     ),
   });
 
+  // Order the (conditionally-built) steps into chapter order; stable sort keeps
+  // insertion order within a chapter.
+  steps.sort((a, b) => CHAPTER_ORDER.indexOf(a.chapter) - CHAPTER_ORDER.indexOf(b.chapter));
+
   const safeStep = Math.min(step, steps.length - 1);
   const current = steps[safeStep];
   const isLast = safeStep >= steps.length - 1;
+  // Derive the visible chapter list from the steps actually present so the
+  // orientation chrome ("3 of 6", the rail) never counts a chapter with no steps.
+  const visibleChapters = CHAPTERS.filter((c) => steps.some((s) => s.chapter === c.id));
+  const curChapter = CHAPTERS.find((c) => c.id === current.chapter) ?? null;
+  const curChapterIdx = curChapter ? visibleChapters.findIndex((c) => c.id === curChapter.id) : -1;
+  const firstIndexOfChapter = (id: ChapterId) => steps.findIndex((s) => s.chapter === id);
+
+  // Deep-link entry: another page (Plan/Forecast "Adjust →") can open the
+  // walkthrough at a specific step via `/?step=<key>`. Seed once on mount, by KEY
+  // (robust to conditional steps); if that exact step isn't in the current flow,
+  // fall back to its chapter's first visible step. Clear the param so a refresh or
+  // Back doesn't strand the user on a re-seed. Runs after `ready` (the page gates
+  // GuidedPlan on it, so the right mode/steps are already built).
+  useEffect(() => {
+    if (seededRef.current) return;
+    seededRef.current = true;
+    const target = searchParams.get("step");
+    if (!target) return;
+    let i = steps.findIndex((s) => s.key === target);
+    if (i < 0 && STEP_CHAPTER[target]) i = firstIndexOfChapter(STEP_CHAPTER[target]);
+    if (i >= 0) {
+      setDir("fwd");
+      setStep(i);
+    }
+    router.replace("/", { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Persistent cash-flow reference: once the user has set their spending, keep the
   // key line items visible on every later step so they never lose track of the
@@ -2538,56 +2817,132 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
   return (
     <Card className="overflow-hidden">
-      {/* progress dots */}
-      <div className="mb-3 flex items-center gap-1.5">
-        {steps.map((s, i) => (
-          <button
-            key={s.key}
-            onClick={() => go(i)}
-            aria-label={`Step ${i + 1}`}
-            className={`press h-1.5 flex-1 rounded-full transition-colors ${i <= safeStep ? "bg-primary" : "bg-foreground/10"}`}
-          />
-        ))}
-      </div>
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-primary">{current.eyebrow}</div>
-
-      {showCashFlow && (
-        <CashFlowBar
-          spending={spending}
-          conversion={conversion}
-          tax={totalTax}
-          irmaa={irmaa}
-          guaranteed={guaranteed}
-          fromSavings={totalDraw}
-        />
-      )}
-
-      {/* animated step body — re-keyed so the directional slide replays each step */}
-      <div key={current.key} className={`mt-1 min-h-[360px] ${dir === "back" ? "step-back" : "step-fwd"}`}>
-        {current.render()}
-      </div>
-
-      {/* nav */}
-      <div className="mt-5 flex items-center justify-between gap-3 border-t border-border pt-3">
-        <button
-          onClick={() => go(safeStep - 1)}
-          disabled={safeStep === 0}
-          className="press rounded-xl px-4 py-2 text-sm font-medium text-foreground/60 disabled:opacity-30"
-        >
-          ← Back
-        </button>
-        <span className="text-[12px] text-foreground/45">
-          {safeStep + 1} / {steps.length}
-        </span>
-        {isLast ? (
-          <button onClick={onSeeDetails} className="press rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-white">
-            Finish
-          </button>
-        ) : (
-          <button onClick={() => go(safeStep + 1)} className="press rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-white">
-            Next →
-          </button>
+      <div className="lg:flex lg:items-start lg:gap-5">
+        {/* Desktop chapter rail — the client always sees where they are & what's left */}
+        {visibleChapters.length > 0 && (
+          <nav
+            className="mb-4 hidden shrink-0 self-start rounded-xl border border-border bg-background/50 p-3 lg:mb-0 lg:block lg:w-52"
+            aria-label="Plan steps"
+          >
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-foreground/40">Your plan</div>
+            <ol className="space-y-0.5">
+              {visibleChapters.map((c, i) => {
+                const state = i < curChapterIdx ? "done" : i === curChapterIdx ? "current" : "todo";
+                return (
+                  <li key={c.id}>
+                    <button
+                      onClick={() => go(firstIndexOfChapter(c.id))}
+                      aria-current={state === "current" ? "step" : undefined}
+                      className={`press flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] ${
+                        state === "current" ? "bg-primary/10 font-semibold text-primary" : "text-foreground/55 hover:bg-foreground/5"
+                      }`}
+                    >
+                      <span
+                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                          state === "done"
+                            ? "bg-primary text-white"
+                            : state === "current"
+                              ? "border-2 border-primary text-primary"
+                              : "border border-border text-foreground/40"
+                        }`}
+                      >
+                        {state === "done" ? "✓" : i + 1}
+                      </span>
+                      <span className="min-w-0 truncate">{c.label}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+          </nav>
         )}
+
+        {/* Step content column */}
+        <div className="min-w-0 lg:flex-1">
+          {/* Mobile chapter header — compact "where am I" cue */}
+          {curChapter && (
+            <div className="mb-2 lg:hidden">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 text-[12px] font-semibold text-foreground/70">
+                  <span aria-hidden>{curChapter.icon}</span>
+                  {curChapter.label}
+                </span>
+                <span className="text-[11px] text-foreground/45">
+                  {curChapterIdx + 1} of {visibleChapters.length}
+                </span>
+              </div>
+              <div className="mt-1.5 flex gap-1">
+                {visibleChapters.map((c, i) => (
+                  <span key={c.id} className={`h-1 flex-1 rounded-full ${i <= curChapterIdx ? "bg-primary" : "bg-foreground/10"}`} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* fine progress dots (within the whole flow) */}
+          <div className="mb-3 flex items-center gap-1.5">
+            {steps.map((s, i) => (
+              <button
+                key={s.key}
+                onClick={() => go(i)}
+                aria-label={`Step ${i + 1}`}
+                className={`press h-1.5 flex-1 rounded-full transition-colors ${i <= safeStep ? "bg-primary" : "bg-foreground/10"}`}
+              />
+            ))}
+          </div>
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-primary">{current.eyebrow}</div>
+
+          {/* Chapter intro — a one-line "now we'll look at X" framing on the first
+              step of each chapter, the way an advisor frames the next topic. */}
+          {curChapter && firstIndexOfChapter(curChapter.id) === safeStep && (
+            <div className="mt-2 rounded-xl border border-primary/15 bg-primary/[0.04] px-3 py-2.5">
+              <div className="flex items-center gap-2 text-[13px] font-semibold text-primary">
+                <span aria-hidden className="text-base">{curChapter.icon}</span>
+                {curChapter.label}
+              </div>
+              <p className="mt-0.5 text-[12px] leading-snug text-foreground/60">{curChapter.blurb}</p>
+            </div>
+          )}
+
+          {showCashFlow && (
+            <CashFlowBar
+              spending={spending}
+              conversion={conversion}
+              tax={totalTax}
+              irmaa={irmaa}
+              guaranteed={guaranteed}
+              fromSavings={totalDraw}
+            />
+          )}
+
+          {/* animated step body — re-keyed so the directional slide replays each step */}
+          <div key={current.key} className={`mt-1 min-h-[360px] ${dir === "back" ? "step-back" : "step-fwd"}`}>
+            {current.render()}
+          </div>
+
+          {/* nav */}
+          <div className="mt-5 flex items-center justify-between gap-3 border-t border-border pt-3">
+            <button
+              onClick={() => go(safeStep - 1)}
+              disabled={safeStep === 0}
+              className="press rounded-xl px-4 py-2 text-sm font-medium text-foreground/60 disabled:opacity-30"
+            >
+              ← Back
+            </button>
+            <span className="text-[12px] text-foreground/45">
+              {safeStep + 1} / {steps.length}
+            </span>
+            {isLast ? (
+              <button onClick={onSeeDetails} className="press rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-white">
+                Finish
+              </button>
+            ) : (
+              <button onClick={() => go(safeStep + 1)} className="press rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-white">
+                Next →
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </Card>
   );

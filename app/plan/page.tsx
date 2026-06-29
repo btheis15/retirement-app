@@ -3,7 +3,7 @@
 import { useMemo, useState, useEffect, ReactNode } from "react";
 import Link from "next/link";
 import { useStore } from "@/components/HouseholdProvider";
-import { Card, PageTitle, SectionTitle, Pill, Stat, Disclaimer, Callout, Explainer, Info, StackedBar, PageSkeleton, DesktopOnly, Collapsible } from "@/components/ui";
+import { Card, PageTitle, SectionTitle, Pill, Stat, Disclaimer, Callout, Explainer, Info, StackedBar, PageSkeleton, DesktopOnly, Collapsible, AdjustLink } from "@/components/ui";
 import { Donut, Legend, AnimatedNumber } from "@/components/charts";
 import { planYear, STRATEGY_META, StrategyId, BracketTarget } from "@/lib/optimizer";
 import { ordinaryBracketCeiling } from "@/lib/tax/engine";
@@ -34,10 +34,6 @@ const GOALS: GoalId[] = ["maxCapital", "lowestTax", "lowestRate"];
 const STRATEGIES: StrategyId[] = ["smart", "conventional", "proportional"];
 const BRACKETS: BracketTarget[] = [0.12, 0.22, 0.24, 0.32];
 
-const SPEND_MIN = 0;
-const SPEND_MAX = 400_000;
-const SPEND_STEP = 5_000;
-
 const STEP_TONE: Record<"deferred" | "taxable" | "roth", string> = {
   deferred: "text-deferred",
   taxable: "text-taxable",
@@ -51,7 +47,7 @@ const STRATEGY_SHORT: Record<StrategyId, string> = {
 };
 
 export default function PlanPage() {
-  const { ready, household, settings, updateSettings, updateHousehold } = useStore();
+  const { ready, household, settings, updateSettings } = useStore();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const year = useMemo(() => new Date().getFullYear(), []);
 
@@ -179,28 +175,18 @@ export default function PlanPage() {
       <PageTitle title={`Your ${year} plan`} subtitle="What to do this year, and the tax math behind it. (New to this? The Start tab walks you through it.)" />
 
       <div className="mt-1">
-      {/* ---------- THE ONE NUMBER YOU CONTROL: spending (must come first — every
-           card below quotes it) ---------- */}
-      <SectionTitle>How much do you want to spend each year?</SectionTitle>
-      <Explainer>This is your target — the money you actually want in your pocket after tax. Drag it and watch the whole plan and tax update.</Explainer>
+      {/* ---------- The spending target (decided once in the walkthrough; every
+           card below quotes it). Shown here, changed there — one source of truth. ---------- */}
+      <SectionTitle>How much you&apos;re spending each year</SectionTitle>
+      <Explainer>Your after-tax target — the money you actually want in your pocket. You set it in the walkthrough; tap Adjust to change it and the whole plan updates.</Explainer>
       <Card>
-        <div className="flex items-baseline justify-between">
-          <span className="text-[12px] font-medium text-foreground/60">Yearly spending (after tax)</span>
-          <span className="tabular text-2xl font-bold text-primary">{money(plan.spendingTarget)}</span>
-        </div>
-        <input
-          type="range"
-          min={SPEND_MIN}
-          max={SPEND_MAX}
-          step={SPEND_STEP}
-          value={Math.min(SPEND_MAX, household.annualSpending)}
-          onChange={(e) => updateHousehold({ annualSpending: Number(e.target.value) })}
-          className="mt-3 w-full accent-primary"
-          aria-label="Yearly spending"
-        />
-        <div className="mt-1 flex justify-between text-[11px] text-foreground/45">
-          <span>{moneyCompact(SPEND_MIN)}</span>
-          <span>{moneyCompact(SPEND_MAX)}+</span>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[12px] font-medium text-foreground/60">Yearly spending (after tax)</div>
+            <div className="tabular text-2xl font-bold text-primary">{money(plan.spendingTarget)}</div>
+            <div className="tabular text-[12px] text-foreground/50">{money(Math.round(plan.spendingTarget / 12))}/mo</div>
+          </div>
+          <AdjustLink step="spend" />
         </div>
       </Card>
 
@@ -327,7 +313,7 @@ export default function PlanPage() {
       <RolloverPlanCard />
 
       {/* ---------- SOCIAL SECURITY timing — the one place to act on claim age ---------- */}
-      <SsTiming household={household} year={year} update={updateHousehold} />
+      <SsTiming household={household} year={year} />
 
       {/* ---------- The strategy we picked (demoted below the action; collapsed) ---------- */}
       <Collapsible
@@ -656,11 +642,9 @@ const clampClaim = (a: number) => Math.min(CLAIM_MAX, Math.max(CLAIM_MIN, Math.r
 function SsTiming({
   household,
   year,
-  update,
 }: {
   household: Household;
   year: number;
-  update: (patch: Partial<Household>) => void;
 }) {
   const { settings } = useStore();
   const anyBenefit = household.self.socialSecurityAnnual > 0 || household.spouse.socialSecurityAnnual > 0;
@@ -672,15 +656,16 @@ function SsTiming({
       <SectionTitle>Social Security: when to claim</SectionTitle>
       <Explainer>
         Claiming later means a bigger check for life (about +8%/yr after full retirement, up to age 70) — but you
-        collect nothing while you wait. Here&apos;s the trade-off for each of you. Changing it updates the whole forecast.
+        collect nothing while you wait. Here&apos;s the trade-off for each of you. You pick the claim ages in the walkthrough.
       </Explainer>
+      <div className="mb-2 flex justify-end">
+        <AdjustLink step="ssclaim" label="Adjust claim ages" />
+      </div>
 
       {(["self", "spouse"] as const).map((who) => {
         const p = household[who];
         const fra = fullRetirementAge(p.birthYear);
         const claim = clampClaim(p.ssClaimAge);
-        const setClaim = (a: number) =>
-          update({ [who]: { ...p, ssClaimAge: clampClaim(a) } } as Partial<Household>);
 
         if (p.socialSecurityAnnual <= 0) {
           return (
@@ -705,34 +690,14 @@ function SsTiming({
               <span className="text-[11px] text-foreground/55">full retirement age {fmtAgePlan(fra)}</span>
             </div>
 
-            <div className="mt-2 flex items-center justify-between rounded-xl border border-border bg-background/60 px-3 py-2">
-              <span className="text-[12px] font-medium text-foreground/60">Claim at age</span>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setClaim(claim - 1)}
-                  disabled={claim <= CLAIM_MIN}
-                  className="press flex h-7 w-7 items-center justify-center rounded-full border border-border text-lg leading-none disabled:opacity-30"
-                  aria-label="Claim one year earlier"
-                >
-                  −
-                </button>
-                <span className="tabular w-6 text-center text-lg font-bold">{claim}</span>
-                <button
-                  onClick={() => setClaim(claim + 1)}
-                  disabled={claim >= CLAIM_MAX}
-                  className="press flex h-7 w-7 items-center justify-center rounded-full border border-border text-lg leading-none disabled:opacity-30"
-                  aria-label="Claim one year later"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-2 flex items-baseline justify-between">
-              <span className="tabular text-xl font-bold text-ss">{money(Math.round(benefit / 12))}/mo</span>
-              <span className="text-[12px] text-foreground/60">
-                {money(benefit)}/yr · {percent(pct, 0)} of full
+            <div className="mt-2 flex items-baseline justify-between rounded-xl border border-border bg-background/60 px-3 py-2">
+              <span className="text-[12px] font-medium text-foreground/60">
+                Claiming at age <strong className="text-foreground">{claim}</strong>
               </span>
+              <span className="tabular text-xl font-bold text-ss">{money(Math.round(benefit / 12))}/mo</span>
+            </div>
+            <div className="mt-1 text-right text-[12px] text-foreground/60">
+              {money(benefit)}/yr · {percent(pct, 0)} of full
             </div>
 
             <div className="mt-3 grid grid-cols-3 gap-2">
@@ -740,17 +705,16 @@ function SsTiming({
                 const b = adjustedAnnualBenefit(p.socialSecurityAnnual, p.birthYear, a);
                 const active = a === claim;
                 return (
-                  <button
+                  <div
                     key={a}
-                    onClick={() => setClaim(a)}
-                    className={`press rounded-xl border py-2 text-center ${
-                      active ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/70"
+                    className={`rounded-xl border py-2 text-center ${
+                      active ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/55"
                     }`}
                   >
                     <div className="text-[12px] font-semibold">Age {a}{a === fraInt ? "*" : ""}</div>
                     <div className="tabular text-[13px] font-bold">{money(Math.round(b / 12))}</div>
                     <div className="text-[9px] text-foreground/45">/mo</div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -931,24 +895,16 @@ function GoalAndRecommendation() {
         wins for that goal — then lays out exactly what to do.
       </Explainer>
       <Card>
-        <div className="grid grid-cols-3 gap-2">
-          {GOALS.map((g) => {
-            const active = settings.goal === g;
-            return (
-              <button
-                key={g}
-                onClick={() => applyGoal(g)}
-                className={`press rounded-xl border px-2 py-3 text-center ${active ? "border-primary bg-primary/10" : "border-border"}`}
-              >
-                <div className="text-xl leading-none">{GOAL_META[g].icon}</div>
-                <div className={`mt-1 text-[12px] font-semibold ${active ? "text-primary" : "text-foreground/70"}`}>
-                  {GOAL_META[g].short}
-                </div>
-              </button>
-            );
-          })}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="text-2xl leading-none">{GOAL_META[settings.goal].icon}</span>
+            <div className="min-w-0">
+              <div className="text-[13px] font-semibold text-primary">{GOAL_META[settings.goal].short}</div>
+              <div className="text-[12px] leading-snug text-foreground/60">{GOAL_META[settings.goal].blurb}</div>
+            </div>
+          </div>
+          <AdjustLink step="goal" />
         </div>
-        <p className="mt-2 text-[12px] leading-relaxed text-foreground/60">{GOAL_META[settings.goal].blurb}</p>
       </Card>
 
       <Callout tone="good" icon="🤖" title="Your recommended plan" className="mt-2">
@@ -1143,7 +1099,7 @@ function ConvertUntilControl({
 
 /** The RMD tax-bomb explainer + the Roth-conversion plan that defuses it. */
 function RolloverPlanCard() {
-  const { household, settings, updateSettings } = useStore();
+  const { household, settings } = useStore();
   const conv = useMemo(
     () =>
       analyzeConversions(household, {
@@ -1208,43 +1164,24 @@ function RolloverPlanCard() {
             ? "Even after paying some tax now, you end up with more after-tax money AND a much smaller forced-RMD tax bomb later."
             : "This trades a little lifetime tax for a much smaller forced-RMD spike and more tax-free Roth — useful if you value flexibility and lower late-life taxable income."}
         </p>
-        <button
-          onClick={() => updateSettings({ useConversions: !settings.useConversions, planCustomized: true })}
-          className={`press mt-3 w-full rounded-xl py-2.5 text-sm font-semibold ${
-            settings.useConversions ? "bg-gain/15 text-gain" : "bg-primary text-white"
-          }`}
-        >
-          {settings.useConversions ? "✓ Rollover plan is on — it appears in “The next few years” above" : "Turn on the rollover plan"}
-        </button>
-
-        {settings.useConversions && (
-          <div className="mt-3">
-            <div className="text-[11px] font-medium text-foreground/55">How much to convert each year</div>
-            <div className="mt-1 grid grid-cols-2 gap-2">
-              <button
-                onClick={() => updateSettings({ convertMode: "recommended", planCustomized: true })}
-                className={`press rounded-xl border px-2 py-2 text-center ${
-                  settings.convertMode === "recommended" ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/70"
-                }`}
-              >
-                <div className="text-[13px] font-semibold">Recommended</div>
-                <div className="text-[10px] text-foreground/50">sized to your future RMD rate</div>
-              </button>
-              <button
-                onClick={() => updateSettings({ convertMode: "fillBracket", planCustomized: true })}
-                className={`press rounded-xl border px-2 py-2 text-center ${
-                  settings.convertMode === "fillBracket" ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/70"
-                }`}
-              >
-                <div className="text-[13px] font-semibold">Fill the bracket</div>
-                <div className="text-[10px] text-foreground/50">{percent(settings.bracketTarget, 0)} (advanced)</div>
-              </button>
+        <div className="mt-3 rounded-xl border border-border bg-background/60 px-3 py-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[13px] font-semibold">
+                {settings.useConversions ? (
+                  <span className="text-gain">✓ Rollover plan is on</span>
+                ) : (
+                  <span className="text-foreground/60">Rollover plan is off</span>
+                )}
+              </div>
+              <div className="mt-0.5 text-[12px] leading-snug text-foreground/55">
+                {settings.useConversions
+                  ? `${settings.convertMode === "recommended" ? "Recommended sizing" : `Fill the ${percent(settings.bracketTarget, 0)} bracket`} · through age ${settings.convertUntilAge}`
+                  : "You decide whether to roll pre-tax money to Roth in the walkthrough."}
+              </div>
             </div>
+            <AdjustLink step="rollconfirm" />
           </div>
-        )}
-
-        <div className="mt-3">
-          <ConvertUntilControl settings={settings} updateSettings={updateSettings} />
         </div>
         <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1">
           {[SOURCES.rothConversion, SOURCES.rmd, SOURCES.rothNoRmd].map((s, i) => (
