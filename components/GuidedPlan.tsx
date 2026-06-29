@@ -47,14 +47,14 @@ const SPEND_MAX = 400_000;
 // (conditional steps never make the "of N" count lie).
 type ChapterId = "opening" | "you" | "money" | "income" | "goal" | "spending" | "markets" | "review";
 const CHAPTER_ORDER: ChapterId[] = ["opening", "you", "money", "income", "goal", "spending", "markets", "review"];
-const CHAPTERS: { id: ChapterId; label: string; icon: string }[] = [
-  { id: "you", label: "You", icon: "👤" },
-  { id: "money", label: "Your money", icon: "💼" },
-  { id: "income", label: "Income", icon: "🏦" },
-  { id: "goal", label: "Your goal", icon: "🎯" },
-  { id: "spending", label: "Spending", icon: "💵" },
-  { id: "markets", label: "Markets & taxes", icon: "📈" },
-  { id: "review", label: "Review", icon: "✅" },
+const CHAPTERS: { id: ChapterId; label: string; icon: string; blurb: string }[] = [
+  { id: "you", label: "You", icon: "👤", blurb: "A couple of quick things about you, so the plan fits your life." },
+  { id: "money", label: "Your money", icon: "💼", blurb: "Now your savings — just the totals, grouped by type of account." },
+  { id: "income", label: "Income", icon: "🏦", blurb: "Money coming in — Social Security, and any pension." },
+  { id: "goal", label: "Your goal", icon: "🎯", blurb: "What you want this money to do. We build the whole plan around it." },
+  { id: "spending", label: "Spending", icon: "💵", blurb: "How much you want to spend, and how it changes over the years." },
+  { id: "markets", label: "Markets & taxes", icon: "📈", blurb: "The assumptions behind the forecast, and your Roth rollover." },
+  { id: "review", label: "Review", icon: "✅", blurb: "Your plan at a glance — and how solid it looks." },
 ];
 
 // Deep-link target → chapter, so an "Adjust →" that points at a step which is
@@ -629,6 +629,21 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
           Pick one — the whole walkthrough runs on that choice. You can start over anytime to switch.
         </p>
+        <div className="mt-4 rounded-2xl border border-border bg-background/40 p-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/45">Here&apos;s what we&apos;ll cover</div>
+          <ol className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
+            {CHAPTERS.map((c, i) => (
+              <li key={c.id} className="flex items-center gap-2 text-[12px] text-foreground/70">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border text-[10px] font-bold text-foreground/45">{i + 1}</span>
+                <span aria-hidden>{c.icon}</span>
+                <span className="truncate">{c.label}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-2 text-[11px] leading-snug text-foreground/50">
+            About 5–10 minutes · your answers save automatically, so you can stop and pick up where you left off anytime.
+          </p>
+        </div>
         <div className="mt-5 grid gap-3">
           <button
             onClick={() => { setMode("own"); go(safeStep + 1); }}
@@ -2738,6 +2753,18 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             ))}
           </div>
           <div className="text-[11px] font-semibold uppercase tracking-wide text-primary">{current.eyebrow}</div>
+
+          {/* Chapter intro — a one-line "now we'll look at X" framing on the first
+              step of each chapter, the way an advisor frames the next topic. */}
+          {curChapter && firstIndexOfChapter(curChapter.id) === safeStep && (
+            <div className="mt-2 rounded-xl border border-primary/15 bg-primary/[0.04] px-3 py-2.5">
+              <div className="flex items-center gap-2 text-[13px] font-semibold text-primary">
+                <span aria-hidden className="text-base">{curChapter.icon}</span>
+                {curChapter.label}
+              </div>
+              <p className="mt-0.5 text-[12px] leading-snug text-foreground/60">{curChapter.blurb}</p>
+            </div>
+          )}
 
           {showCashFlow && (
             <CashFlowBar
