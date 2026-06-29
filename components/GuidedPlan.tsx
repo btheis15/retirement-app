@@ -34,7 +34,7 @@ import { buildActionPlan, PlanYear, PlanAction } from "@/lib/actionPlan";
 import { GoalId, survivorFromSettings } from "@/lib/defaults";
 import { adjustedAnnualBenefit, fullRetirementAge } from "@/lib/socialSecurity";
 import { rmdStartAge } from "@/lib/tax/constants";
-import { bucketOf, ACCOUNT_KIND_META, TaxBucket, Household } from "@/lib/accounts";
+import { bucketOf, ACCOUNT_KIND_META, TaxBucket, Household, Account, AccountKind } from "@/lib/accounts";
 import { money, moneyCompact, percent } from "@/lib/format";
 
 const GOALS: GoalId[] = ["maxCapital", "lowestTax", "lowestRate"];
@@ -78,8 +78,93 @@ export function adjustHref(stepKey: string): string {
   return `/?step=${stepKey}`;
 }
 
+// "Simple balances first": four buckets are all the engine needs to run the
+// projection. Each maps to ONE synthesized account with a FIXED id, so editing a
+// balance is idempotent (upsert replaces by id — no duplicates if you re-walk),
+// and a $0 bucket is removed. The rich holdings/ticker editor on /accounts stays
+// available as opt-in detail; once a bucket is itemized there, this step shows it
+// read-only so that data is never overwritten.
+const GUIDED_BUCKETS: {
+  key: string;
+  id: string;
+  kind: AccountKind;
+  label: string;
+  q: string;
+  help: string;
+  gains?: boolean;
+}[] = [
+  {
+    key: "bucket-pretax",
+    id: "guided-pretax",
+    kind: "traditional_ira",
+    label: "Pre-tax retirement",
+    q: "How much is in pre-tax retirement accounts?",
+    help: "Traditional IRA, 401(k), 403(b), or a rollover IRA — money you haven’t paid income tax on yet. Add them all into one total.",
+  },
+  {
+    key: "bucket-roth",
+    id: "guided-roth",
+    kind: "roth_ira",
+    label: "Roth",
+    q: "How much is in Roth accounts?",
+    help: "Roth IRA and Roth 401(k) — already taxed, so it grows and comes out completely tax-free.",
+  },
+  {
+    key: "bucket-brokerage",
+    id: "guided-brokerage",
+    kind: "brokerage",
+    label: "Brokerage",
+    gains: true,
+    q: "How much is in a regular brokerage account?",
+    help: "An ordinary taxable investment account — not a retirement account. You owe tax on its dividends, and on the gain when you sell.",
+  },
+  {
+    key: "bucket-cash",
+    id: "guided-cash",
+    kind: "cash",
+    label: "Cash & savings",
+    q: "How much is in cash, savings, or CDs?",
+    help: "Bank savings, money-market, and CDs — money you could spend tomorrow.",
+  },
+];
+
+/** Debounced dollar entry for a bucket step. Commits ~300ms after typing stops so
+ *  the engine doesn't recompute on every keystroke. While the field is focused, an
+ *  external value change won't yank what you're typing. */
+function BucketInput({ value, onCommit, ariaLabel }: { value: number; onCommit: (n: number) => void; ariaLabel?: string }) {
+  const [local, setLocal] = useState(value ? String(value) : "");
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!focused.current) setLocal(value ? String(value) : "");
+  }, [value]);
+  const n = Math.max(0, Number(local.replace(/[^0-9]/g, "")) || 0);
+  useEffect(() => {
+    if (n === value) return;
+    const t = setTimeout(() => onCommit(n), 300);
+    return () => clearTimeout(t);
+  }, [n, value, onCommit]);
+  return (
+    <div>
+      <label className="flex items-center gap-2 rounded-2xl border border-border bg-background/50 px-4 py-3 focus-within:border-primary">
+        <span className="text-2xl font-semibold text-foreground/40">$</span>
+        <input
+          inputMode="numeric"
+          value={local}
+          placeholder="0"
+          aria-label={ariaLabel ?? "Balance"}
+          onFocus={() => (focused.current = true)}
+          onBlur={() => (focused.current = false)}
+          onChange={(e) => setLocal(e.target.value.replace(/[^0-9]/g, ""))}
+          className="tabular w-full bg-transparent text-2xl font-bold outline-none"
+        />
+      </label>
+      <div className="mt-1 h-4 text-right text-[12px] text-foreground/45">{n > 0 ? moneyCompact(n) : ""}</div>
+    </div>
+  );
+}
+
 export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
-  const { household, settings, updateSettings, updateHousehold, mode, setMode, newExample } = useStore();
+  const { household, settings, updateSettings, updateHousehold, upsertAccount, removeAccount, mode, setMode, newExample } = useStore();
   const year = useMemo(() => new Date().getFullYear(), []);
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState<"fwd" | "back">("fwd");
@@ -576,6 +661,81 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     ),
   });
 
+  // STEPS — "simple balances first". Shown only on the simple-balance path: own
+  // mode, with no custom or itemized accounts of the user's own (every account is
+  // a guided-* bucket, or there are none yet). Adding a custom/itemized account on
+  // /accounts switches this off and the flow falls back to the read-only overview.
+  const usingSimpleBuckets = mode === "own" && household.accounts.every((a) => a.id.startsWith("guided-"));
+  if (usingSimpleBuckets) {
+    GUIDED_BUCKETS.forEach((b, bi) => {
+      steps.push({
+        key: b.key,
+        chapter: "money",
+        eyebrow: bi === 0 ? "your savings — just the totals" : "your savings",
+        render: () => {
+          const acct = household.accounts.find((a) => a.id === b.id);
+          const itemized = !!acct?.holdings && acct.holdings.length > 0;
+          return (
+            <div>
+              <h2 className="text-xl font-bold leading-snug">{b.q}</h2>
+              <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">{b.help}</p>
+              {itemized ? (
+                <div className="mt-4 rounded-2xl border border-border bg-background/50 p-4">
+                  <div className="text-[12px] text-foreground/55">Itemized into {acct!.holdings!.length} holdings</div>
+                  <div className="tabular mt-1 text-2xl font-bold text-primary">{money(acct!.balance)}</div>
+                  <Link
+                    href="/accounts"
+                    className="press mt-3 inline-block rounded-xl border border-border px-3 py-1.5 text-[13px] font-semibold text-primary"
+                  >
+                    Edit holdings on the Accounts page →
+                  </Link>
+                </div>
+              ) : (
+                <div className="mt-4">
+                  <BucketInput
+                    ariaLabel={b.q}
+                    value={acct?.balance ?? 0}
+                    onCommit={(n) => {
+                      if (n <= 0) {
+                        if (acct) removeAccount(b.id);
+                        return;
+                      }
+                      upsertAccount({
+                        id: b.id,
+                        label: b.label,
+                        kind: b.kind,
+                        owner: "self",
+                        balance: n,
+                        ...(b.kind === "brokerage" || b.kind === "cash" ? { costBasis: acct?.costBasis ?? n } : {}),
+                      });
+                    }}
+                  />
+                  {b.gains && acct && acct.balance > 0 && (
+                    <div className="mt-3 rounded-xl border border-border bg-background/40 p-3">
+                      <div className="text-[12px] font-medium text-foreground/70">Roughly how much of that is profit (gains)?</div>
+                      <p className="mt-0.5 text-[11px] leading-snug text-foreground/55">
+                        Only the gain is taxed when you sell, so this sharpens the tax math. Not sure? Leave it — we’ll
+                        assume no gain for now, and you can refine it on the Accounts page.
+                      </p>
+                      <div className="mt-2">
+                        <BucketInput
+                          ariaLabel="Approximate investment gains in the brokerage account"
+                          value={Math.max(0, acct.balance - (acct.costBasis ?? acct.balance))}
+                          onCommit={(g) => upsertAccount({ ...acct, costBasis: Math.max(0, acct.balance - g) })}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <p className="mt-3 text-[12px] text-foreground/50">Don’t have this kind of account? Leave it at $0.</p>
+                </div>
+              )}
+            </div>
+          );
+        },
+      });
+    });
+  }
+
   steps.push({
     key: "accounts",
     chapter: "money",
@@ -584,16 +744,17 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       if (needsOwnSetup) {
         return (
           <div>
-            <h2 className="text-xl font-bold leading-snug">Let&apos;s use your real numbers</h2>
+            <h2 className="text-xl font-bold leading-snug">Add your savings to continue</h2>
             <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
-              You haven&apos;t added any accounts yet. Add your IRAs, 401(k)s, Roth, and brokerage — balances and which
-              funds — and this whole plan recalculates around what you actually have.
+              Go back a step and enter at least one balance — pre-tax, Roth, brokerage, or cash — and the whole plan
+              builds around it. Want to list specific funds (tickers, cost basis, dividends)? You can itemize any
+              account on the Accounts page.
             </p>
             <Link
               href="/accounts"
-              className="press mt-4 block rounded-2xl bg-primary px-4 py-3 text-center text-sm font-semibold text-white"
+              className="press mt-4 block rounded-2xl border border-border px-4 py-3 text-center text-sm font-semibold text-primary"
             >
-              Add my accounts →
+              Add detailed accounts on the Accounts page →
             </Link>
           </div>
         );
@@ -638,8 +799,10 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   });
 
   // STEP — plan-to age + survivor (longevity). The horizon drives every number; the
-  // survivor model captures the widow's-penalty single-filer years.
-  if (!needsOwnSetup) {
+  // survivor model captures the widow's-penalty single-filer years. Always shown
+  // (it needs no account data) — so entering a balance in own-setup never inserts
+  // an earlier step and shifts the index out from under the user mid-flow.
+  {
     const hasSpouse = !!household.spouse && household.spouse.birthYear > 1900;
     steps.push({
       key: "longevity",
