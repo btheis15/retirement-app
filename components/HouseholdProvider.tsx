@@ -41,6 +41,12 @@ interface Store {
   loadOwn: (household: Household, settings?: Partial<PlannerSettings>) => void;
 }
 
+// Household fields that are "explore the example" levers: editing them in demo mode
+// layers onto the example in place rather than forking into "your own numbers".
+// (Entering real account balances goes through setAccounts/upsertAccount, which DO
+// fork — that's the signal you're entering your actual money.)
+const EXPLORATORY_KEYS = new Set<string>(["self", "spouse", "annualSpending", "retirementYear"]);
+
 const KEY_MODE = "rto-mode";
 const KEY_OWN = "rto-own-household";
 const KEY_SETTINGS = "rto-settings";
@@ -53,11 +59,12 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const [mode, setModeState] = useState<Mode>("demo");
   const [ownHousehold, setOwnHousehold] = useState<Household>(() => emptyHousehold());
   const [settings, setSettings] = useState<PlannerSettings>(DEFAULT_SETTINGS);
-  // Spending is an *exploratory* lever on the example — dragging it should change
-  // the example in place, NOT silently turn the example into "your own numbers".
-  // Held separately so the demo stays the demo while you explore it. (null = the
-  // example's built-in spending.)
-  const [demoSpending, setDemoSpending] = useState<number | null>(null);
+  // Some fields are *exploratory* levers on the example — birth years, the planned
+  // retirement year, Social Security, and spending. Tweaking them should change the
+  // example in place, NOT silently turn it into "your own numbers" (only entering
+  // real account balances does that). Held as a patch layered over the example so
+  // the demo stays the demo while you explore it. (null = the example as generated.)
+  const [demoOverrides, setDemoOverrides] = useState<Partial<Household> | null>(null);
   // Which example to show: null = the classic fixed $5M example (the familiar
   // first-load picture); any number = a randomized example deterministic in that
   // seed. "New example" hands a fresh seed; it persists so the example stays put
@@ -95,7 +102,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
 
   const setMode = useCallback((m: Mode) => {
     setModeState(m);
-    if (m === "demo") setDemoSpending(null); // returning to the example shows it pristine
+    if (m === "demo") setDemoOverrides(null); // returning to the example shows it pristine
     try {
       localStorage.setItem(KEY_MODE, m);
     } catch {
@@ -109,7 +116,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const newExample = useCallback(() => {
     const seed = (Math.floor(Math.random() * 0x7fffffff) || 1) + 1; // nonzero
     setDemoSeed(seed);
-    setDemoSpending(null); // a new example starts from its own built-in spending
+    setDemoOverrides(null); // a new example starts from its own built-in values
     setModeState("demo");
     try {
       localStorage.setItem(KEY_DEMO_SEED, String(seed));
@@ -129,8 +136,8 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     // tax engine and every view agree on the same per-share-based numbers.
     if (mode !== "demo") return syncHouseholdDividends(ownHousehold);
     const h = demoHousehold(demoSeed);
-    return syncHouseholdDividends(demoSpending != null ? { ...h, annualSpending: demoSpending } : h);
-  }, [mode, ownHousehold, demoSpending, demoSeed]);
+    return syncHouseholdDividends(demoOverrides ? { ...h, ...demoOverrides } : h);
+  }, [mode, ownHousehold, demoOverrides, demoSeed]);
 
   const editApply = useCallback(
     (next: Household) => {
@@ -146,17 +153,19 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
 
   const updateHousehold = useCallback(
     (patch: Partial<Household>) => {
-      // Adjusting ONLY the spending dial while exploring the example stays on the
-      // example (no fork) — it's a "what if I spent this much?" lever, not data entry.
+      // Adjusting only the exploratory levers (who you are, when you retire, Social
+      // Security, spending) while exploring the example stays ON the example (no
+      // fork) — these are "what if?" dials, not data entry. Entering real account
+      // balances is what forks you into "your own numbers".
       const keys = Object.keys(patch);
-      if (mode === "demo" && keys.length === 1 && keys[0] === "annualSpending" && typeof patch.annualSpending === "number") {
-        setDemoSpending(patch.annualSpending);
+      if (mode === "demo" && keys.length > 0 && keys.every((k) => EXPLORATORY_KEYS.has(k))) {
+        setDemoOverrides((prev) => ({ ...(prev ?? {}), ...patch }));
         return;
       }
-      const base = mode === "demo" ? { ...demoHousehold(demoSeed), ...(demoSpending != null ? { annualSpending: demoSpending } : {}) } : ownHousehold;
+      const base = mode === "demo" ? { ...demoHousehold(demoSeed), ...(demoOverrides ?? {}) } : ownHousehold;
       editApply({ ...base, ...patch });
     },
-    [mode, ownHousehold, demoSpending, demoSeed, editApply],
+    [mode, ownHousehold, demoOverrides, demoSeed, editApply],
   );
 
   const setAccounts = useCallback(

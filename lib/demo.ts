@@ -21,7 +21,7 @@
  * ⚠️ Educational estimates only.
  */
 
-import { Account, AccountKind, Holding, HoldingType, Household, syncAccountFromHoldings } from "./accounts";
+import { Account, AccountKind, Holding, HoldingType, Household, defaultRetirementYear, syncAccountFromHoldings } from "./accounts";
 import { dividendBreakdown } from "./dividends";
 
 const RAW_ACCOUNTS: Account[] = [
@@ -129,6 +129,7 @@ export const DEMO_HOUSEHOLD: Household = {
   annualSpending: 180_000, // desired after-tax spending
   brokerageDividendsAnnual: 18_000, // qualified dividends thrown off by brokerage
   state: "IL",
+  retirementYear: defaultRetirementYear(1961), // Robert turns 65
   accounts: RAW_ACCOUNTS.map(syncAccountFromHoldings),
 };
 
@@ -522,6 +523,7 @@ export function randomDemoHousehold(seed: number): Household {
     ordinaryDividendsAnnual: Math.round(bd.ordinaryYear0),
     taxableInterestAnnual: taxableInterest,
     state: "IL",
+    retirementYear: defaultRetirementYear(thisYear - selfAge),
     accounts,
   };
 }

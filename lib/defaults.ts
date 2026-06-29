@@ -1,4 +1,4 @@
-import { Household } from "./accounts";
+import { Household, defaultRetirementYear } from "./accounts";
 import { BracketTarget, StrategyId } from "./optimizer";
 import type { Sex } from "./mortality";
 
@@ -19,6 +19,7 @@ export function emptyHousehold(): Household {
     annualSpending: 120_000,
     brokerageDividendsAnnual: 0,
     state: "IL",
+    retirementYear: defaultRetirementYear(thisYear - 63),
     accounts: [],
   };
 }
