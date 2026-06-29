@@ -9,8 +9,9 @@
  * numbers"); this is the calm front door so nobody has to study the page.
  */
 
-import { useMemo, useState, useEffect, useDeferredValue, useTransition, ReactNode } from "react";
+import { useMemo, useState, useEffect, useRef, useDeferredValue, useTransition, ReactNode } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useStore } from "@/components/HouseholdProvider";
 import { Card, Pill, Info, Callout, DesktopOnly } from "@/components/ui";
 import { SOURCES } from "@/lib/sources";
@@ -39,12 +40,53 @@ import { money, moneyCompact, percent } from "@/lib/format";
 const GOALS: GoalId[] = ["maxCapital", "lowestTax", "lowestRate"];
 const SPEND_MAX = 400_000;
 
+// The walkthrough is organized into ordered "chapters" so a longer, fully-guided
+// flow still reads as a coherent journey and the client always knows where they
+// are. Steps are tagged with a chapter and stable-sorted into this order; the
+// visible chapter list is derived from whichever steps are actually present
+// (conditional steps never make the "of N" count lie).
+type ChapterId = "opening" | "you" | "money" | "income" | "goal" | "spending" | "markets" | "review";
+const CHAPTER_ORDER: ChapterId[] = ["opening", "you", "money", "income", "goal", "spending", "markets", "review"];
+const CHAPTERS: { id: ChapterId; label: string; icon: string }[] = [
+  { id: "you", label: "You", icon: "👤" },
+  { id: "money", label: "Your money", icon: "💼" },
+  { id: "income", label: "Income", icon: "🏦" },
+  { id: "goal", label: "Your goal", icon: "🎯" },
+  { id: "spending", label: "Spending", icon: "💵" },
+  { id: "markets", label: "Markets & taxes", icon: "📈" },
+  { id: "review", label: "Review", icon: "✅" },
+];
+
+// Deep-link target → chapter, so an "Adjust →" that points at a step which is
+// conditioned out of the current flow can still land on that step's chapter.
+const STEP_CHAPTER: Record<string, ChapterId> = {
+  longevity: "you",
+  survivor: "you",
+  accounts: "money",
+  ssclaim: "income",
+  goal: "goal",
+  spend: "spending",
+  "spend-growth": "spending",
+  markets: "markets",
+  rollconfirm: "markets",
+  roll: "markets",
+};
+
+/** Build an href that opens the walkthrough at a specific step (its single home).
+ *  Pairs with the `?step=` seeding in GuidedPlan and the `<AdjustLink>` pill. */
+export function adjustHref(stepKey: string): string {
+  return `/?step=${stepKey}`;
+}
+
 export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   const { household, settings, updateSettings, updateHousehold, mode, setMode, newExample } = useStore();
   const year = useMemo(() => new Date().getFullYear(), []);
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState<"fwd" | "back">("fwd");
   const [, startTransition] = useTransition();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const seededRef = useRef(false);
 
   // Step navigation: remember direction so the slide goes the way you're moving.
   const go = (next: number) => {
@@ -482,7 +524,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   ]);
 
   // ---- Steps ----
-  type Step = { key: string; eyebrow: string; render: () => ReactNode };
+  type Step = { key: string; chapter: ChapterId; eyebrow: string; render: () => ReactNode };
   const steps: Step[] = [];
   const total = household.accounts.reduce((s, a) => s + a.balance, 0);
   // Truly empty only when the user is on their OWN data with nothing entered yet.
@@ -494,6 +536,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   // here (Back from step 1, or "Start over" at the end) and re-pick.
   steps.push({
     key: "start",
+    chapter: "opening",
     eyebrow: "let's begin",
     render: () => (
       <div>
@@ -535,6 +578,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
   steps.push({
     key: "accounts",
+    chapter: "money",
     eyebrow: "start with your money",
     render: () => {
       if (needsOwnSetup) {
@@ -599,6 +643,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     const hasSpouse = !!household.spouse && household.spouse.birthYear > 1900;
     steps.push({
       key: "longevity",
+      chapter: "you",
       eyebrow: "how long should the plan cover?",
       render: () => {
         const btn = (on: boolean) =>
@@ -660,6 +705,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     if (hasSS) {
       steps.push({
         key: "ssclaim",
+        chapter: "income",
         eyebrow: "when to claim Social Security",
         render: () => {
           const adv = rec.claimAdvice;
@@ -743,6 +789,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
   steps.push({
     key: "goal",
+    chapter: "goal",
     eyebrow: "what matters most",
     render: () => (
       <div>
@@ -798,6 +845,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   if (settings.goal === "maxCapital" && finalists.length >= 2) {
     steps.push({
       key: "mostmoney",
+      chapter: "goal",
       eyebrow: "the most-money method",
       render: () => {
         const metric = settings.mostMoneyMetric;
@@ -898,6 +946,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
   steps.push({
     key: "spend",
+    chapter: "spending",
     eyebrow: "how much you can spend",
     render: () => {
       const cur = sweep.at(localSpend);
@@ -1402,6 +1451,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   // projection; the forecast still stress-tests across hundreds of paths around them.
   steps.push({
     key: "markets",
+    chapter: "markets",
     eyebrow: "market assumptions",
     render: () => {
       const btn = (on: boolean) =>
@@ -1446,6 +1496,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   if (pretaxShare > 0.2) {
     steps.push({
       key: "rollconfirm",
+      chapter: "markets",
       eyebrow: "confirm your rollover",
       render: () => {
         const on = settings.useConversions;
@@ -1722,6 +1773,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
   steps.push({
     key: "fund",
+    chapter: "markets",
     eyebrow: "what pays for it — and from where",
     render: () => {
       const pct = Math.round(coverageRatio * 100);
@@ -2077,6 +2129,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   if (pretaxShare > 0.2) {
     steps.push({
       key: "roll",
+      chapter: "markets",
       eyebrow: "smoothing your future taxes",
       render: () => {
         const rows = [
@@ -2326,6 +2379,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
   steps.push({
     key: "ahead",
+    chapter: "review",
     eyebrow: "looking ahead",
     render: () => (
       <div>
@@ -2343,6 +2397,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
   steps.push({
     key: "done",
+    chapter: "review",
     eyebrow: confidence
       ? confidence.successPct >= 0.8
         ? "you're set"
@@ -2387,9 +2442,40 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     ),
   });
 
+  // Order the (conditionally-built) steps into chapter order; stable sort keeps
+  // insertion order within a chapter.
+  steps.sort((a, b) => CHAPTER_ORDER.indexOf(a.chapter) - CHAPTER_ORDER.indexOf(b.chapter));
+
   const safeStep = Math.min(step, steps.length - 1);
   const current = steps[safeStep];
   const isLast = safeStep >= steps.length - 1;
+  // Derive the visible chapter list from the steps actually present so the
+  // orientation chrome ("3 of 6", the rail) never counts a chapter with no steps.
+  const visibleChapters = CHAPTERS.filter((c) => steps.some((s) => s.chapter === c.id));
+  const curChapter = CHAPTERS.find((c) => c.id === current.chapter) ?? null;
+  const curChapterIdx = curChapter ? visibleChapters.findIndex((c) => c.id === curChapter.id) : -1;
+  const firstIndexOfChapter = (id: ChapterId) => steps.findIndex((s) => s.chapter === id);
+
+  // Deep-link entry: another page (Plan/Forecast "Adjust →") can open the
+  // walkthrough at a specific step via `/?step=<key>`. Seed once on mount, by KEY
+  // (robust to conditional steps); if that exact step isn't in the current flow,
+  // fall back to its chapter's first visible step. Clear the param so a refresh or
+  // Back doesn't strand the user on a re-seed. Runs after `ready` (the page gates
+  // GuidedPlan on it, so the right mode/steps are already built).
+  useEffect(() => {
+    if (seededRef.current) return;
+    seededRef.current = true;
+    const target = searchParams.get("step");
+    if (!target) return;
+    let i = steps.findIndex((s) => s.key === target);
+    if (i < 0 && STEP_CHAPTER[target]) i = firstIndexOfChapter(STEP_CHAPTER[target]);
+    if (i >= 0) {
+      setDir("fwd");
+      setStep(i);
+    }
+    router.replace("/", { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Persistent cash-flow reference: once the user has set their spending, keep the
   // key line items visible on every later step so they never lose track of the
@@ -2401,56 +2487,120 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
   return (
     <Card className="overflow-hidden">
-      {/* progress dots */}
-      <div className="mb-3 flex items-center gap-1.5">
-        {steps.map((s, i) => (
-          <button
-            key={s.key}
-            onClick={() => go(i)}
-            aria-label={`Step ${i + 1}`}
-            className={`press h-1.5 flex-1 rounded-full transition-colors ${i <= safeStep ? "bg-primary" : "bg-foreground/10"}`}
-          />
-        ))}
-      </div>
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-primary">{current.eyebrow}</div>
-
-      {showCashFlow && (
-        <CashFlowBar
-          spending={spending}
-          conversion={conversion}
-          tax={totalTax}
-          irmaa={irmaa}
-          guaranteed={guaranteed}
-          fromSavings={totalDraw}
-        />
-      )}
-
-      {/* animated step body — re-keyed so the directional slide replays each step */}
-      <div key={current.key} className={`mt-1 min-h-[360px] ${dir === "back" ? "step-back" : "step-fwd"}`}>
-        {current.render()}
-      </div>
-
-      {/* nav */}
-      <div className="mt-5 flex items-center justify-between gap-3 border-t border-border pt-3">
-        <button
-          onClick={() => go(safeStep - 1)}
-          disabled={safeStep === 0}
-          className="press rounded-xl px-4 py-2 text-sm font-medium text-foreground/60 disabled:opacity-30"
-        >
-          ← Back
-        </button>
-        <span className="text-[12px] text-foreground/45">
-          {safeStep + 1} / {steps.length}
-        </span>
-        {isLast ? (
-          <button onClick={onSeeDetails} className="press rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-white">
-            Finish
-          </button>
-        ) : (
-          <button onClick={() => go(safeStep + 1)} className="press rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-white">
-            Next →
-          </button>
+      <div className="lg:flex lg:items-start lg:gap-5">
+        {/* Desktop chapter rail — the client always sees where they are & what's left */}
+        {visibleChapters.length > 0 && (
+          <nav
+            className="mb-4 hidden shrink-0 self-start rounded-xl border border-border bg-background/50 p-3 lg:mb-0 lg:block lg:w-52"
+            aria-label="Plan steps"
+          >
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-foreground/40">Your plan</div>
+            <ol className="space-y-0.5">
+              {visibleChapters.map((c, i) => {
+                const state = i < curChapterIdx ? "done" : i === curChapterIdx ? "current" : "todo";
+                return (
+                  <li key={c.id}>
+                    <button
+                      onClick={() => go(firstIndexOfChapter(c.id))}
+                      aria-current={state === "current" ? "step" : undefined}
+                      className={`press flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] ${
+                        state === "current" ? "bg-primary/10 font-semibold text-primary" : "text-foreground/55 hover:bg-foreground/5"
+                      }`}
+                    >
+                      <span
+                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                          state === "done"
+                            ? "bg-primary text-white"
+                            : state === "current"
+                              ? "border-2 border-primary text-primary"
+                              : "border border-border text-foreground/40"
+                        }`}
+                      >
+                        {state === "done" ? "✓" : i + 1}
+                      </span>
+                      <span className="min-w-0 truncate">{c.label}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+          </nav>
         )}
+
+        {/* Step content column */}
+        <div className="min-w-0 lg:flex-1">
+          {/* Mobile chapter header — compact "where am I" cue */}
+          {curChapter && (
+            <div className="mb-2 lg:hidden">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 text-[12px] font-semibold text-foreground/70">
+                  <span aria-hidden>{curChapter.icon}</span>
+                  {curChapter.label}
+                </span>
+                <span className="text-[11px] text-foreground/45">
+                  {curChapterIdx + 1} of {visibleChapters.length}
+                </span>
+              </div>
+              <div className="mt-1.5 flex gap-1">
+                {visibleChapters.map((c, i) => (
+                  <span key={c.id} className={`h-1 flex-1 rounded-full ${i <= curChapterIdx ? "bg-primary" : "bg-foreground/10"}`} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* fine progress dots (within the whole flow) */}
+          <div className="mb-3 flex items-center gap-1.5">
+            {steps.map((s, i) => (
+              <button
+                key={s.key}
+                onClick={() => go(i)}
+                aria-label={`Step ${i + 1}`}
+                className={`press h-1.5 flex-1 rounded-full transition-colors ${i <= safeStep ? "bg-primary" : "bg-foreground/10"}`}
+              />
+            ))}
+          </div>
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-primary">{current.eyebrow}</div>
+
+          {showCashFlow && (
+            <CashFlowBar
+              spending={spending}
+              conversion={conversion}
+              tax={totalTax}
+              irmaa={irmaa}
+              guaranteed={guaranteed}
+              fromSavings={totalDraw}
+            />
+          )}
+
+          {/* animated step body — re-keyed so the directional slide replays each step */}
+          <div key={current.key} className={`mt-1 min-h-[360px] ${dir === "back" ? "step-back" : "step-fwd"}`}>
+            {current.render()}
+          </div>
+
+          {/* nav */}
+          <div className="mt-5 flex items-center justify-between gap-3 border-t border-border pt-3">
+            <button
+              onClick={() => go(safeStep - 1)}
+              disabled={safeStep === 0}
+              className="press rounded-xl px-4 py-2 text-sm font-medium text-foreground/60 disabled:opacity-30"
+            >
+              ← Back
+            </button>
+            <span className="text-[12px] text-foreground/45">
+              {safeStep + 1} / {steps.length}
+            </span>
+            {isLast ? (
+              <button onClick={onSeeDetails} className="press rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-white">
+                Finish
+              </button>
+            ) : (
+              <button onClick={() => go(safeStep + 1)} className="press rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-white">
+                Next →
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </Card>
   );

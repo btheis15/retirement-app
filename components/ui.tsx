@@ -3,6 +3,22 @@
 /** Small shared UI primitives so pages stay consistent. Light-mode only. */
 
 import { ReactNode, useState, useEffect } from "react";
+import Link from "next/link";
+
+/** A small "Adjust →" pill that deep-links back to a specific step of the guided
+ *  walkthrough (the single place a setting is decided). Used on Plan/Forecast so a
+ *  shown-but-not-editable number routes the user to where they change it — instead
+ *  of duplicating the control. `step` is a GuidedPlan step key (e.g. "spend"). */
+export function AdjustLink({ step, label = "Adjust", className = "" }: { step: string; label?: string; className?: string }) {
+  return (
+    <Link
+      href={`/?step=${step}`}
+      className={`press inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-3 py-1.5 text-[12px] font-semibold text-primary ${className}`}
+    >
+      {label} →
+    </Link>
+  );
+}
 
 /** True once mounted on a desktop-width viewport (lg breakpoint, 1024px). Returns
  *  false on the server and first client render (avoids hydration mismatch), then
