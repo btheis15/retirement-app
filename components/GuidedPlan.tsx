@@ -822,7 +822,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               {[90, 95, 100, 105].map((a) => (
                 <button key={a} onClick={() => updateSettings({ endAge: a })} className={btn(settings.endAge === a)}>
                   <div className="text-lg font-bold leading-none">{a}</div>
-                  <div className="mt-0.5 text-[10px]">{a === 95 ? "typical" : a >= 100 ? "cautious" : "shorter"}</div>
+                  <div className="mt-0.5 text-[10px]">{a === 95 ? "typical ★" : a >= 100 ? "cautious" : "shorter"}</div>
                 </button>
               ))}
             </div>
@@ -970,16 +970,19 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 }`}
               >
                 <span className="text-2xl leading-none">{GOAL_META[g].icon}</span>
-                <span className="min-w-0">
-                  <span className={`block font-semibold ${active ? "text-primary" : ""}`}>{GOAL_META[g].short}</span>
-                  <span className={`mt-0.5 block text-[12px] font-medium leading-snug ${active ? "text-foreground/70" : "text-foreground/45"}`}>
-                    {planGist(recAll[g])}
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className={`font-semibold ${active ? "text-primary" : ""}`}>{GOAL_META[g].short}</span>
+                    {g === "maxCapital" && (
+                      <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-accent">Most common</span>
+                    )}
                   </span>
-                  {active && (
-                    <span className="mt-1 block text-[12px] leading-snug text-foreground/55">{GOAL_META[g].blurb}</span>
-                  )}
+                  <span className="mt-0.5 block text-[12px] leading-snug text-foreground/60">{GOAL_META[g].blurb}</span>
+                  <span className={`mt-1 block text-[12px] font-medium leading-snug ${active ? "text-foreground/70" : "text-foreground/45"}`}>
+                    → {planGist(recAll[g])}
+                  </span>
                 </span>
-                {active && <span className="ml-auto shrink-0 text-primary">✓</span>}
+                {active && <span className="ml-auto shrink-0 self-start text-primary">✓</span>}
               </button>
             );
           })}
@@ -1633,20 +1636,31 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               {[{ r: 0.04, l: "Cautious" }, { r: 0.05, l: "Moderate" }, { r: 0.06, l: "Optimistic" }].map((o) => (
                 <button key={o.r} onClick={() => updateSettings({ returnRate: o.r })} className={btn(near(settings.returnRate, o.r))}>
                   <div className="text-lg font-bold leading-none">{percent(o.r, 0)}</div>
-                  <div className="mt-0.5 text-[10px]">{o.l}</div>
+                  <div className="mt-0.5 text-[10px]">{o.l}{o.r === 0.05 ? " ★" : ""}</div>
                 </button>
               ))}
             </div>
+            <p className="mt-1.5 text-[11px] leading-snug text-foreground/55">
+              {near(settings.returnRate, 0.04)
+                ? "Cautious — a conservative long-run estimate; your plan looks safer if markets disappoint."
+                : near(settings.returnRate, 0.06)
+                  ? "Optimistic — closer to the historical stock average; assumes a strong, stock-heavy run."
+                  : "Moderate — a professional middle estimate for a balanced mix. ★ Suggested unless you have a reason to differ."}
+            </p>
           </div>
           <div className="mt-4">
             <div className="mb-1 text-[12px] font-medium text-foreground/60">Inflation</div>
             <div className="grid grid-cols-4 gap-2 text-[13px]">
               {[0.02, 0.025, 0.03, 0.035].map((r) => (
                 <button key={r} onClick={() => updateSettings({ inflationRate: r })} className={btn(near(settings.inflationRate, r))}>
-                  {percent(r, 1)}
+                  {percent(r, 1)}{r === 0.025 ? " ★" : ""}
                 </button>
               ))}
             </div>
+            <p className="mt-1.5 text-[11px] leading-snug text-foreground/55">
+              How fast prices rise each year. <strong>2.5%</strong> (★) is about the long-run average and the Fed&apos;s
+              target — a sensible default.
+            </p>
           </div>
         </div>
       );
