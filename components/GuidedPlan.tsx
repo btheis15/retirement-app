@@ -2526,8 +2526,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   if (pretaxShare > 0.2) {
     steps.push({
       key: "roll",
-      chapter: "markets",
-      eyebrow: "smoothing your future taxes",
+      chapter: "review",
+      eyebrow: "the rollover, in detail",
       render: () => {
         const rows = [
           { name: "Do nothing extra", p: compare.none, hint: "RMDs arrive in big, high-bracket chunks" },
@@ -2615,7 +2615,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           <DesktopOnly
             mobileNote={
               <div>
-                <h2 className="text-xl font-bold leading-snug">Smooth your future tax bill</h2>
+                <h2 className="text-xl font-bold leading-snug">Your rollover, in detail</h2>
                 <p className="mt-2 text-[13px] leading-relaxed text-foreground/65">
                   Your plan moves small amounts to Roth across your low-tax years instead of facing one big forced
                   withdrawal (RMD) later — projected to keep about <strong>{moneyCompact(gainVsNothing)}</strong>{" "}more
@@ -2625,7 +2625,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             }
           >
           <div>
-            <h2 className="text-xl font-bold leading-snug">Smooth your future tax bill</h2>
+            <h2 className="text-xl font-bold leading-snug">Your rollover, in detail</h2>
             <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
               RMDs aren&apos;t the enemy — a steady withdrawal is fine. The trap is one <strong>big</strong>{" "}forced
               withdrawal that lands in a high bracket. The fix: move a little to Roth each year, only up to the top of a
@@ -2728,40 +2728,12 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               {takeaway}
             </Callout>
 
-            {/* The decision, right here */}
-            <div className="mt-4 rounded-2xl border border-border p-3">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[13px] font-semibold">Use the smoothing rollover plan?</span>
-                <button
-                  onClick={() => updateSettings({ useConversions: !settings.useConversions, planCustomized: true })}
-                  className={`press rounded-full px-4 py-1.5 text-[13px] font-semibold ${settings.useConversions ? "bg-gain/15 text-gain" : "bg-primary text-white"}`}
-                >
-                  {settings.useConversions ? "✓ On" : "Turn on"}
-                </button>
-              </div>
-              {settings.useConversions && (
-                <>
-                  <p className="mt-2 text-[12px] text-foreground/65">
-                    This year that&apos;s about <strong>{money(conversion)}</strong> moved pre-tax → Roth — sized to fill
-                    your {percent(settings.bracketTarget, 0)} bracket, no more.
-                  </p>
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => updateSettings({ convertMode: "recommended", planCustomized: true })}
-                      className={`press rounded-xl border px-2 py-1.5 text-center text-[12px] ${settings.convertMode === "recommended" ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/70"}`}
-                    >
-                      Smooth (recommended)
-                    </button>
-                    <button
-                      onClick={() => updateSettings({ convertMode: "fillBracket", planCustomized: true })}
-                      className={`press rounded-xl border px-2 py-1.5 text-center text-[12px] ${settings.convertMode === "fillBracket" ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/70"}`}
-                    >
-                      Fill the {percent(settings.bracketTarget, 0)} bracket
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
+            {/* No decision here — the rollover is chosen ONCE, on the "Confirm your
+                rollover" step. This step is just the detailed comparison behind it. */}
+            <p className="mt-4 rounded-xl border border-border bg-background/40 px-3 py-2 text-[12px] text-foreground/60">
+              You decide whether to do this back on the <strong>&ldquo;Confirm your rollover&rdquo;</strong> step — this is
+              just the detailed comparison behind that choice.
+            </p>
             {isIL && (
               <p className="mt-2 rounded-xl bg-gain/10 px-3 py-2 text-[12px] text-gain">
                 🟢 In Illinois the rollover itself is <strong>state-tax-free</strong> — you only owe federal tax to do it.
