@@ -13,7 +13,7 @@ import { useMemo, useState, useEffect, useRef, useDeferredValue, useTransition, 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useStore } from "@/components/HouseholdProvider";
-import { Card, Pill, Info, Callout, DesktopOnly } from "@/components/ui";
+import { Card, Pill, Info, Callout, DesktopOnly, Collapsible } from "@/components/ui";
 import { SOURCES } from "@/lib/sources";
 import { StackedBar } from "@/components/ui";
 import { spendingSweep } from "@/lib/spendingSweep";
@@ -1630,6 +1630,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             );
           })()}
 
+          {/* Deep IRMAA policy — desktop only; mobile keeps the live tier readout above. */}
+          <DesktopOnly>
           {medicareEnrollees > 0 && (
             <Info q="How is this Medicare (IRMAA) number figured — and why doesn't it match Medicare's premium table?" sources={[SOURCES.irmaa]}>
               <p>
@@ -1678,6 +1680,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               </p>
             </Info>
           )}
+          </DesktopOnly>
 
           {/* Zone verdict — does it last, and what's left (live, downside path). */}
           {hasRoom && (
@@ -1702,9 +1705,9 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </p>
           )}
 
-          {/* Withdrawal-rate guide — the classic "4% rule" yardstick, live at the
-              chosen spend. ALWAYS shown (when there are savings) so it doesn't blink
-              in and out as you drag; the content adapts to the chosen number. */}
+          {/* Withdrawal-rate guide — the classic "4% rule" yardstick. Desktop-only:
+              the zone verdict above already gives mobile the sustainability read. */}
+          <DesktopOnly>
           {portfolioTotal > 0 && (() => {
             const liveWR = liveImpact.draw / portfolioTotal;
             const drawing = liveImpact.draw > 0.5;
@@ -1728,6 +1731,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               </p>
             );
           })()}
+          </DesktopOnly>
 
           {/* Portfolio value over time, as a confidence interval — the standard
               high-end "fan", not a single line. Reads off the off-thread Monte
@@ -2768,6 +2772,87 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     ),
   });
 
+  // STEP — the full breakdown: all the supporting detail consolidated at the END of
+  // the flow, so the question steps stay simple. This is also where MOBILE users find
+  // the deeper detail that's desktop-only on the steps. Collapsed sections keep it calm.
+  steps.push({
+    key: "breakdown",
+    chapter: "review",
+    eyebrow: "all the detail, in one place",
+    render: () => {
+      const t = plan.tax;
+      const incomeTax = t.totalTax;
+      const fed = t.federalTax ?? 0;
+      const stateTax = Math.max(0, incomeTax - fed);
+      const medicare = t.irmaa?.householdAnnual ?? 0;
+      const orderWhy =
+        settings.strategy === "smart"
+          ? "We fill your low tax brackets with pre-tax dollars first, so less is forced out later as high-taxed RMDs — then cover the rest from your brokerage, and leave tax-free Roth for last."
+          : settings.strategy === "conventional"
+            ? "We spend your brokerage and cash first (keeping taxable income low), then pre-tax, and leave tax-free Roth for last."
+            : "We draw a little from every account each year — balancing today's tax against the forced withdrawals (RMDs) building up in your pre-tax accounts.";
+      return (
+        <div>
+          <h2 className="text-xl font-bold leading-snug">The full breakdown</h2>
+          <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+            Everything behind your plan, tucked into sections — open whatever you&apos;re curious about. Nothing to decide here.
+          </p>
+          <div className="mt-4 space-y-2">
+            <Collapsible eyebrow="this year" title="Your tax this year" summary={`About ${money(incomeTax + medicare)} total`}>
+              <div className="mt-1">
+                <Row label="Federal income tax" value={money(fed)} />
+                <Row label="State income tax" value={money(stateTax)} />
+                {medicare > 0 && <Row label="Medicare (IRMAA) surcharge" value={money(medicare)} />}
+                <Row label="Total set-aside" value={money(incomeTax + medicare)} bold />
+              </div>
+              <p className="mt-2 text-[12px] leading-snug text-foreground/55">
+                The <strong>Plan</strong> tab shows the line-by-line math; <strong>Forecast</strong> shows how it changes year by year.
+              </p>
+            </Collapsible>
+
+            <Collapsible title="Why your money comes out in this order">
+              <p className="text-[13px] leading-relaxed text-foreground/70">{orderWhy}</p>
+            </Collapsible>
+
+            {pretaxShare > 0.2 && (
+              <Collapsible title="Your Roth rollover, compared">
+                <p className="text-[13px] leading-relaxed text-foreground/70">
+                  Smoothing small amounts to Roth each year is projected to leave your family about{" "}
+                  <strong>{moneyCompact(Math.max(0, compare.smooth.endingEstateAfterTax - compare.none.endingEstateAfterTax))}</strong>{" "}
+                  more than doing nothing, and keeps your biggest forced withdrawal (RMD) down near{" "}
+                  <strong>{moneyCompact(compare.smooth.peakRmd)}</strong> instead of{" "}
+                  <strong>{moneyCompact(compare.none.peakRmd)}</strong>. The full three-way comparison is on the
+                  &ldquo;Your rollover, in detail&rdquo; step.
+                </p>
+              </Collapsible>
+            )}
+
+            <Collapsible title="Medicare (IRMAA), in plain English">
+              <p className="text-[13px] leading-relaxed text-foreground/70">
+                Once your income crosses certain lines, Medicare adds a surcharge on top of the standard premium — billed
+                per person, and set by your income from two years earlier. It&apos;s a step, not a slope: cross a line and the
+                whole next surcharge kicks in. That&apos;s why the plan watches those lines when sizing your withdrawals and rollover.
+              </p>
+            </Collapsible>
+
+            <Collapsible title="Key terms">
+              <div className="space-y-2 text-[13px] leading-relaxed text-foreground/70">
+                <p><strong>RMD</strong> — a Required Minimum Distribution: starting at 73, the IRS makes you withdraw a minimum from your pre-tax accounts each year and taxes it as ordinary income.</p>
+                <p><strong>Tax bracket</strong> — income is taxed in steps; your &ldquo;bracket&rdquo; is the rate the next dollar is taxed at.</p>
+                <p><strong>Roth</strong> — an account you&apos;ve already paid tax on; it grows tax-free, comes out tax-free, and is never force-withdrawn during your life.</p>
+              </div>
+            </Collapsible>
+          </div>
+
+          <Callout tone="info" icon="📊" className="mt-3">
+            Want the live numbers and charts? The <strong>Plan</strong> and <strong>Forecast</strong> tabs have the full
+            year-by-year detail — in the menu any time, or via &ldquo;See all the numbers&rdquo; on the next step.
+          </Callout>
+        </div>
+      );
+    },
+  });
+
   steps.push({
     key: "done",
     chapter: "review",
@@ -3017,11 +3102,11 @@ function CashFlowBar({
       <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/40">
         This year’s cash flow — for reference
       </div>
+      {/* Just the number you picked (and the rollover, if any) — tax & Medicare are
+          shown in full on the steps that explain them, so they're not repeated here. */}
       <div className="flex flex-wrap gap-x-5 gap-y-1.5">
         <CFItem icon="💵" label="Personal spending" value={spending} tone="text-foreground" />
         {conversion > 0.5 && <CFItem icon="🔄" label="Roth rollover" value={conversion} tone="text-roth" />}
-        {tax > 0.5 && <CFItem icon="🧾" label="Tax set-aside" value={tax} tone="text-tax" />}
-        {irmaa > 0.5 && <CFItem icon="🏥" label="Medicare IRMAA" value={irmaa} tone="text-tax" />}
       </div>
       <div className="mt-1.5 border-t border-border/50 pt-1 text-[10.5px] leading-snug text-foreground/45">
         Funded by {money(guaranteed)} of guaranteed income
