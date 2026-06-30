@@ -52,6 +52,12 @@ export interface PlannerSettings {
   /** Spending behavior: "constant" real (default — grows with inflation), "flatNominal"
    *  (same dollars every year), or "guardrails" (Guyton-Klinger dynamic spending). */
   spendingStrategy: "constant" | "flatNominal" | "guardrails";
+  /** What happens to dividends & interest your TAXABLE accounts throw off. "reinvest"
+   *  (default) → they compound in the account and do NOT cover spending (you withdraw
+   *  more to cover their yearly tax). "spend" → you take them as cash that funds
+   *  spending. Either way they're taxed each year. No effect on retirement-account
+   *  holdings (those aren't taxed until withdrawn). */
+  dividendMode: "reinvest" | "spend";
   /** For the "most money" goal: how to rank candidate plans across simulated markets.
    *  "winRate" (most often ends richest — the default), "median" (highest typical
    *  ending estate), or "mean" (highest average/upside). All run on common random
@@ -92,6 +98,7 @@ export const DEFAULT_SETTINGS: PlannerSettings = {
   realDollars: false,
   heirTaxRate: 0.24,
   spendingStrategy: "constant",
+  dividendMode: "reinvest",
   mostMoneyMetric: "winRate",
   selfSex: "blended",
   spouseSex: "blended",

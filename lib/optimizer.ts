@@ -96,6 +96,11 @@ interface YearContext {
   ordinaryDividends: number;
   taxableInterest: number;
   taxExemptInterest: number;
+  /** When false/undefined (the default) dividends & interest are REINVESTED: they're
+   *  still taxed each year (see the ctx.* fields fed to computeTaxes) but they do NOT
+   *  cover spending, so the household withdraws more. When true they're taken as cash
+   *  that covers spending (the opt-in). */
+  spendDividends?: boolean;
   num65Plus: number;
   // Taxable withdrawals come CASH-FIRST: the first `cashTaxable` dollars are cash/
   // savings (zero embedded gain), and only dollars beyond that sell appreciated
@@ -141,9 +146,12 @@ function evaluate(
     filingStatus: ctx.filingStatus,
     _noMarginal: !wantMarginal,
   });
-  // All of this is cash the household receives, reducing how much it must withdraw.
-  const fixedIncome =
-    ctx.socialSecurity + ctx.pension + ctx.dividends + ctx.ordinaryDividends + ctx.taxableInterest + ctx.taxExemptInterest;
+  // Dividends & interest are taxed every year regardless (the ctx.* fields above feed
+  // computeTaxes). Whether they ALSO cover spending is the household's choice: by
+  // default they're reinvested (compound in the account, don't reduce withdrawals);
+  // only when the user opts to spend them do they count as cash in hand here.
+  const investmentIncome = ctx.dividends + ctx.ordinaryDividends + ctx.taxableInterest + ctx.taxExemptInterest;
+  const fixedIncome = ctx.socialSecurity + ctx.pension + (ctx.spendDividends ? investmentIncome : 0);
   const grossInflow = fixedIncome + draws.pretax + draws.taxable + draws.roth;
   return { tax, grossInflow, netCash: grossInflow - tax.totalTax };
 }
@@ -256,6 +264,9 @@ export interface PlanParams {
   /** MAGI from 2 years prior, for the IRMAA lookback (a projection supplies it;
    *  the single-year planner omits it and IRMAA falls back to this year's MAGI). */
   irmaaMagi?: number;
+  /** "reinvest" (default) → dividends & interest compound and don't cover spending;
+   *  "spend" → they're taken as cash that reduces withdrawals. */
+  dividendMode?: "reinvest" | "spend";
 }
 
 export type ConversionParam =
@@ -329,6 +340,7 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
     inflationFactor: params.inflationFactor ?? 1,
     filingStatus,
     irmaaMagi: params.irmaaMagi,
+    spendDividends: params.dividendMode === "spend",
   };
 
   const { total: rmd, details: rmdDetails } = computeRmd(household, year);
@@ -350,9 +362,13 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
 
   if (net >= target) {
     notes.push(
-      rmd > 0
-        ? "Social Security, pension, dividends and the required RMD already cover your spending — no extra withdrawals needed (any surplus can be reinvested in your brokerage)."
-        : "Social Security, pension and dividends already cover your spending — no withdrawals needed yet.",
+      ctx.spendDividends
+        ? rmd > 0
+          ? "Social Security, pension, dividends and the required RMD already cover your spending — no extra withdrawals needed (any surplus can be reinvested in your brokerage)."
+          : "Social Security, pension and dividends already cover your spending — no withdrawals needed yet."
+        : rmd > 0
+          ? "Social Security, pension and the required RMD already cover your spending — no extra withdrawals needed."
+          : "Social Security and pension already cover your spending — no withdrawals needed yet.",
     );
   } else {
     // 2) Fill the gap by strategy.
