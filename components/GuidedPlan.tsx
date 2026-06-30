@@ -208,6 +208,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     convertUntilAge: settings.convertUntilAge,
     survivor: survivorFromSettings(settings),
     heirTaxRate: settings.heirTaxRate,
+    dividendMode: settings.dividendMode,
   };
   const activeAssumptions = useMemo(
     () => ({
@@ -220,6 +221,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       survivor: survivorFromSettings(settings),
       heirTaxRate: settings.heirTaxRate,
       spendingStrategy: settings.spendingStrategy,
+      dividendMode: settings.dividendMode,
     }),
     [settings],
   );
@@ -238,6 +240,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         bracketTarget: settings.bracketTarget,
         year,
         filingStatus,
+        dividendMode: settings.dividendMode,
         conversion: settings.useConversions
           ? settings.convertMode === "recommended"
             ? { mode: "recommended", futureRate: proj.futureRate }
@@ -252,8 +255,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   // vs. the part the rollover tops off. (Gross conversion can't be subtracted from
   // taxable income directly — the standard deduction sits between them.)
   const planNoConv = useMemo(
-    () => planYear(household, { strategy: settings.strategy, bracketTarget: settings.bracketTarget, year, filingStatus, conversion: null }),
-    [household, settings.strategy, settings.bracketTarget, year, filingStatus],
+    () => planYear(household, { strategy: settings.strategy, bracketTarget: settings.bracketTarget, year, filingStatus, dividendMode: settings.dividendMode, conversion: null }),
+    [household, settings.strategy, settings.bracketTarget, year, filingStatus, settings.dividendMode],
   );
   // The worst future RMD-era marginal rate, computed independently of whether the
   // rollover is currently ON — proj.futureRate is only populated when conversions
@@ -278,6 +281,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             bracketTarget: settings.bracketTarget,
             year,
             filingStatus,
+            dividendMode: settings.dividendMode,
             conversion:
               settings.convertMode === "fillBracket"
                 ? { mode: "fillBracket", toBracket: settings.bracketTarget }
@@ -615,6 +619,16 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   // Truly empty only when the user is on their OWN data with nothing entered yet.
   // In demo mode we SHOW the example (that's the whole point of an example).
   const needsOwnSetup = mode === "own" && household.accounts.length === 0;
+  // Taxable dividends & interest the household's accounts throw off. Only when this is
+  // meaningful do we ask the reinvest-vs-spend question (retirement-only households see
+  // nothing — dividends inside IRAs/401ks/Roths aren't taxed yearly and get no special
+  // treatment, so there's nothing to decide).
+  const taxableInvestmentIncome =
+    (household.brokerageDividendsAnnual ?? 0) +
+    (household.ordinaryDividendsAnnual ?? 0) +
+    (household.taxableInterestAnnual ?? 0) +
+    (household.taxExemptInterestAnnual ?? 0);
+  const hasInvestmentIncome = taxableInvestmentIncome > 200;
 
   // STEP 0 — the one-time fork: you go through the WHOLE walkthrough either on the
   // $5M example or on your own numbers. No mid-flow toggle; to switch, you come back
@@ -1101,6 +1115,59 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         },
       });
     }
+  }
+
+  // STEP — dividends & interest: reinvest (default) or spend. Only shown when the
+  // taxable accounts actually pay something out, so the user is consciously told
+  // reinvest is the default and that spending it is a deliberate choice.
+  if (hasInvestmentIncome) {
+    steps.push({
+      key: "dividends",
+      chapter: "income",
+      eyebrow: "your investment income",
+      render: () => {
+        const spend = settings.dividendMode === "spend";
+        const opt = (on: boolean) =>
+          `press flex w-full items-start gap-3 rounded-2xl border p-3.5 text-left ${on ? "border-primary bg-primary/10" : "border-border"}`;
+        return (
+          <div>
+            <h2 className="text-xl font-bold leading-snug">What happens to your dividends &amp; interest?</h2>
+            <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+              Your taxable investments pay out about <strong>{money(Math.round(taxableInvestmentIncome))}/yr</strong> in
+              dividends and interest. Most people leave it invested so it keeps compounding — or you can take it as cash
+              to help fund your spending. Either way, it&apos;s taxed each year.
+            </p>
+            <div className="mt-4 grid gap-2">
+              <button onClick={() => updateSettings({ dividendMode: "reinvest" })} className={opt(!spend)}>
+                <span className="text-2xl leading-none">🔁</span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className={`font-semibold ${!spend ? "text-primary" : ""}`}>Reinvest it</span>
+                    <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-accent">Most common</span>
+                  </span>
+                  <span className="mt-0.5 block text-[12px] leading-snug text-foreground/60">
+                    It stays invested and keeps growing. You withdraw from your accounts to cover spending (we still set
+                    aside the tax it owes).
+                  </span>
+                </span>
+                {!spend && <span className="ml-auto shrink-0 self-start text-primary">✓</span>}
+              </button>
+              <button onClick={() => updateSettings({ dividendMode: "spend" })} className={opt(spend)}>
+                <span className="text-2xl leading-none">💵</span>
+                <span className="min-w-0 flex-1">
+                  <span className={`font-semibold ${spend ? "text-primary" : ""}`}>Take it as cash to spend</span>
+                  <span className="mt-0.5 block text-[12px] leading-snug text-foreground/60">
+                    You live partly off the payout, so you withdraw a bit less from your accounts. (Often a touch more
+                    tax-efficient — the plan updates so you can compare.)
+                  </span>
+                </span>
+                {spend && <span className="ml-auto shrink-0 self-start text-primary">✓</span>}
+              </button>
+            </div>
+          </div>
+        );
+      },
+    });
   }
 
   steps.push({

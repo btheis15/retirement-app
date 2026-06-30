@@ -52,7 +52,7 @@ export default function PlanPage() {
   const year = useMemo(() => new Date().getFullYear(), []);
 
   const plan = useMemo(
-    () => planYear(household, { strategy: settings.strategy, bracketTarget: settings.bracketTarget, year }),
+    () => planYear(household, { strategy: settings.strategy, bracketTarget: settings.bracketTarget, year, dividendMode: settings.dividendMode }),
     [household, settings, year],
   );
   const opportunities = useMemo(
@@ -72,6 +72,7 @@ export default function PlanPage() {
         survivor: survivorFromSettings(settings),
         heirTaxRate: settings.heirTaxRate,
         spendingStrategy: settings.spendingStrategy,
+        dividendMode: settings.dividendMode,
       }),
     [household, settings],
   );
@@ -84,10 +85,15 @@ export default function PlanPage() {
   const voluntaryPretax = Math.max(0, w.pretax - plan.rmd);
   const coveredByIncome = totalDraw < 0.5;
 
-  // What funds this year's spending (Social Security shown explicitly).
+  // What funds this year's spending (Social Security shown explicitly). In the
+  // default "reinvest" mode, dividends & interest are NOT taken as cash — they
+  // compound in the account and don't cover spending (the engine withdraws a little
+  // more to cover their yearly tax), so they aren't a funding source here. They only
+  // count as income to spend when the user has opted into that.
   const ssNow = plan.fixed.socialSecurity;
-  const interestIncome = plan.fixed.taxableInterest + plan.fixed.taxExemptInterest;
-  const allDividends = plan.fixed.dividends + plan.fixed.ordinaryDividends;
+  const spendInvestmentIncome = settings.dividendMode === "spend";
+  const interestIncome = spendInvestmentIncome ? plan.fixed.taxableInterest + plan.fixed.taxExemptInterest : 0;
+  const allDividends = spendInvestmentIncome ? plan.fixed.dividends + plan.fixed.ordinaryDividends : 0;
   const guaranteed = ssNow + plan.fixed.pension + allDividends + interestIncome;
   const fundingSegs = [
     { value: ssNow, className: "bg-ss", label: "Social Security" },
@@ -194,7 +200,7 @@ export default function PlanPage() {
       <Callout tone="good" icon="🧭" title="Your move this year">
         {coveredByIncome ? (
           <>
-            Good news — your Social Security, pension and dividends already cover your{" "}
+            Good news — your guaranteed income{spendInvestmentIncome ? " (Social Security, pension and the dividends you take as cash)" : " (Social Security and pension)"} already covers your{" "}
             <strong>{money(plan.spendingTarget)}</strong>{" "}of spending this year. You don&apos;t need to
             pull from any account{plan.rmd > 0.5 ? " beyond the required minimum withdrawal (RMD) below" : ""}.
           </>
@@ -846,6 +852,7 @@ function GoalAndRecommendation() {
         survivor: survivorFromSettings(settings),
         heirTaxRate: settings.heirTaxRate,
         spendingStrategy: settings.spendingStrategy,
+        dividendMode: settings.dividendMode,
       },
       model: returnModel(household.accounts),
       // 1,000 runs + fixed seed → matches the Forecast tab's confidence number
@@ -999,6 +1006,7 @@ function LookingAhead() {
         convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
         survivor: survivorFromSettings(settings),
         spendingStrategy: settings.spendingStrategy,
+        dividendMode: settings.dividendMode,
         heirTaxRate: settings.heirTaxRate,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps

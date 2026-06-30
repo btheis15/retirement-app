@@ -56,6 +56,10 @@ export interface ProjectionAssumptions {
    *  the same DOLLAR amount every year (real value erodes). "guardrails" =
    *  Guyton-Klinger dynamic spending: flex up in good markets and trim in bad ones. */
   spendingStrategy?: "constant" | "flatNominal" | "guardrails";
+  /** "reinvest" (default) → dividends & interest compound in the taxable account and
+   *  don't cover spending (so withdrawals rise to cover their yearly tax). "spend" →
+   *  they're taken as cash that funds spending (the prior behavior). */
+  dividendMode?: "reinvest" | "spend";
 }
 
 export interface ProjectionRow {
@@ -487,6 +491,7 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
       inflationFactor,
       filingStatus,
       irmaaMagi: magiByYear.get(year - 2), // IRMAA's 2-year MAGI lookback
+      dividendMode: assumptions.dividendMode,
     });
     magiByYear.set(year, plan.tax.magi);
 
@@ -540,14 +545,17 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
     peakMarginalRate = Math.max(peakMarginalRate, plan.tax.marginalOrdinaryRate);
 
     growAll(h.accounts, returnFor ? returnFor(year - startYear) : returnRate);
-    // Carve this year's brokerage dividends/interest out of its total-return
-    // growth — they were already received as taxable income (funding spending),
-    // so leaving them to also compound would double-count and over-credit the
-    // taxable account vs. a tax-free Roth.
-    distributeFromBrokerage(
-      h.accounts,
-      (h.brokerageDividendsAnnual ?? 0) + (h.ordinaryDividendsAnnual ?? 0) + (h.taxExemptInterestAnnual ?? 0),
-    );
+    // In "spend" mode the brokerage's dividends/interest were received as cash this
+    // year (funding spending), so carve them out of its total-return growth — leaving
+    // them to also compound would double-count vs. a tax-free Roth. In the default
+    // "reinvest" mode they were NOT taken as cash, so they stay invested and compound
+    // (their tax is still owed — covered by a slightly larger withdrawal instead).
+    if (assumptions.dividendMode === "spend") {
+      distributeFromBrokerage(
+        h.accounts,
+        (h.brokerageDividendsAnnual ?? 0) + (h.ordinaryDividendsAnnual ?? 0) + (h.taxExemptInterestAnnual ?? 0),
+      );
+    }
 
     const endTotal = h.accounts.reduce((s, a) => s + a.balance, 0);
 

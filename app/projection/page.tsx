@@ -66,6 +66,7 @@ export default function ProjectionPage() {
       survivor: survivorFromSettings(settings),
       heirTaxRate: settings.heirTaxRate,
       spendingStrategy: settings.spendingStrategy,
+      dividendMode: settings.dividendMode,
     };
     const chosen = projectLifetime(household, {
       ...base,
@@ -117,6 +118,7 @@ export default function ProjectionPage() {
         survivor: survivorFromSettings(settings),
         heirTaxRate: settings.heirTaxRate,
         spendingStrategy: settings.spendingStrategy,
+      dividendMode: settings.dividendMode,
       },
       model: returnModel(household.accounts),
       runs: MC_RUNS,
@@ -148,6 +150,7 @@ export default function ProjectionPage() {
         survivor: survivorFromSettings(settings),
         heirTaxRate: settings.heirTaxRate,
         spendingStrategy: settings.spendingStrategy,
+      dividendMode: settings.dividendMode,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [household, computeKey],
@@ -224,6 +227,7 @@ export default function ProjectionPage() {
     survivor: survivorFromSettings(settings),
     heirTaxRate: settings.heirTaxRate,
     spendingStrategy: settings.spendingStrategy,
+      dividendMode: settings.dividendMode,
   });
 
   const runBootstrap = () => {

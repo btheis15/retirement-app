@@ -60,6 +60,8 @@ export interface PlanInputs {
   survivor?: { firstDeathAge: number; spendingFactor: number } | null;
   /** Heir's assumed marginal rate on inherited pre-tax (10-year rule). Default 0.24. */
   heirTaxRate?: number;
+  /** Dividends/interest reinvested (default) or spent — passed through to the engine. */
+  dividendMode?: "reinvest" | "spend";
 }
 
 export interface PlanMetrics {
@@ -189,6 +191,7 @@ function evaluateConfig(household: Household, inputs: PlanInputs, c: { config: P
     convert: c.config.useConversions ? { untilAge: inputs.convertUntilAge, mode: c.config.convertMode } : null,
     survivor: inputs.survivor ?? null,
     heirTaxRate: inputs.heirTaxRate,
+    dividendMode: inputs.dividendMode,
   });
   const grossIncome = projection.rows.reduce((s, r) => s + r.netCash + r.tax, 0);
   const lifetimeIrmaa = projection.rows.reduce((s, r) => s + r.irmaa, 0);
