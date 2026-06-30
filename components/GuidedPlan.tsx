@@ -1733,6 +1733,9 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               high-end "fan", not a single line. Reads off the off-thread Monte
               Carlo, which lags a drag; while it catches up we show "updating…"
               rather than a stale band that would contradict the verdict above. */}
+          {/* The full market-risk range is detail — on mobile it lives on the final
+              "how solid is this plan?" step; here we keep it only where there's room. */}
+          <DesktopOnly>
           {(() => {
             const fanFresh = confidenceSpend != null && Math.abs(confidenceSpend - localSpend) < 2_500;
             const haveFan = band && band.length > 1 && cw;
@@ -1773,6 +1776,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               </div>
             );
           })()}
+          </DesktopOnly>
 
           {/* Medicare IRMAA cliff awareness — live, fed by the slider's MAGI. The
               spending you pick drives the withdrawals that drive MAGI, and IRMAA
