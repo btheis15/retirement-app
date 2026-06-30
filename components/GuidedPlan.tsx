@@ -1489,7 +1489,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               Costs rise, so flat spending for decades quietly erodes your lifestyle — we
               default to keeping it steady in real terms, but let you choose flat. */}
           {(() => {
-            const isFlat = settings.spendingStrategy === "flatNominal";
             const yearsToEnd = Math.max(0, settings.endAge - plan.selfAge);
             const grownAtEnd = localSpend * Math.pow(1 + settings.inflationRate, yearsToEnd);
             return (
@@ -1501,20 +1500,27 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   would be about <strong>{money(Math.round(grownAtEnd))}</strong>/yr at age {settings.endAge}. The
                   forecasts below already do this.
                 </p>
-                <div className="mt-2 grid grid-cols-2 gap-2">
+                <div className="mt-2 grid grid-cols-3 gap-2">
                   <button
                     onClick={() => updateSettings({ spendingStrategy: "constant" })}
-                    className={`press rounded-xl border p-2 text-left ${!isFlat ? "border-primary bg-primary/10" : "border-border"}`}
+                    className={`press rounded-xl border p-2 text-left ${settings.spendingStrategy === "constant" ? "border-primary bg-primary/10" : "border-border"}`}
                   >
                     <div className="text-[12px] font-semibold">Grow with inflation</div>
                     <div className="text-[10px] text-foreground/55">keeps your lifestyle · recommended</div>
                   </button>
                   <button
                     onClick={() => updateSettings({ spendingStrategy: "flatNominal" })}
-                    className={`press rounded-xl border p-2 text-left ${isFlat ? "border-primary bg-primary/10" : "border-border"}`}
+                    className={`press rounded-xl border p-2 text-left ${settings.spendingStrategy === "flatNominal" ? "border-primary bg-primary/10" : "border-border"}`}
                   >
                     <div className="text-[12px] font-semibold">Keep it flat</div>
                     <div className="text-[10px] text-foreground/55">same dollars · buys less each year</div>
+                  </button>
+                  <button
+                    onClick={() => updateSettings({ spendingStrategy: "guardrails" })}
+                    className={`press rounded-xl border p-2 text-left ${settings.spendingStrategy === "guardrails" ? "border-primary bg-primary/10" : "border-border"}`}
+                  >
+                    <div className="text-[12px] font-semibold">Guardrails</div>
+                    <div className="text-[10px] text-foreground/55">trim in bad years, raise in good · most resilient</div>
                   </button>
                 </div>
               </div>
@@ -2793,11 +2799,61 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             : "We draw a little from every account each year — balancing today's tax against the forced withdrawals (RMDs) building up in your pre-tax accounts.";
       return (
         <div>
-          <h2 className="text-xl font-bold leading-snug">The full breakdown</h2>
+          <h2 className="text-xl font-bold leading-snug">Your plan, in full</h2>
           <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
-            Everything behind your plan, tucked into sections — open whatever you&apos;re curious about. Nothing to decide here.
+            Everything you chose — tap any line to change it — plus the detail behind it, tucked into sections.
           </p>
-          <div className="mt-4 space-y-2">
+          {(() => {
+            const hasSpouse = !!household.spouse && household.spouse.birthYear > 1900;
+            const hasSSben = household.self.socialSecurityAnnual > 0 || (hasSpouse && household.spouse.socialSecurityAnnual > 0);
+            const jumpTo = (key: string) => {
+              const i = steps.findIndex((s) => s.key === key);
+              if (i >= 0) go(i);
+            };
+            const growth =
+              settings.spendingStrategy === "flatNominal" ? "flat" : settings.spendingStrategy === "guardrails" ? "guardrails" : "rises with inflation";
+            const recap: { label: string; value: string; key: string }[] = [
+              { label: "Goal", value: GOAL_META[settings.goal].short, key: "goal" },
+              { label: "Spending", value: `${money(household.annualSpending)}/yr · ${growth}`, key: "spend" },
+              {
+                label: "Plan to age",
+                value: `${settings.endAge}${settings.survivorModel && hasSpouse ? ` · survivor from ${settings.firstDeathAge}` : ""}`,
+                key: "longevity",
+              },
+            ];
+            if (hasSSben)
+              recap.push({
+                label: "Social Security",
+                value: `claim at ${household.self.ssClaimAge}${hasSpouse && household.spouse.socialSecurityAnnual > 0 ? ` / ${household.spouse.ssClaimAge}` : ""}`,
+                key: "ssclaim",
+              });
+            if (hasInvestmentIncome)
+              recap.push({ label: "Dividends", value: settings.dividendMode === "spend" ? "spent as income" : "reinvested", key: "dividends" });
+            if (pretaxShare > 0.2)
+              recap.push({ label: "Roth rollover", value: settings.useConversions ? "on" : "skipped", key: "rollconfirm" });
+            return (
+              <div className="mt-4 overflow-hidden rounded-2xl border border-border">
+                <div className="bg-foreground/[0.03] px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-foreground/50">
+                  Your choices — tap to change any
+                </div>
+                {recap.map((r) => (
+                  <button
+                    key={r.key}
+                    onClick={() => jumpTo(r.key)}
+                    className="press flex w-full items-center justify-between gap-3 border-t border-border/50 px-3 py-2.5 text-left"
+                  >
+                    <span className="text-[12px] text-foreground/55">{r.label}</span>
+                    <span className="flex items-center gap-2">
+                      <span className="text-[13px] font-semibold text-foreground">{r.value}</span>
+                      <span aria-hidden className="text-[12px] text-primary">✎</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
+          <div className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-foreground/45">The detail</div>
+          <div className="mt-2 space-y-2">
             <Collapsible eyebrow="this year" title="Your tax this year" summary={`About ${money(incomeTax + medicare)} total`}>
               <div className="mt-1">
                 <Row label="Federal income tax" value={money(fed)} />
