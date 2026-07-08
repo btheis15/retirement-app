@@ -118,8 +118,16 @@ function applyBrackets(amount: number, brackets: { rate: number; upTo: number }[
   return tax;
 }
 
-/** Marginal ordinary rate at a given ordinary taxable income. */
-function ordinaryMarginalRate(ordinaryTaxableIncome: number, brackets: { rate: number; upTo: number }[]): number {
+/** Marginal ordinary rate at a given ordinary taxable income. When unused
+ *  deductions would absorb the next dollar (taxable income pinned at 0), the
+ *  true statutory marginal rate is 0%, not the first bracket's 10%. `slack` is
+ *  the unused-deduction headroom (deductions − AGI, when positive). */
+function ordinaryMarginalRate(
+  ordinaryTaxableIncome: number,
+  brackets: { rate: number; upTo: number }[],
+  slack = 0,
+): number {
+  if (ordinaryTaxableIncome <= 0 && slack > 0) return 0;
   for (const b of brackets) {
     if (ordinaryTaxableIncome <= b.upTo) return b.rate;
   }
@@ -152,7 +160,7 @@ export function taxableSocialSecurity(ssBenefits: number, otherIncome: number, s
   return Math.min(taxable, 0.85 * ssBenefits);
 }
 
-function seniorBonusDeduction(num65Plus: number, magi: number, phaseoutStart: number, year: number): number {
+function seniorBonusDeduction(num65Plus: number, agi: number, phaseoutStart: number, year: number): number {
   if (num65Plus <= 0) return 0;
   // OBBBA section 70103: the $6,000-per-filer senior bonus exists ONLY for tax
   // years 2025–2028. After that it disappears entirely (only the permanent
@@ -166,7 +174,7 @@ function seniorBonusDeduction(num65Plus: number, magi: number, phaseoutStart: nu
   // $150k–$350k band, not $150k–$250k. (Single filers are unchanged — one filer
   // means per-filer == aggregate.)
   const gross = SENIOR_BONUS_DEDUCTION * num65Plus;
-  const over = Math.max(0, magi - phaseoutStart);
+  const over = Math.max(0, agi - phaseoutStart);
   return Math.max(0, gross - over * SENIOR_BONUS_PHASEOUT_RATE);
 }
 
@@ -202,6 +210,9 @@ export function computeTaxes(input: TaxInput): TaxResult {
   const ltcgBrackets = indexedBrackets(c.ltcg, f);
   // Taxable interest and ordinary/REIT dividends are ordinary-rate income.
   const ordinaryGross = input.otherOrdinaryIncome + input.preTaxWithdrawals + input.taxableInterest + ordinaryDividends;
+  // Net capital LOSSES are out of scope: the planner only ever realizes gains
+  // (sales use blended positive basis), so a negative sum is clamped rather than
+  // modeling the §1211 $3,000 ordinary offset / carryforward.
   const preferential = Math.max(0, input.qualifiedDividends + input.longTermGains);
 
   // SS taxability uses all other income (ordinary + preferential) PLUS tax-exempt
@@ -210,7 +221,10 @@ export function computeTaxes(input: TaxInput): TaxResult {
   const taxableSS = taxableSocialSecurity(input.socialSecurity, otherForSS, c.ssBase, c.ssSecond);
 
   const agi = ordinaryGross + preferential + taxableSS;
-  // Muni interest isn't taxed but counts in MAGI for IRMAA / NIIT / senior phaseout.
+  // Muni interest isn't taxed, and it counts in MAGI for IRMAA ONLY (42 U.S.C.
+  // §1395r(i)(4) adds tax-exempt interest back). The NIIT threshold (§1411:
+  // AGI + only §911 foreign exclusions) and the OBBBA senior-bonus phaseout
+  // (§70103: same definition) do NOT add muni interest back — use `agi` there.
   const magi = agi + taxExemptInterest;
 
   // Deductions: base standard + extra-for-65 (per spouse, both indexed) + the
@@ -219,7 +233,7 @@ export function computeTaxes(input: TaxInput): TaxResult {
   const deductions =
     c.stdDeduction * f +
     c.addlStd65 * f * input.num65Plus +
-    seniorBonusDeduction(input.num65Plus, magi, c.seniorBonusStart, year);
+    seniorBonusDeduction(input.num65Plus, agi, c.seniorBonusStart, year);
 
   const taxableIncome = Math.max(0, agi - deductions);
 
@@ -240,7 +254,7 @@ export function computeTaxes(input: TaxInput): TaxResult {
   // $250k threshold is statutory and NOT inflation-indexed (intentionally fixed).
   const netInvestmentIncome =
     input.qualifiedDividends + input.longTermGains + input.taxableInterest + ordinaryDividends;
-  const niit = NIIT_RATE * Math.max(0, Math.min(netInvestmentIncome, magi - c.niitThreshold));
+  const niit = NIIT_RATE * Math.max(0, Math.min(netInvestmentIncome, agi - c.niitThreshold));
 
   const federalTax = ordinaryTax + capitalGainsTax + niit;
 
@@ -271,7 +285,9 @@ export function computeTaxes(input: TaxInput): TaxResult {
     if (cursor < b.upTo) { capitalGainsRate = b.rate; break; }
   }
 
-  const grossIncomeForEffective = agi + (input.socialSecurity - taxableSS);
+  // Denominator for the headline effective rate: all cash income actually
+  // received this year — AGI plus the untaxed slice of SS plus muni interest.
+  const grossIncomeForEffective = agi + (input.socialSecurity - taxableSS) + taxExemptInterest;
   const effectiveRate = grossIncomeForEffective > 0 ? totalTax / grossIncomeForEffective : 0;
 
   // TRUE marginal cost of the next ordinary dollar (e.g. a Roth conversion):
@@ -280,7 +296,8 @@ export function computeTaxes(input: TaxInput): TaxResult {
   // none of which the statutory bracket rate captures. (Illinois doesn't tax the
   // conversion, so its state component is ~0, which is correct.) IRMAA is handled
   // separately (it isn't an income tax and uses a 2-year MAGI lag).
-  let effectiveMarginalRate = ordinaryMarginalRate(ordinaryTaxableIncome, ordBrackets);
+  const deductionSlack = Math.max(0, deductions - agi);
+  let effectiveMarginalRate = ordinaryMarginalRate(ordinaryTaxableIncome, ordBrackets, deductionSlack);
   if (!input._noMarginal) {
     const dx = 1_000;
     const bumped = computeTaxes({ ...input, preTaxWithdrawals: input.preTaxWithdrawals + dx, _noMarginal: true });
@@ -302,7 +319,7 @@ export function computeTaxes(input: TaxInput): TaxResult {
     stateTax: state.tax,
     state,
     totalTax,
-    marginalOrdinaryRate: ordinaryMarginalRate(ordinaryTaxableIncome, ordBrackets),
+    marginalOrdinaryRate: ordinaryMarginalRate(ordinaryTaxableIncome, ordBrackets, deductionSlack),
     capitalGainsRate,
     effectiveRate,
     effectiveMarginalRate,
