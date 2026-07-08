@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { useStore } from "@/components/HouseholdProvider";
-import { Card, PageTitle, SectionTitle, Pill, Disclaimer, Callout, Explainer, Info, PageSkeleton } from "@/components/ui";
+import { Card, PageTitle, SectionTitle, Pill, Disclaimer, Callout, Explainer, Info, PageSkeleton, AdjustLink, DesktopOnly } from "@/components/ui";
 import { CompareBars } from "@/components/charts";
 import { ScenarioLab } from "@/components/ScenarioLab";
 import { recommendPlan, GOAL_META } from "@/lib/goals";
@@ -77,18 +77,6 @@ export default function ScenariosPage() {
   const recSig = sigOf(recommended);
   const activeIsRecommended = activeSig === recSig && !settings.planCustomized;
 
-  const applyGoal = (goal: GoalId) => {
-    const r = recommendPlan(recHousehold, inputs, goal, { optimizeClaimAge: false });
-    updateSettings({
-      goal,
-      strategy: r.best.config.strategy,
-      bracketTarget: r.best.config.bracketTarget,
-      useConversions: r.best.config.useConversions,
-      convertMode: r.best.config.convertMode,
-      convertUntilAge: r.chosenConvertUntilAge,
-      planCustomized: false,
-    });
-  };
   const resetToRecommended = () =>
     updateSettings({
       strategy: recommended.strategy,
@@ -121,20 +109,25 @@ export default function ScenariosPage() {
 
       {/* ───── Your goal (from Start) + active vs recommended ───── */}
       <SectionTitle>Your goal — chosen on Start</SectionTitle>
-      <Explainer>This is what you told us to optimize for. Switch it here and the recommended plan updates to match — no surprises.</Explainer>
-      <div className="grid grid-cols-3 gap-2">
-        {(Object.keys(GOAL_META) as GoalId[]).map((g) => (
-          <button
-            key={g}
-            onClick={() => applyGoal(g)}
-            className={`press rounded-xl border p-2.5 text-center ${
-              settings.goal === g ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/70"
-            }`}
-          >
-            <div className="text-lg leading-none">{GOAL_META[g].icon}</div>
-            <div className="mt-1 text-[12px] font-semibold leading-tight">{GOAL_META[g].short}</div>
-          </button>
-        ))}
+      <Explainer>This is what you told us to optimize for. It has one home — the walkthrough&apos;s goal step — so it can&apos;t drift out of sync.</Explainer>
+      <div className="flex items-center justify-between gap-3">
+        <div className="grid flex-1 grid-cols-3 gap-2">
+          {(Object.keys(GOAL_META) as GoalId[]).map((g) => (
+            <div
+              key={g}
+              className={`rounded-xl border p-2.5 text-center ${
+                settings.goal === g ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/40"
+              }`}
+            >
+              <div className="text-lg leading-none">{GOAL_META[g].icon}</div>
+              <div className="mt-1 text-[12px] font-semibold leading-tight">
+                {settings.goal === g ? "✓ " : ""}
+                {GOAL_META[g].short}
+              </div>
+            </div>
+          ))}
+        </div>
+        <AdjustLink step="goal" />
       </div>
 
       <Callout tone={activeIsRecommended ? "good" : "warn"} icon={activeIsRecommended ? "✓" : "✏️"} title={activeIsRecommended ? "Your active plan is the one we recommend" : "You've overridden the recommendation"} className="mt-3">
@@ -248,9 +241,18 @@ export default function ScenariosPage() {
         <p>By pulling or converting some pre-tax now at a <em>low</em> rate, you pay a little more tax today but shrink those forced withdrawals and let tax-free Roth compound. Total tax can be higher yet leave more after-tax wealth.</p>
       </Info>
 
-      {/* ───── The evidence: head-to-head + raw data ───── */}
-      <SectionTitle>The evidence</SectionTitle>
-      <ScenarioLab household={household} base={base} model={model} scenarios={scenarios} endAge={settings.endAge} />
+      {/* ───── The evidence: head-to-head + raw data (desktop-depth only) ───── */}
+      <DesktopOnly
+        mobileNote={
+          <p className="mt-4 rounded-xl border border-border bg-card px-3 py-2.5 text-[12px] text-foreground/55">
+            🖥️ The full evidence layer — head-to-head odds across 1,000 simulated markets, the year-by-year numbers
+            behind every option, and CSV export — is on the desktop view, where there&apos;s room to lay it out.
+          </p>
+        }
+      >
+        <SectionTitle>The evidence</SectionTitle>
+        <ScenarioLab household={household} base={base} model={model} scenarios={scenarios} endAge={settings.endAge} />
+      </DesktopOnly>
 
       <Link
         href="/projection"

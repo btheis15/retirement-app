@@ -1055,12 +1055,18 @@ function LongevityCard({
         money has to last until then.
       </p>
 
-      {/* Sex selectors — affect only this longevity estimate, not the tax math. */}
-      <div className="mt-3 flex flex-wrap gap-4">
-        <SexPick label={household.self.label || "You"} value={settings.selfSex} onChange={(v) => updateSettings({ selfSex: v })} />
-        {spouseInfo && (
-          <SexPick label={household.spouse.label || "Spouse"} value={settings.spouseSex} onChange={(v) => updateSettings({ spouseSex: v })} />
-        )}
+      {/* Sex is answered on the walkthrough's plan-horizon step (its single home);
+          here it's shown read-only so this stays a view, not a second editor. */}
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] text-foreground/60">
+        <span>
+          Curves for: <strong>{sexLabel(settings.selfSex)}</strong>
+          {spouseInfo && (
+            <>
+              {" "}/ <strong>{sexLabel(settings.spouseSex)}</strong>
+            </>
+          )}
+        </span>
+        <AdjustLink step="longevity" label="Adjust" />
       </div>
 
       {/* Survival curve */}
@@ -1117,12 +1123,10 @@ function LongevityCard({
       </p>
 
       {endShortOfPlan && (
-        <button
-          onClick={() => updateSettings({ endAge: snapTo })}
-          className="press mt-3 w-full rounded-xl border border-roth/40 bg-roth/10 px-4 py-2.5 text-[13px] font-semibold text-roth"
-        >
-          Plan to age {snapTo} → cover the longevity tail
-        </button>
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-roth/40 bg-roth/10 px-4 py-2.5">
+          <span className="text-[13px] font-semibold text-roth">Consider planning to age {snapTo} — covers the longevity tail</span>
+          <AdjustLink step="longevity" label="Adjust" />
+        </div>
       )}
 
       <Info q="Why this matters & how it's modeled" className="mt-3">
@@ -1151,28 +1155,6 @@ function LongevityCard({
   );
 }
 
-function SexPick({ label, value, onChange }: { label: string; value: Sex; onChange: (v: Sex) => void }) {
-  const opts: { v: Sex; l: string }[] = [
-    { v: "blended", l: "Average" },
-    { v: "female", l: "Female" },
-    { v: "male", l: "Male" },
-  ];
-  return (
-    <div>
-      <div className="mb-1 text-[11px] font-medium text-foreground/55">{label}</div>
-      <div className="inline-flex overflow-hidden rounded-lg border border-border">
-        {opts.map((o) => (
-          <button
-            key={o.v}
-            onClick={() => onChange(o.v)}
-            className={`press px-2.5 py-1 text-[12px] ${
-              value === o.v ? "bg-primary/15 font-semibold text-primary" : "text-foreground/55"
-            }`}
-          >
-            {o.l}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
+function sexLabel(s: Sex): string {
+  return s === "blended" ? "Average" : s === "female" ? "Female" : "Male";
 }

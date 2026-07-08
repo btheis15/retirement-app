@@ -51,9 +51,20 @@ export default function PlanPage() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const year = useMemo(() => new Date().getFullYear(), []);
 
+  // A genuinely single household (sentinel spouse, birthYear ≤ 1900) must be taxed
+  // on the SINGLE curve — defaulting to mfj would count the sentinel as a 65+
+  // spouse and grant double deductions/brackets and 2 IRMAA enrollees.
+  const filingStatus = household.spouse && household.spouse.birthYear > 1900 ? ("mfj" as const) : ("single" as const);
   const plan = useMemo(
-    () => planYear(household, { strategy: settings.strategy, bracketTarget: settings.bracketTarget, year, dividendMode: settings.dividendMode }),
-    [household, settings, year],
+    () =>
+      planYear(household, {
+        strategy: settings.strategy,
+        bracketTarget: settings.bracketTarget,
+        year,
+        filingStatus,
+        dividendMode: settings.dividendMode,
+      }),
+    [household, settings, year, filingStatus],
   );
   const opportunities = useMemo(
     () => detectOpportunities(household, plan, settings.bracketTarget),
@@ -509,28 +520,32 @@ export default function PlanPage() {
         aria-expanded={showAdvanced}
         className="press mt-6 flex w-full items-center justify-between rounded-xl border border-border bg-card px-4 py-3 text-sm font-semibold text-foreground/70"
       >
-        <span>⚙️ Advanced: change the strategy yourself</span>
+        <span>⚙️ Advanced: how the withdrawal method works</span>
         <span className={`transition-transform ${showAdvanced ? "rotate-180" : ""}`}>⌄</span>
       </button>
       {showAdvanced && (
       <div className="rise mt-2">
       <Explainer>
         A &quot;strategy&quot; is just the <em>order</em>{" "}we pull money from your accounts — it&apos;s a method, not a
-        dollar amount or a tax rate. The robo-advisor already picks this for your goal; change it only to experiment.
+        dollar amount or a tax rate. The robo-advisor already picks this for your goal; you can override it on the
+        walkthrough&apos;s goal step.
       </Explainer>
       <Card>
-        <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-          {STRATEGIES.map((s) => (
-            <button
-              key={s}
-              onClick={() => updateSettings({ strategy: s, planCustomized: true })}
-              className={`press whitespace-nowrap rounded-full px-3 py-1.5 text-[13px] font-medium ${
-                settings.strategy === s ? "bg-primary text-white" : "border border-border bg-card text-foreground/70"
-              }`}
-            >
-              {STRATEGY_META[s].label}
-            </button>
-          ))}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {STRATEGIES.map((s) => (
+              <span
+                key={s}
+                className={`whitespace-nowrap rounded-full px-3 py-1.5 text-[13px] font-medium ${
+                  settings.strategy === s ? "bg-primary text-white" : "border border-border bg-card text-foreground/40"
+                }`}
+              >
+                {settings.strategy === s ? "✓ " : ""}
+                {STRATEGY_META[s].label}
+              </span>
+            ))}
+          </div>
+          <AdjustLink step="goal" />
         </div>
         <p className="mt-2 text-[13px] font-medium text-foreground/70">{STRATEGY_SHORT[settings.strategy]}</p>
         <p className="mt-1 text-[12px] text-foreground/55">{STRATEGY_META[settings.strategy].blurb}</p>
@@ -565,21 +580,23 @@ export default function PlanPage() {
             </p>
             <div className="mt-2.5 grid grid-cols-4 gap-2">
               {BRACKETS.map((b) => (
-                <button
+                <span
                   key={b}
-                  onClick={() => updateSettings({ bracketTarget: b, planCustomized: true })}
-                  className={`press rounded-xl border py-2 text-center ${
+                  className={`rounded-xl border py-2 text-center ${
                     settings.bracketTarget === b
                       ? "border-primary bg-primary/10 text-primary"
-                      : "border-border text-foreground/70"
+                      : "border-border text-foreground/40"
                   }`}
                 >
-                  <div className="text-sm font-bold">{Math.round(b * 100)}%</div>
+                  <div className="text-sm font-bold">{settings.bracketTarget === b ? "✓ " : ""}{Math.round(b * 100)}%</div>
                   <div className="text-[9px] leading-tight text-foreground/45">
                     to {moneyCompact(ordinaryBracketCeiling(b))}
                   </div>
-                </button>
+                </span>
               ))}
+            </div>
+            <div className="mt-2 text-right">
+              <AdjustLink step="goal" label="Change bracket" />
             </div>
             <p className="mt-2 text-[11px] text-foreground/55">
               Filling to <strong>{percent(settings.bracketTarget, 0)}</strong>{" "}means we keep pulling pre-tax

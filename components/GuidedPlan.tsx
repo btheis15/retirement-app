@@ -20,7 +20,7 @@ import { spendingSweep } from "@/lib/spendingSweep";
 import { spendImpact } from "@/lib/spendImpact";
 import { dividendBreakdown, dividendIncomeTrajectory } from "@/lib/dividends";
 import { AnimatedNumber, FanChart } from "@/components/charts";
-import { planYear } from "@/lib/optimizer";
+import { planYear, STRATEGY_META } from "@/lib/optimizer";
 import { ltcgZeroCeiling } from "@/lib/tax/engine";
 import { FILING_CONSTANTS, FilingStatus } from "@/lib/tax/constants";
 import { projectLifetime, ProjectionAssumptions } from "@/lib/projection";
@@ -64,6 +64,7 @@ const STEP_CHAPTER: Record<string, ChapterId> = {
   survivor: "you",
   accounts: "money",
   ssclaim: "income",
+  otherincome: "income",
   goal: "goal",
   spend: "spending",
   "spend-growth": "spending",
@@ -159,6 +160,60 @@ function BucketInput({ value, onCommit, ariaLabel }: { value: number; onCommit: 
         />
       </label>
       <div className="mt-1 h-4 text-right text-[12px] text-foreground/45">{n > 0 ? moneyCompact(n) : ""}</div>
+    </div>
+  );
+}
+
+/** Compact labeled dollar field for the income questions — debounced like
+ *  BucketInput but small enough to sit several to a step. */
+function IncomeField({
+  label,
+  hint,
+  value,
+  onCommit,
+  readOnly,
+}: {
+  label: string;
+  hint?: string;
+  value: number;
+  onCommit: (n: number) => void;
+  readOnly?: boolean;
+}) {
+  const [local, setLocal] = useState(value ? String(value) : "");
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!focused.current) setLocal(value ? String(value) : "");
+  }, [value]);
+  const n = Math.max(0, Number(local.replace(/[^0-9]/g, "")) || 0);
+  useEffect(() => {
+    if (readOnly || n === value) return;
+    const t = setTimeout(() => onCommit(n), 300);
+    return () => clearTimeout(t);
+  }, [n, value, onCommit, readOnly]);
+  return (
+    <div>
+      <div className="text-[12px] font-medium text-foreground/70">{label}</div>
+      <label
+        className={`mt-1 flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 ${readOnly ? "bg-foreground/[0.04]" : "bg-background/50 focus-within:border-primary"}`}
+      >
+        <span className="text-foreground/40">$</span>
+        {readOnly ? (
+          <span className="tabular w-full text-[14px] font-semibold text-foreground/70">{value ? value.toLocaleString("en-US") : "0"}</span>
+        ) : (
+          <input
+            inputMode="numeric"
+            value={local}
+            placeholder="0"
+            aria-label={label}
+            onFocus={() => (focused.current = true)}
+            onBlur={() => (focused.current = false)}
+            onChange={(e) => setLocal(e.target.value.replace(/[^0-9]/g, ""))}
+            className="tabular w-full bg-transparent text-[14px] font-semibold outline-none"
+          />
+        )}
+        <span className="shrink-0 text-[11px] text-foreground/45">/yr</span>
+      </label>
+      {hint && <p className="mt-0.5 text-[10px] leading-snug text-foreground/45">{hint}</p>}
     </div>
   );
 }
@@ -993,6 +1048,33 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 </button>
               ))}
             </div>
+            {/* Optional: sex, for the life-expectancy context shown on Forecast.
+                Lives here so every input has a home in the questionnaire. */}
+            <div className="mt-4 rounded-2xl border border-border p-3">
+              <div className="text-[13px] font-semibold">Optional: for life-expectancy context</div>
+              <p className="mt-0.5 text-[11px] leading-snug text-foreground/50">
+                Used only to show realistic longevity odds alongside the forecast — it doesn&apos;t change the plan math.
+              </p>
+              {(["self", ...(hasSpouse ? (["spouse"] as const) : [])] as const).map((who) => {
+                const cur = who === "self" ? settings.selfSex : settings.spouseSex;
+                return (
+                  <div key={who} className="mt-2 flex items-center justify-between gap-2">
+                    <span className="text-[12px] text-foreground/65">{household[who].label || (who === "self" ? "You" : "Spouse")}</span>
+                    <div className="flex gap-1.5">
+                      {(["female", "male", "blended"] as const).map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => updateSettings(who === "self" ? { selfSex: s } : { spouseSex: s })}
+                          className={`press rounded-lg border px-2.5 py-1 text-[11px] ${cur === s ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/60"}`}
+                        >
+                          {s === "blended" ? "Skip" : s === "female" ? "Female" : "Male"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
             {hasSpouse && (
               <div className="mt-5 rounded-2xl border border-border p-3">
                 <div className="flex items-center justify-between gap-3">
@@ -1117,6 +1199,122 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     }
   }
 
+  // STEP — other income: the pension/annuity plus the dividends & interest the
+  // taxable accounts pay out each year. This is the guided HOME for every income
+  // input (the questionnaire is complete — nothing consequential hides on a
+  // detail page). When holdings carry real dividend data the dividend figures
+  // are computed from them and shown read-only, pointing at Accounts to edit.
+  {
+    const taxableHoldingsForIncome = household.accounts
+      .filter((a) => bucketOf(a.kind) === "taxable")
+      .flatMap((a) => a.holdings ?? []);
+    const divModel = dividendBreakdown(taxableHoldingsForIncome);
+    const hasTaxableAccounts = household.accounts.some((a) => bucketOf(a.kind) === "taxable" && a.balance > 0);
+    const showInvestFields = hasTaxableAccounts || taxableInvestmentIncome > 0;
+    const isDemoIncome = mode === "demo";
+    steps.push({
+      key: "otherincome",
+      chapter: "income",
+      eyebrow: "any other income",
+      render: () => (
+        <div>
+          <h2 className="text-xl font-bold leading-snug">Any other income coming in?</h2>
+          <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+            Money that shows up every year without selling anything — a pension, and whatever your taxable investments
+            pay out. It covers spending first, so you draw less from savings; it also shapes your tax picture.
+          </p>
+          {isDemoIncome && (
+            <div className="mt-3">
+              <Callout tone="info" icon="🔒" title="Part of the example">
+                These are the example household&apos;s numbers, shown so you can see how they&apos;re used. Choose
+                &ldquo;Use my own numbers&rdquo; at the start to enter yours.
+              </Callout>
+            </div>
+          )}
+          <div className="mt-4 space-y-3">
+            <IncomeField
+              label="Pension or annuity (per year, before tax)"
+              hint="A company pension or annuity payout. Leave 0 if you don't have one."
+              value={Math.round(household.pensionAnnual || 0)}
+              onCommit={(v) => updateHousehold({ pensionAnnual: v })}
+              readOnly={isDemoIncome}
+            />
+            {showInvestFields && (
+              <div className="rounded-2xl border border-border p-3">
+                <div className="text-[13px] font-semibold">Dividends &amp; interest from your taxable accounts</div>
+                {divModel.hasData ? (
+                  <>
+                    <p className="mt-1 text-[11px] leading-snug text-foreground/55">
+                      Computed from your holdings — shares × dividend per share. Edit the holdings on the{" "}
+                      <Link href="/accounts" className="font-medium text-primary underline">
+                        Accounts page
+                      </Link>{" "}
+                      to change these.
+                    </p>
+                    <div className="mt-2 grid grid-cols-2 gap-3">
+                      <IncomeField label="Qualified dividends" value={Math.round(household.brokerageDividendsAnnual || 0)} onCommit={() => {}} readOnly />
+                      <IncomeField label="Ordinary dividends" value={Math.round(household.ordinaryDividendsAnnual || 0)} onCommit={() => {}} readOnly />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="mt-1 text-[11px] leading-snug text-foreground/55">
+                      Rough numbers are fine — last year&apos;s 1099 forms have the exact ones. Skip anything that
+                      doesn&apos;t apply.
+                    </p>
+                    <div className="mt-2 grid grid-cols-2 gap-3">
+                      <IncomeField
+                        label="Qualified dividends"
+                        hint="Most stock & index-fund dividends (1099-DIV box 1b)."
+                        value={Math.round(household.brokerageDividendsAnnual || 0)}
+                        onCommit={(v) => updateHousehold({ brokerageDividendsAnnual: v })}
+                        readOnly={isDemoIncome}
+                      />
+                      <IncomeField
+                        label="Ordinary dividends"
+                        hint="REITs & bond funds — taxed as regular income."
+                        value={Math.round(household.ordinaryDividendsAnnual || 0)}
+                        onCommit={(v) => updateHousehold({ ordinaryDividendsAnnual: v })}
+                        readOnly={isDemoIncome}
+                      />
+                    </div>
+                  </>
+                )}
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <IncomeField
+                    label="Taxable interest"
+                    hint="Savings, CDs, Treasuries, money market (1099-INT)."
+                    value={Math.round(household.taxableInterestAnnual || 0)}
+                    onCommit={(v) => updateHousehold({ taxableInterestAnnual: v })}
+                    readOnly={isDemoIncome}
+                  />
+                  <IncomeField
+                    label="Muni-bond interest"
+                    hint="Tax-exempt — but still counts for Medicare & SS tax."
+                    value={Math.round(household.taxExemptInterestAnnual || 0)}
+                    onCommit={(v) => updateHousehold({ taxExemptInterestAnnual: v })}
+                    readOnly={isDemoIncome}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+          <DesktopOnly>
+            <div className="mt-4 rounded-2xl border border-border bg-background/50 p-3 text-[12px] leading-relaxed text-foreground/60">
+              <div className="mb-1 font-semibold text-foreground/75">Why the plan asks for each type separately</div>
+              Each type is taxed differently, and the difference compounds over a long retirement:{" "}
+              <strong>qualified dividends</strong> get the preferential 0/15/20% capital-gains rates;{" "}
+              <strong>ordinary dividends and interest</strong> are taxed like wages; <strong>municipal-bond
+              interest</strong> is federally tax-free but still raises the income that sets your Medicare (IRMAA)
+              premium and how much of your Social Security is taxed. A pension is fully taxable federally — though
+              Illinois exempts it, along with all retirement income.
+            </div>
+          </DesktopOnly>
+        </div>
+      ),
+    });
+  }
+
   // STEP — dividends & interest: reinvest (default) or spend. Only shown when the
   // taxable accounts actually pay something out, so the user is consciously told
   // reinvest is the default and that spending it is a deliberate choice.
@@ -1221,6 +1419,51 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </>
           )}
         </p>
+        {/* Advanced: the withdrawal-order machinery, for people who want to steer it
+            directly. Lives HERE (the goal decision's step) so no consequential
+            control exists only on a detail page. Overriding marks the plan custom. */}
+        <Info q="Advanced: pick the withdrawal method yourself" className="mt-3">
+          <p className="mb-2">
+            A &quot;method&quot; is the <em>order</em> we pull money from your accounts. Your goal already picks the
+            best one for your numbers — change it only to experiment. Your choice is kept until you re-pick a goal.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {(["smart", "conventional", "proportional"] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => updateSettings({ strategy: s, planCustomized: true })}
+                className={`press whitespace-nowrap rounded-full px-3 py-1.5 text-[12px] font-medium ${
+                  settings.strategy === s ? "bg-primary text-white" : "border border-border bg-card text-foreground/70"
+                }`}
+              >
+                {STRATEGY_META[s].label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-[11px] text-foreground/55">{STRATEGY_META[settings.strategy].blurb}</p>
+          {settings.strategy === "smart" && (
+            <div className="mt-2">
+              <div className="text-[12px] font-semibold text-foreground/70">Fill pre-tax up to this bracket</div>
+              <div className="mt-1.5 grid grid-cols-4 gap-1.5">
+                {([0.12, 0.22, 0.24, 0.32] as const).map((b) => (
+                  <button
+                    key={b}
+                    onClick={() => updateSettings({ bracketTarget: b, planCustomized: true })}
+                    className={`press rounded-lg border py-1.5 text-center text-[12px] font-bold ${
+                      settings.bracketTarget === b ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/60"
+                    }`}
+                  >
+                    {Math.round(b * 100)}%
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1 text-[11px] text-foreground/50">
+                The highest rate you&apos;ll accept to voluntarily pull extra pre-tax dollars now — not your overall
+                tax rate.
+              </p>
+            </div>
+          )}
+        </Info>
       </div>
     ),
   });
@@ -2319,31 +2562,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                       : ca.delayWho === "both"
                         ? "both of you"
                         : "you";
-                const hasSp = !!household.spouse && household.spouse.birthYear > 1900;
-                const Picker = ({ who }: { who: "self" | "spouse" }) => {
-                  const p = household[who];
-                  const fra = Math.round(fullRetirementAge(p.birthYear));
-                  const ages = Array.from(new Set([62, fra, 70]));
-                  return (
-                    <div className="mt-2">
-                      <div className="text-[11px] font-medium text-foreground/60">{p.label || (who === "self" ? "You" : "Spouse")} claims at</div>
-                      <div className="mt-1 grid grid-cols-3 gap-1.5">
-                        {ages.map((a) => {
-                          const on = p.ssClaimAge === a;
-                          return (
-                            <button
-                              key={a}
-                              onClick={() => updateHousehold({ [who]: { ...p, ssClaimAge: a } } as never)}
-                              className={`press rounded-lg border py-1 text-[11px] ${on ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/65"}`}
-                            >
-                              {a} · {moneyCompact(adjustedAnnualBenefit(p.socialSecurityAnnual, p.birthYear, a))}/yr
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                };
                 return (
                   <>
                     On your numbers, having <strong>{who}</strong> claim Social Security at{" "}
@@ -2352,10 +2570,17 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     {ca.delayWho === "both" ? ` / ${ca.currentSpouse}` : ""} is projected to leave about{" "}
                     <strong>{money(ca.lift)}</strong>{" "}more over your lifetime — partly because delaying the higher earner
                     also locks in a larger benefit for whoever lives longer. It&apos;s a personal decision (health, cash
-                    needs); <strong>change it right here</strong> — this estimate already reflects your plan-to age.
-                    <div className="mt-2 rounded-xl border border-gain/30 bg-card/60 p-2">
-                      <Picker who="self" />
-                      {hasSp && <Picker who="spouse" />}
+                    needs) — claim ages live on the Social Security step, so there&apos;s one place to set them.
+                    <div className="mt-2">
+                      <button
+                        onClick={() => {
+                          const i = steps.findIndex((s) => s.key === "ssclaim");
+                          if (i >= 0) go(i);
+                        }}
+                        className="press rounded-lg border border-gain/40 bg-card/60 px-2.5 py-1 text-[11px] font-semibold text-primary"
+                      >
+                        ← Adjust claim ages (Social Security step)
+                      </button>
                     </div>
                   </>
                 );
@@ -2826,6 +3051,17 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 label: "Social Security",
                 value: `claim at ${household.self.ssClaimAge}${hasSpouse && household.spouse.socialSecurityAnnual > 0 ? ` / ${household.spouse.ssClaimAge}` : ""}`,
                 key: "ssclaim",
+              });
+            if ((household.pensionAnnual ?? 0) > 0 || taxableInvestmentIncome > 0)
+              recap.push({
+                label: "Other income",
+                value: [
+                  (household.pensionAnnual ?? 0) > 0 ? `pension ${moneyCompact(household.pensionAnnual)}/yr` : "",
+                  taxableInvestmentIncome > 0 ? `investments ${moneyCompact(taxableInvestmentIncome)}/yr` : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
+                key: "otherincome",
               });
             if (hasInvestmentIncome)
               recap.push({ label: "Dividends", value: settings.dividendMode === "spend" ? "spent as income" : "reinvested", key: "dividends" });
