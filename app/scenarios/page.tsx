@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useStore } from "@/components/HouseholdProvider";
 import { Card, PageTitle, SectionTitle, Pill, Disclaimer, Callout, Explainer, Info, PageSkeleton, AdjustLink, DesktopOnly } from "@/components/ui";
@@ -87,6 +87,16 @@ export default function ScenariosPage() {
       planCustomized: false,
     });
 
+  // The goal's recommendation auto-applies while the plan isn't customized — the
+  // same standing behavior the Start walkthrough maintains. Without this, a visitor
+  // landing here BEFORE ever opening Start sits on the default config and would be
+  // told they "overrode" a recommendation they never touched.
+  const needsAlign = ready && !settings.planCustomized && activeSig !== recSig;
+  useEffect(() => {
+    if (needsAlign) resetToRecommended();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsAlign, activeSig, recSig]);
+
   if (!ready) return <PageSkeleton />;
 
   const withMetrics = scenarios.map((s) => ({
@@ -136,7 +146,8 @@ export default function ScenariosPage() {
           <>It&apos;s active everywhere in the app. Tapping <em>&ldquo;Use this plan&rdquo;</em> on any option below switches the whole app to that plan instead.</>
         ) : (
           <>
-            Your active plan is currently different (you tapped &ldquo;Use this plan&rdquo; on another option).{" "}
+            Your active plan is currently different — you chose another option (&ldquo;Use this plan&rdquo; here, or an
+            override in the walkthrough).{" "}
             <button onClick={resetToRecommended} className="font-semibold text-primary underline decoration-primary/30 underline-offset-2">
               Reset to my goal&apos;s recommendation
             </button>

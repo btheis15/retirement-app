@@ -724,7 +724,7 @@ function HoldingsEditor({
 }
 
 const INPUT =
-  "w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-base text-foreground outline-none focus:border-primary";
+  "w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-base text-foreground outline-none transition-[box-shadow,border-color] duration-200 focus:border-primary focus:shadow-[0_0_0_4px_rgba(13,79,74,0.10)]";
 
 function Field({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) {
   return (

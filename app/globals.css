@@ -187,3 +187,96 @@ body {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
 }
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Keyboard focus: a soft, branded halo instead of the UA's hard outline. Only on
+   :focus-visible so taps stay clean while tab-navigation is unmistakable. */
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-primary) 45%, transparent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ---------- iOS-style range slider ---------- */
+/* A slim track with a large tactile white thumb (layered hairline + drop shadow),
+   the way a native UISlider feels. Applied to the spending sliders. */
+.ios-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 44px; /* full-size touch target */
+  background: transparent;
+  cursor: pointer;
+}
+.ios-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--color-foreground) 10%, transparent);
+}
+.ios-range::-moz-range-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--color-foreground) 10%, transparent);
+}
+.ios-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -12px; /* centers the 28px thumb on the 4px track */
+  height: 28px;
+  width: 28px;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 0.5px solid rgba(15, 31, 36, 0.08);
+  box-shadow:
+    0 0.5px 1.5px rgba(15, 31, 36, 0.16),
+    0 3px 8px rgba(15, 31, 36, 0.18);
+  transition: transform 160ms var(--ease-ios);
+}
+.ios-range::-moz-range-thumb {
+  height: 28px;
+  width: 28px;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 0.5px solid rgba(15, 31, 36, 0.08);
+  box-shadow:
+    0 0.5px 1.5px rgba(15, 31, 36, 0.16),
+    0 3px 8px rgba(15, 31, 36, 0.18);
+  transition: transform 160ms var(--ease-ios);
+}
+.ios-range:active::-webkit-slider-thumb {
+  transform: scale(1.12);
+}
+.ios-range:active::-moz-range-thumb {
+  transform: scale(1.12);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ios-range::-webkit-slider-thumb,
+  .ios-range::-moz-range-thumb {
+    transition: none;
+  }
+  .ios-range:active::-webkit-slider-thumb,
+  .ios-range:active::-moz-range-thumb {
+    transform: none;
+  }
+}
+
+/* Overlay variant: the slider floats on top of a custom colored bar that acts as
+   the visual track, so its own track is invisible. */
+.ios-range-overlay::-webkit-slider-runnable-track {
+  background: transparent;
+}
+.ios-range-overlay::-moz-range-track {
+  background: transparent;
+}
+
+/* Soft branded focus halo for text fields (pair with focus-within border). */
+@utility field-focus {
+  transition: box-shadow 180ms var(--ease-ios), border-color 180ms var(--ease-ios);
+}
+.field-focus:focus-within {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary) 10%, transparent);
+}

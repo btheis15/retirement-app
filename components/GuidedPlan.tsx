@@ -146,7 +146,7 @@ function BucketInput({ value, onCommit, ariaLabel }: { value: number; onCommit: 
   }, [n, value, onCommit]);
   return (
     <div>
-      <label className="flex items-center gap-2 rounded-2xl border border-border bg-background/50 px-4 py-3 focus-within:border-primary">
+      <label className="field-focus flex items-center gap-2 rounded-2xl border border-border bg-background/50 px-4 py-3 focus-within:border-primary">
         <span className="text-2xl font-semibold text-foreground/40">$</span>
         <input
           inputMode="numeric"
@@ -194,7 +194,7 @@ function IncomeField({
     <div>
       <div className="text-[12px] font-medium text-foreground/70">{label}</div>
       <label
-        className={`mt-1 flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 ${readOnly ? "bg-foreground/[0.04]" : "bg-background/50 focus-within:border-primary"}`}
+        className={`field-focus mt-1 flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 ${readOnly ? "bg-foreground/[0.04]" : "bg-background/50 focus-within:border-primary"}`}
       >
         <span className="text-foreground/40">$</span>
         {readOnly ? (
@@ -1135,7 +1135,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   {/* The user's OWN benefit — we can't know it, so let them enter it. This
                       is the full (FRA) monthly amount from their SSA statement; the buttons
                       below adjust it for the claim age. */}
-                  <label className="flex items-center gap-1 rounded-xl border border-border bg-background/50 px-2.5 py-1.5">
+                  <label className="field-focus flex items-center gap-1 rounded-xl border border-border bg-background/50 px-2.5 py-1.5 focus-within:border-primary">
                     <span className="text-foreground/50">$</span>
                     <input
                       inputMode="numeric"
@@ -1676,22 +1676,25 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </div>
           </div>
 
-          {/* Colored "how much you can spend" zones + slider */}
-          <div className="mt-4 flex h-2.5 w-full overflow-hidden rounded-full bg-foreground/5">
-            <div className="bg-gain/70" style={{ width: `${compPct}%` }} title="Comfortable" />
-            <div className="bg-accent/60" style={{ width: `${sustPct - compPct}%` }} title="Doable but tight" />
-            <div className="bg-tax/50" style={{ width: `${100 - sustPct}%` }} title="Runs short" />
+          {/* Colored "how much you can spend" zones with the slider thumb riding
+              directly ON the zone bar (iOS style: the bar IS the track). */}
+          <div className="relative mt-4">
+            <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-foreground/5">
+              <div className="bg-gain/70" style={{ width: `${compPct}%` }} title="Comfortable" />
+              <div className="bg-accent/60" style={{ width: `${sustPct - compPct}%` }} title="Doable but tight" />
+              <div className="bg-tax/50" style={{ width: `${100 - sustPct}%` }} title="Runs short" />
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={SPEND_MAX}
+              step={5_000}
+              value={Math.min(SPEND_MAX, localSpend)}
+              onChange={(e) => setLocalSpend(Number(e.target.value))}
+              className="ios-range ios-range-overlay absolute inset-x-0 top-1/2 w-full -translate-y-1/2"
+              aria-label="Yearly spending"
+            />
           </div>
-          <input
-            type="range"
-            min={0}
-            max={SPEND_MAX}
-            step={5_000}
-            value={Math.min(SPEND_MAX, localSpend)}
-            onChange={(e) => setLocalSpend(Number(e.target.value))}
-            className="mt-1.5 w-full accent-primary"
-            aria-label="Yearly spending"
-          />
 
           {/* Marker rail: where the safe ceilings and the IRMAA cliffs fall, in
               spending terms — so the cliffs aren't a surprise you only meet later. */}
@@ -3299,15 +3302,20 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </div>
           )}
 
-          {/* fine progress dots (within the whole flow) */}
-          <div className="mb-3 flex items-center gap-1.5">
+          {/* fine progress dots (within the whole flow) — slim visual, 44px-class
+              touch target via padding so they're actually tappable on a phone */}
+          <div className="mb-1 flex items-center gap-1.5">
             {steps.map((s, i) => (
               <button
                 key={s.key}
                 onClick={() => go(i)}
                 aria-label={`Step ${i + 1}`}
-                className={`press h-1.5 flex-1 rounded-full transition-colors ${i <= safeStep ? "bg-primary" : "bg-foreground/10"}`}
-              />
+                className="press flex-1 py-2"
+              >
+                <span
+                  className={`block h-1.5 w-full rounded-full transition-colors duration-300 ${i <= safeStep ? "bg-primary" : "bg-foreground/10"}`}
+                />
+              </button>
             ))}
           </div>
           <div className="text-[11px] font-semibold uppercase tracking-wide text-primary">{current.eyebrow}</div>
