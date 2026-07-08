@@ -1,5 +1,6 @@
 /**
- * Regime-Switching Lognormal (Hardy RSLN-2) Monte-Carlo engine — the
+ * Regime-Switching Monte-Carlo engine (Hardy-style RSN-2; fit and simulated on
+ * SIMPLE annual returns rather than Hardy's log-returns, hence "N" not "LN") — the
  * actuarial-reserving standard for long-horizon equity (used in CIA/AAA capital
  * work). Equity returns are drawn from a 2-state hidden Markov chain: a calm
  * BULL regime most of the time, punctuated by a sharply NEGATIVE-mean BEAR regime.
@@ -17,10 +18,12 @@
  * equity process is retargeted to the SAME forward capital-market assumptions:
  * the regime means are shifted so the blended long-run mean equals the CMA equity
  * mean, AND the regime dispersion is scaled so the long-run (stationary mixture)
- * equity volatility equals the CMA equity vol. Bonds, cash and inflation are then
- * drawn exactly as the main engine does — correlated (Cholesky) with the equity
- * shock, with the same AR(1) inflation — so the ONLY difference from the headline
- * Monte-Carlo is that equity switches regimes (clustering) instead of being i.i.d.
+ * equity volatility equals the CMA equity vol. Bonds, cash and inflation use the
+ * SAME correlation structure (Cholesky) and the same AR(1) inflation as the main
+ * engine — though as plain Gaussians on simple returns, without the main engine's
+ * lognormal/Student-t dressing (immaterial at bond/cash vols; portfolio clamped
+ * at −99%) — so the difference from the headline Monte-Carlo is that equity
+ * switches regimes (clustering) instead of being i.i.d.
  *
  * ⚠️ Educational estimates only. The bear regime is identified from only ~11 of
  * 97 historical years, so its parameters carry wide error bars.
@@ -80,10 +83,14 @@ export function runRegimeSwitching(
 
   const bull = regimeData.regimes[0];
   const bear = regimeData.regimes[1];
-  // 1) Shift so the stationary blended equity mean == forward CMA equity mean.
-  const shift = m.assets.equity.mean - regimeData.blendedMean;
   const wBull = bull.stationaryWeight;
   const wBear = bear.stationaryWeight;
+  // 1) Shift so the stationary blended equity mean == forward CMA equity mean.
+  //    Compute the blend from the stored per-regime means/weights rather than
+  //    trusting the JSON's (rounded) `blendedMean`, which was ~2bp off and left
+  //    the retargeted mean shy of the CMA.
+  const blendedMean = wBull * bull.mean + wBear * bear.mean;
+  const shift = m.assets.equity.mean - blendedMean;
   const muShift = [bull.mean + shift, bear.mean + shift];
   const overallMean = wBull * muShift[0] + wBear * muShift[1]; // == CMA equity mean
   // 2) Scale dispersion so the stationary MIXTURE vol == forward CMA equity vol.
@@ -131,7 +138,10 @@ export function runRegimeSwitching(
   for (let r = 0; r < runs; r++) {
     const rets: number[] = [];
     const infls: number[] = [];
-    let prevInfl = pibar;
+    // Seed the AR(1) from its STATIONARY distribution (sd = sigma/sqrt(1-phi^2)),
+    // not from the mean — starting at the mean understates inflation risk exactly
+    // in the sequence-risk-critical first years of retirement.
+    let prevInfl = pibar + (sigmaEps / Math.sqrt(1 - PHI * PHI)) * randn(rng);
     let state = rng() < wBull ? 0 : 1; // 0 bull, 1 bear (from the stationary mix)
     const ensure = (i: number) => {
       while (rets.length <= i) {

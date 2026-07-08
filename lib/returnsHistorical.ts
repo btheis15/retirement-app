@@ -190,7 +190,20 @@ export function runHistoricalBootstrap(
   const adjStock = m.assets.equity.mean - mean(data.map((d) => d.stock));
   const adjBond = m.assets.bonds.mean - mean(data.map((d) => d.bond));
   const adjBill = m.assets.cash.mean - mean(data.map((d) => d.bill));
-  const adjInfl = assumptions.inflationRate - mean(data.map((d) => d.infl));
+  // Inflation is detrended to the assumed rate AND then clamped per-year to
+  // [−2%, +12%] when sampled. The clamp is asymmetric against history (it lifts
+  // the 1930s deflation years more than it trims the 1946/1979 spikes), which
+  // would leave the post-clamp mean ~15–20bp ABOVE the target — a systematic
+  // pessimism bias compounding to ~5% price-level drift over 30 years. A few
+  // fixed-point passes solve for the shift whose POST-clamp mean hits the target,
+  // keeping this engine's long-run average aligned with the parametric engines
+  // (they differ in distribution shape, not level).
+  const clampInfl = (x: number) => Math.max(-0.02, Math.min(0.12, x));
+  let adjInfl = assumptions.inflationRate - mean(data.map((d) => d.infl));
+  for (let pass = 0; pass < 4; pass++) {
+    const clampedMean = mean(data.map((d) => clampInfl(d.infl + adjInfl)));
+    adjInfl += assumptions.inflationRate - clampedMean;
+  }
 
   const portReturn = (d: HistRow) =>
     Math.max(-0.99, we * (d.stock + adjStock) + wb * (d.bond + adjBond) + wc * (d.bill + adjBill));
@@ -215,7 +228,7 @@ export function runHistoricalBootstrap(
         for (let k = 0; k < blockYears && rets.length <= i + blockYears; k++) {
           const d = data[(start + k) % N];
           rets.push(portReturn(d));
-          infls.push(Math.max(-0.02, Math.min(0.12, d.infl + adjInfl)));
+          infls.push(clampInfl(d.infl + adjInfl));
         }
       }
     };
