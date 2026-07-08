@@ -83,7 +83,7 @@ export interface PlanMetrics {
 
 /** LTCG rate used to value the unrealized brokerage gain when step-up is assumed
  *  NOT to apply (the robustness yardstick). A mid 15% bracket. */
-const ROBUST_LTCG_RATE = 0.15;
+export const ROBUST_LTCG_RATE = 0.15;
 
 export interface Candidate {
   config: PlanConfig;
@@ -193,7 +193,10 @@ function evaluateConfig(household: Household, inputs: PlanInputs, c: { config: P
     heirTaxRate: inputs.heirTaxRate,
     dividendMode: inputs.dividendMode,
   });
-  const grossIncome = projection.rows.reduce((s, r) => s + r.netCash + r.tax, 0);
+  // Lifetime gross income base for the tax-rate metric. Include CONVERSION income:
+  // its tax is in `r.tax`, so leaving the converted dollars out of the denominator
+  // made converting plans' rates incomparable with non-converting plans' rates.
+  const grossIncome = projection.rows.reduce((s, r) => s + r.netCash + r.tax + r.conversion, 0);
   const lifetimeIrmaa = projection.rows.reduce((s, r) => s + r.irmaa, 0);
   return {
     config: c.config,
@@ -277,9 +280,13 @@ export function recommendPlan(
   if (searchWindow && best.config.useConversions) {
     const selfAgeNow = new Date().getFullYear() - household.self.birthYear;
     const firstDeath = inputs.survivor?.firstDeathAge;
+    // Candidates on BOTH sides of the entered window — a shorter window is often
+    // better (e.g. stop before SS + RMDs stack up), and the old `>= convertUntilAge`
+    // filter could only ever LENGTHEN it, leaving money on the table. The entered
+    // window is always in the set, so the search still can't regress the goal.
     const windowSet = uniqNums(
-      [inputs.convertUntilAge, 73, 75, 80, firstDeath ? firstDeath - 1 : 0].filter(
-        (a) => a >= selfAgeNow && a >= inputs.convertUntilAge && a <= inputs.endAge,
+      [inputs.convertUntilAge, 68, 70, 73, 75, 80, firstDeath ? firstDeath - 1 : 0].filter(
+        (a) => a >= selfAgeNow && a <= inputs.endAge,
       ),
     );
     let bestScore = score(goal, best.metrics);
