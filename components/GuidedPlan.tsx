@@ -3180,6 +3180,34 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             <p className="mt-1 text-[13px] text-foreground/55">Running the market-risk simulation…</p>
           </div>
         )}
+        {/* The living rhythm: what this plan means per month, and where to check
+            in. This is the handoff from "decide once" to "glance any day". */}
+        {(totalDraw > 0.5 || conversion > 0.5) && (
+          <div className="mt-4 rounded-2xl border border-border bg-background/50 p-3 text-left">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/45">Your monthly rhythm</div>
+            <ul className="mt-1.5 space-y-1 text-[13px] text-foreground/75">
+              {totalDraw > 0.5 && (
+                <li>
+                  💵 Withdraw about <strong>{money(Math.round(totalDraw / 12))}/mo</strong> from savings ({money(Math.round(totalDraw))} this year).
+                </li>
+              )}
+              {guaranteed > 0.5 && (
+                <li>
+                  🏦 About <strong>{money(Math.round(guaranteed / 12))}/mo</strong> arrives on its own (Social Security{household.pensionAnnual > 0 ? " + pension" : ""}).
+                </li>
+              )}
+              {conversion > 0.5 && (
+                <li>
+                  🔁 Roll <strong>{money(Math.round(conversion))}</strong> to Roth any time before <strong>Dec 31</strong>.
+                </li>
+              )}
+            </ul>
+            <p className="mt-1.5 text-[12px] leading-snug text-foreground/55">
+              The <strong>Plan</strong> tab keeps this pace live — open it any day and it shows where you should be by
+              that point in the year, plus the next real deadlines.
+            </p>
+          </div>
+        )}
         <p className="mt-4 text-[13px] text-foreground/70">
           That&apos;s your plan. Come back and adjust your spending or income anytime — every step updates automatically.
         </p>

@@ -6,6 +6,8 @@ import { useStore } from "@/components/HouseholdProvider";
 import { Card, PageTitle, SectionTitle, Pill, Stat, Disclaimer, Callout, Explainer, Info, StackedBar, PageSkeleton, DesktopOnly, Collapsible, AdjustLink } from "@/components/ui";
 import { Donut, Legend, AnimatedNumber } from "@/components/charts";
 import { planYear, STRATEGY_META, StrategyId, BracketTarget } from "@/lib/optimizer";
+import { buildYearPace } from "@/lib/pace";
+import { PaceCard } from "@/components/PaceCard";
 import { ordinaryBracketCeiling } from "@/lib/tax/engine";
 import { detectOpportunities } from "@/lib/opportunities";
 import { projectLifetime } from "@/lib/projection";
@@ -70,6 +72,12 @@ export default function PlanPage() {
     () => detectOpportunities(household, plan, settings.bracketTarget),
     [household, plan, settings.bracketTarget],
   );
+  // Today's pace: the year plan spread across the calendar + upcoming real dates.
+  const pace = useMemo(() => {
+    const spouseReal = household.spouse && household.spouse.birthYear > 1900;
+    const medicareEligible = plan.selfAge >= 65 || (spouseReal && plan.spouseAge >= 65);
+    return buildYearPace(plan, { now: new Date(), medicareEligible });
+  }, [plan, household.spouse]);
   // Active lifetime plan (respects the conversion mode) — its first row is this year.
   const activeProj = useMemo(
     () =>
@@ -207,8 +215,22 @@ export default function PlanPage() {
         </div>
       </Card>
 
+      {/* ---------- RIGHT NOW: the year's plan translated to today's pace ----------
+          This is what makes the tab worth opening any day/week/month: the monthly
+          rhythm, where you should roughly be by today, and the next real dates. */}
+      <SectionTitle hint="check in any time">Right now</SectionTitle>
+      <PaceCard
+        pace={pace}
+        incomeNote={(() => {
+          const ages = (["self", "spouse"] as const)
+            .filter((who) => household[who].socialSecurityAnnual > 0 && ageInYear(household[who].birthYear, year) < household[who].ssClaimAge)
+            .map((who) => household[who].ssClaimAge);
+          return ages.length ? `Social Security starts at ${Math.min(...ages)}` : undefined;
+        })()}
+      />
+
       {/* ---------- THE HEADLINE: what to do ---------- */}
-      <Callout tone="good" icon="🧭" title="Your move this year">
+      <Callout tone="good" icon="🧭" title="Your move this year" className="mt-4">
         {coveredByIncome ? (
           <>
             Good news — your guaranteed income{spendInvestmentIncome ? " (Social Security, pension and the dividends you take as cash)" : " (Social Security and pension)"} already covers your{" "}
