@@ -116,7 +116,9 @@ export function configSpace() {
 }
 
 export function grossIncome(p) {
-  return p.rows.reduce((s, r) => s + r.netCash + r.tax, 0);
+  // Mirrors lib/goals.ts: conversion income IS in the denominator (its tax is in
+  // the numerator), so converting and non-converting plans' rates are comparable.
+  return p.rows.reduce((s, r) => s + r.netCash + r.tax + r.conversion, 0);
 }
 
 /** Score a projection for a goal (higher = better), matching lib/goals.ts semantics. */
