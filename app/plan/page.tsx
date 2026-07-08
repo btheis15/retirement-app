@@ -8,6 +8,7 @@ import { Donut, Legend, AnimatedNumber } from "@/components/charts";
 import { planYear, STRATEGY_META, StrategyId, BracketTarget } from "@/lib/optimizer";
 import { buildYearPace } from "@/lib/pace";
 import { PaceCard } from "@/components/PaceCard";
+import { MarketCheck } from "@/components/MarketCheck";
 import { ordinaryBracketCeiling } from "@/lib/tax/engine";
 import { detectOpportunities } from "@/lib/opportunities";
 import { projectLifetime } from "@/lib/projection";
@@ -227,6 +228,23 @@ export default function PlanPage() {
             .map((who) => household[who].ssClaimAge);
           return ages.length ? `Social Security starts at ${Math.min(...ages)}` : undefined;
         })()}
+      />
+      {/* Today's market, translated into what it means for THIS plan (e.g. a down
+          market makes the planned Roth rollover more valuable, not less). */}
+      <MarketCheck
+        ctx={{
+          conversion: thisYearConversion,
+          totalDraw,
+          cashBalance: household.accounts.filter((a) => a.kind === "cash").reduce((s, a) => s + a.balance, 0),
+          guardrails: settings.spendingStrategy === "guardrails",
+          gainsAtZero: plan.tax.capitalGainsRate === 0,
+          hasBrokerageGain: household.accounts.some(
+            (a) => a.kind === "brokerage" && a.balance - (a.costBasis ?? a.balance) > 1000,
+          ),
+          hasLossHoldings: household.accounts.some((a) =>
+            (a.holdings ?? []).some((h) => h.costPerShare != null && h.shares * h.price < h.shares * h.costPerShare - 500),
+          ),
+        }}
       />
 
       {/* ---------- THE HEADLINE: what to do ---------- */}

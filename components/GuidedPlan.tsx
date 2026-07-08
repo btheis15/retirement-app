@@ -33,6 +33,7 @@ import { returnModel } from "@/lib/returns";
 import { buildActionPlan, PlanYear, PlanAction } from "@/lib/actionPlan";
 import { GoalId, survivorFromSettings } from "@/lib/defaults";
 import { adjustedAnnualBenefit, fullRetirementAge } from "@/lib/socialSecurity";
+import { useMarketPulse } from "@/components/MarketCheck";
 import { rmdStartAge } from "@/lib/tax/constants";
 import { bucketOf, ACCOUNT_KIND_META, TaxBucket, Household, Account, AccountKind, defaultRetirementYear } from "@/lib/accounts";
 import { money, moneyCompact, percent } from "@/lib/format";
@@ -227,6 +228,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const seededRef = useRef(false);
+  // Today's market conditions (cached, privacy-safe) — frames the rollover step.
+  const marketPulse = useMarketPulse();
 
   // Step navigation: remember direction so the slide goes the way you're moving.
   const go = (next: number) => {
@@ -2346,6 +2349,18 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     </DesktopOnly>
                   );
                 })()}
+
+                {/* Market framing: a down market makes the SAME planned rollover more
+                    valuable (more shares move per dollar; the recovery is tax-free in
+                    the Roth). Only shown when today's market is meaningfully down. */}
+                {marketPulse && marketPulse.drawdownPct <= -0.08 && (
+                  <Callout tone="good" icon="📉" title={`Markets are ~${Math.round(Math.abs(marketPulse.drawdownPct) * 100)}% below their recent high — that helps this move`} className="mt-3">
+                    The dollar amount and its tax don&apos;t change, but the same rollover moves <strong>more shares</strong>{" "}
+                    while prices are marked down — and their recovery then happens inside the Roth, tax-free, with no
+                    future RMDs. (Markets can always fall further — this isn&apos;t timing advice, just why a down market
+                    makes the rollover you already planned more attractive, not less.)
+                  </Callout>
+                )}
 
                 <div className="mt-3">
                   <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-foreground/45">
