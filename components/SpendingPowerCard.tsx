@@ -214,7 +214,7 @@ export function SpendingPowerCard() {
           step={SPEND_STEP}
           value={Math.min(SPEND_MAX, whatIf)}
           onChange={(e) => setWhatIf(Number(e.target.value))}
-          className="mt-3 w-full accent-primary"
+          className="ios-range mt-1 w-full"
           aria-label="What-if yearly spending"
         />
         <div className="mt-1 flex justify-between text-[11px] text-foreground/45">

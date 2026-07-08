@@ -20,7 +20,7 @@ import { spendingSweep } from "@/lib/spendingSweep";
 import { spendImpact } from "@/lib/spendImpact";
 import { dividendBreakdown, dividendIncomeTrajectory } from "@/lib/dividends";
 import { AnimatedNumber, FanChart } from "@/components/charts";
-import { planYear } from "@/lib/optimizer";
+import { planYear, STRATEGY_META } from "@/lib/optimizer";
 import { ltcgZeroCeiling } from "@/lib/tax/engine";
 import { FILING_CONSTANTS, FilingStatus } from "@/lib/tax/constants";
 import { projectLifetime, ProjectionAssumptions } from "@/lib/projection";
@@ -33,6 +33,7 @@ import { returnModel } from "@/lib/returns";
 import { buildActionPlan, PlanYear, PlanAction } from "@/lib/actionPlan";
 import { GoalId, survivorFromSettings } from "@/lib/defaults";
 import { adjustedAnnualBenefit, fullRetirementAge } from "@/lib/socialSecurity";
+import { useMarketPulse } from "@/components/MarketCheck";
 import { rmdStartAge } from "@/lib/tax/constants";
 import { bucketOf, ACCOUNT_KIND_META, TaxBucket, Household, Account, AccountKind, defaultRetirementYear } from "@/lib/accounts";
 import { money, moneyCompact, percent } from "@/lib/format";
@@ -64,6 +65,7 @@ const STEP_CHAPTER: Record<string, ChapterId> = {
   survivor: "you",
   accounts: "money",
   ssclaim: "income",
+  otherincome: "income",
   goal: "goal",
   spend: "spending",
   "spend-growth": "spending",
@@ -145,7 +147,7 @@ function BucketInput({ value, onCommit, ariaLabel }: { value: number; onCommit: 
   }, [n, value, onCommit]);
   return (
     <div>
-      <label className="flex items-center gap-2 rounded-2xl border border-border bg-background/50 px-4 py-3 focus-within:border-primary">
+      <label className="field-focus flex items-center gap-2 rounded-2xl border border-border bg-background/50 px-4 py-3 focus-within:border-primary">
         <span className="text-2xl font-semibold text-foreground/40">$</span>
         <input
           inputMode="numeric"
@@ -163,6 +165,60 @@ function BucketInput({ value, onCommit, ariaLabel }: { value: number; onCommit: 
   );
 }
 
+/** Compact labeled dollar field for the income questions — debounced like
+ *  BucketInput but small enough to sit several to a step. */
+function IncomeField({
+  label,
+  hint,
+  value,
+  onCommit,
+  readOnly,
+}: {
+  label: string;
+  hint?: string;
+  value: number;
+  onCommit: (n: number) => void;
+  readOnly?: boolean;
+}) {
+  const [local, setLocal] = useState(value ? String(value) : "");
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!focused.current) setLocal(value ? String(value) : "");
+  }, [value]);
+  const n = Math.max(0, Number(local.replace(/[^0-9]/g, "")) || 0);
+  useEffect(() => {
+    if (readOnly || n === value) return;
+    const t = setTimeout(() => onCommit(n), 300);
+    return () => clearTimeout(t);
+  }, [n, value, onCommit, readOnly]);
+  return (
+    <div>
+      <div className="text-[12px] font-medium text-foreground/70">{label}</div>
+      <label
+        className={`field-focus mt-1 flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 ${readOnly ? "bg-foreground/[0.04]" : "bg-background/50 focus-within:border-primary"}`}
+      >
+        <span className="text-foreground/40">$</span>
+        {readOnly ? (
+          <span className="tabular w-full text-[14px] font-semibold text-foreground/70">{value ? value.toLocaleString("en-US") : "0"}</span>
+        ) : (
+          <input
+            inputMode="numeric"
+            value={local}
+            placeholder="0"
+            aria-label={label}
+            onFocus={() => (focused.current = true)}
+            onBlur={() => (focused.current = false)}
+            onChange={(e) => setLocal(e.target.value.replace(/[^0-9]/g, ""))}
+            className="tabular w-full bg-transparent text-[14px] font-semibold outline-none"
+          />
+        )}
+        <span className="shrink-0 text-[11px] text-foreground/45">/yr</span>
+      </label>
+      {hint && <p className="mt-0.5 text-[10px] leading-snug text-foreground/45">{hint}</p>}
+    </div>
+  );
+}
+
 export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   const { household, settings, updateSettings, updateHousehold, upsertAccount, removeAccount, mode, setMode, newExample } = useStore();
   const year = useMemo(() => new Date().getFullYear(), []);
@@ -172,6 +228,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const seededRef = useRef(false);
+  // Today's market conditions (cached, privacy-safe) — frames the rollover step.
+  const marketPulse = useMarketPulse();
 
   // Step navigation: remember direction so the slide goes the way you're moving.
   const go = (next: number) => {
@@ -993,6 +1051,33 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 </button>
               ))}
             </div>
+            {/* Optional: sex, for the life-expectancy context shown on Forecast.
+                Lives here so every input has a home in the questionnaire. */}
+            <div className="mt-4 rounded-2xl border border-border p-3">
+              <div className="text-[13px] font-semibold">Optional: for life-expectancy context</div>
+              <p className="mt-0.5 text-[11px] leading-snug text-foreground/50">
+                Used only to show realistic longevity odds alongside the forecast — it doesn&apos;t change the plan math.
+              </p>
+              {(["self", ...(hasSpouse ? (["spouse"] as const) : [])] as const).map((who) => {
+                const cur = who === "self" ? settings.selfSex : settings.spouseSex;
+                return (
+                  <div key={who} className="mt-2 flex items-center justify-between gap-2">
+                    <span className="text-[12px] text-foreground/65">{household[who].label || (who === "self" ? "You" : "Spouse")}</span>
+                    <div className="flex gap-1.5">
+                      {(["female", "male", "blended"] as const).map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => updateSettings(who === "self" ? { selfSex: s } : { spouseSex: s })}
+                          className={`press rounded-lg border px-2.5 py-1 text-[11px] ${cur === s ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/60"}`}
+                        >
+                          {s === "blended" ? "Skip" : s === "female" ? "Female" : "Male"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
             {hasSpouse && (
               <div className="mt-5 rounded-2xl border border-border p-3">
                 <div className="flex items-center justify-between gap-3">
@@ -1053,7 +1138,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   {/* The user's OWN benefit — we can't know it, so let them enter it. This
                       is the full (FRA) monthly amount from their SSA statement; the buttons
                       below adjust it for the claim age. */}
-                  <label className="flex items-center gap-1 rounded-xl border border-border bg-background/50 px-2.5 py-1.5">
+                  <label className="field-focus flex items-center gap-1 rounded-xl border border-border bg-background/50 px-2.5 py-1.5 focus-within:border-primary">
                     <span className="text-foreground/50">$</span>
                     <input
                       inputMode="numeric"
@@ -1115,6 +1200,122 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         },
       });
     }
+  }
+
+  // STEP — other income: the pension/annuity plus the dividends & interest the
+  // taxable accounts pay out each year. This is the guided HOME for every income
+  // input (the questionnaire is complete — nothing consequential hides on a
+  // detail page). When holdings carry real dividend data the dividend figures
+  // are computed from them and shown read-only, pointing at Accounts to edit.
+  {
+    const taxableHoldingsForIncome = household.accounts
+      .filter((a) => bucketOf(a.kind) === "taxable")
+      .flatMap((a) => a.holdings ?? []);
+    const divModel = dividendBreakdown(taxableHoldingsForIncome);
+    const hasTaxableAccounts = household.accounts.some((a) => bucketOf(a.kind) === "taxable" && a.balance > 0);
+    const showInvestFields = hasTaxableAccounts || taxableInvestmentIncome > 0;
+    const isDemoIncome = mode === "demo";
+    steps.push({
+      key: "otherincome",
+      chapter: "income",
+      eyebrow: "any other income",
+      render: () => (
+        <div>
+          <h2 className="text-xl font-bold leading-snug">Any other income coming in?</h2>
+          <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+            Money that shows up every year without selling anything — a pension, and whatever your taxable investments
+            pay out. It covers spending first, so you draw less from savings; it also shapes your tax picture.
+          </p>
+          {isDemoIncome && (
+            <div className="mt-3">
+              <Callout tone="info" icon="🔒" title="Part of the example">
+                These are the example household&apos;s numbers, shown so you can see how they&apos;re used. Choose
+                &ldquo;Use my own numbers&rdquo; at the start to enter yours.
+              </Callout>
+            </div>
+          )}
+          <div className="mt-4 space-y-3">
+            <IncomeField
+              label="Pension or annuity (per year, before tax)"
+              hint="A company pension or annuity payout. Leave 0 if you don't have one."
+              value={Math.round(household.pensionAnnual || 0)}
+              onCommit={(v) => updateHousehold({ pensionAnnual: v })}
+              readOnly={isDemoIncome}
+            />
+            {showInvestFields && (
+              <div className="rounded-2xl border border-border p-3">
+                <div className="text-[13px] font-semibold">Dividends &amp; interest from your taxable accounts</div>
+                {divModel.hasData ? (
+                  <>
+                    <p className="mt-1 text-[11px] leading-snug text-foreground/55">
+                      Computed from your holdings — shares × dividend per share. Edit the holdings on the{" "}
+                      <Link href="/accounts" className="font-medium text-primary underline">
+                        Accounts page
+                      </Link>{" "}
+                      to change these.
+                    </p>
+                    <div className="mt-2 grid grid-cols-2 gap-3">
+                      <IncomeField label="Qualified dividends" value={Math.round(household.brokerageDividendsAnnual || 0)} onCommit={() => {}} readOnly />
+                      <IncomeField label="Ordinary dividends" value={Math.round(household.ordinaryDividendsAnnual || 0)} onCommit={() => {}} readOnly />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="mt-1 text-[11px] leading-snug text-foreground/55">
+                      Rough numbers are fine — last year&apos;s 1099 forms have the exact ones. Skip anything that
+                      doesn&apos;t apply.
+                    </p>
+                    <div className="mt-2 grid grid-cols-2 gap-3">
+                      <IncomeField
+                        label="Qualified dividends"
+                        hint="Most stock & index-fund dividends (1099-DIV box 1b)."
+                        value={Math.round(household.brokerageDividendsAnnual || 0)}
+                        onCommit={(v) => updateHousehold({ brokerageDividendsAnnual: v })}
+                        readOnly={isDemoIncome}
+                      />
+                      <IncomeField
+                        label="Ordinary dividends"
+                        hint="REITs & bond funds — taxed as regular income."
+                        value={Math.round(household.ordinaryDividendsAnnual || 0)}
+                        onCommit={(v) => updateHousehold({ ordinaryDividendsAnnual: v })}
+                        readOnly={isDemoIncome}
+                      />
+                    </div>
+                  </>
+                )}
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <IncomeField
+                    label="Taxable interest"
+                    hint="Savings, CDs, Treasuries, money market (1099-INT)."
+                    value={Math.round(household.taxableInterestAnnual || 0)}
+                    onCommit={(v) => updateHousehold({ taxableInterestAnnual: v })}
+                    readOnly={isDemoIncome}
+                  />
+                  <IncomeField
+                    label="Muni-bond interest"
+                    hint="Tax-exempt — but still counts for Medicare & SS tax."
+                    value={Math.round(household.taxExemptInterestAnnual || 0)}
+                    onCommit={(v) => updateHousehold({ taxExemptInterestAnnual: v })}
+                    readOnly={isDemoIncome}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+          <DesktopOnly>
+            <div className="mt-4 rounded-2xl border border-border bg-background/50 p-3 text-[12px] leading-relaxed text-foreground/60">
+              <div className="mb-1 font-semibold text-foreground/75">Why the plan asks for each type separately</div>
+              Each type is taxed differently, and the difference compounds over a long retirement:{" "}
+              <strong>qualified dividends</strong> get the preferential 0/15/20% capital-gains rates;{" "}
+              <strong>ordinary dividends and interest</strong> are taxed like wages; <strong>municipal-bond
+              interest</strong> is federally tax-free but still raises the income that sets your Medicare (IRMAA)
+              premium and how much of your Social Security is taxed. A pension is fully taxable federally — though
+              Illinois exempts it, along with all retirement income.
+            </div>
+          </DesktopOnly>
+        </div>
+      ),
+    });
   }
 
   // STEP — dividends & interest: reinvest (default) or spend. Only shown when the
@@ -1221,6 +1422,51 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </>
           )}
         </p>
+        {/* Advanced: the withdrawal-order machinery, for people who want to steer it
+            directly. Lives HERE (the goal decision's step) so no consequential
+            control exists only on a detail page. Overriding marks the plan custom. */}
+        <Info q="Advanced: pick the withdrawal method yourself" className="mt-3">
+          <p className="mb-2">
+            A &quot;method&quot; is the <em>order</em> we pull money from your accounts. Your goal already picks the
+            best one for your numbers — change it only to experiment. Your choice is kept until you re-pick a goal.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {(["smart", "conventional", "proportional"] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => updateSettings({ strategy: s, planCustomized: true })}
+                className={`press whitespace-nowrap rounded-full px-3 py-1.5 text-[12px] font-medium ${
+                  settings.strategy === s ? "bg-primary text-white" : "border border-border bg-card text-foreground/70"
+                }`}
+              >
+                {STRATEGY_META[s].label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-[11px] text-foreground/55">{STRATEGY_META[settings.strategy].blurb}</p>
+          {settings.strategy === "smart" && (
+            <div className="mt-2">
+              <div className="text-[12px] font-semibold text-foreground/70">Fill pre-tax up to this bracket</div>
+              <div className="mt-1.5 grid grid-cols-4 gap-1.5">
+                {([0.12, 0.22, 0.24, 0.32] as const).map((b) => (
+                  <button
+                    key={b}
+                    onClick={() => updateSettings({ bracketTarget: b, planCustomized: true })}
+                    className={`press rounded-lg border py-1.5 text-center text-[12px] font-bold ${
+                      settings.bracketTarget === b ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/60"
+                    }`}
+                  >
+                    {Math.round(b * 100)}%
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1 text-[11px] text-foreground/50">
+                The highest rate you&apos;ll accept to voluntarily pull extra pre-tax dollars now — not your overall
+                tax rate.
+              </p>
+            </div>
+          )}
+        </Info>
       </div>
     ),
   });
@@ -1433,22 +1679,25 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </div>
           </div>
 
-          {/* Colored "how much you can spend" zones + slider */}
-          <div className="mt-4 flex h-2.5 w-full overflow-hidden rounded-full bg-foreground/5">
-            <div className="bg-gain/70" style={{ width: `${compPct}%` }} title="Comfortable" />
-            <div className="bg-accent/60" style={{ width: `${sustPct - compPct}%` }} title="Doable but tight" />
-            <div className="bg-tax/50" style={{ width: `${100 - sustPct}%` }} title="Runs short" />
+          {/* Colored "how much you can spend" zones with the slider thumb riding
+              directly ON the zone bar (iOS style: the bar IS the track). */}
+          <div className="relative mt-4">
+            <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-foreground/5">
+              <div className="bg-gain/70" style={{ width: `${compPct}%` }} title="Comfortable" />
+              <div className="bg-accent/60" style={{ width: `${sustPct - compPct}%` }} title="Doable but tight" />
+              <div className="bg-tax/50" style={{ width: `${100 - sustPct}%` }} title="Runs short" />
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={SPEND_MAX}
+              step={5_000}
+              value={Math.min(SPEND_MAX, localSpend)}
+              onChange={(e) => setLocalSpend(Number(e.target.value))}
+              className="ios-range ios-range-overlay absolute inset-x-0 top-1/2 w-full -translate-y-1/2"
+              aria-label="Yearly spending"
+            />
           </div>
-          <input
-            type="range"
-            min={0}
-            max={SPEND_MAX}
-            step={5_000}
-            value={Math.min(SPEND_MAX, localSpend)}
-            onChange={(e) => setLocalSpend(Number(e.target.value))}
-            className="mt-1.5 w-full accent-primary"
-            aria-label="Yearly spending"
-          />
 
           {/* Marker rail: where the safe ceilings and the IRMAA cliffs fall, in
               spending terms — so the cliffs aren't a surprise you only meet later. */}
@@ -2101,6 +2350,18 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   );
                 })()}
 
+                {/* Market framing: a down market makes the SAME planned rollover more
+                    valuable (more shares move per dollar; the recovery is tax-free in
+                    the Roth). Only shown when today's market is meaningfully down. */}
+                {marketPulse && marketPulse.drawdownPct <= -0.08 && (
+                  <Callout tone="good" icon="📉" title={`Markets are ~${Math.round(Math.abs(marketPulse.drawdownPct) * 100)}% below their recent high — that helps this move`} className="mt-3">
+                    The dollar amount and its tax don&apos;t change, but the same rollover moves <strong>more shares</strong>{" "}
+                    while prices are marked down — and their recovery then happens inside the Roth, tax-free, with no
+                    future RMDs. (Markets can always fall further — this isn&apos;t timing advice, just why a down market
+                    makes the rollover you already planned more attractive, not less.)
+                  </Callout>
+                )}
+
                 <div className="mt-3">
                   <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-foreground/45">
                     Follow this recommendation?
@@ -2319,31 +2580,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                       : ca.delayWho === "both"
                         ? "both of you"
                         : "you";
-                const hasSp = !!household.spouse && household.spouse.birthYear > 1900;
-                const Picker = ({ who }: { who: "self" | "spouse" }) => {
-                  const p = household[who];
-                  const fra = Math.round(fullRetirementAge(p.birthYear));
-                  const ages = Array.from(new Set([62, fra, 70]));
-                  return (
-                    <div className="mt-2">
-                      <div className="text-[11px] font-medium text-foreground/60">{p.label || (who === "self" ? "You" : "Spouse")} claims at</div>
-                      <div className="mt-1 grid grid-cols-3 gap-1.5">
-                        {ages.map((a) => {
-                          const on = p.ssClaimAge === a;
-                          return (
-                            <button
-                              key={a}
-                              onClick={() => updateHousehold({ [who]: { ...p, ssClaimAge: a } } as never)}
-                              className={`press rounded-lg border py-1 text-[11px] ${on ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/65"}`}
-                            >
-                              {a} · {moneyCompact(adjustedAnnualBenefit(p.socialSecurityAnnual, p.birthYear, a))}/yr
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                };
                 return (
                   <>
                     On your numbers, having <strong>{who}</strong> claim Social Security at{" "}
@@ -2352,10 +2588,17 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     {ca.delayWho === "both" ? ` / ${ca.currentSpouse}` : ""} is projected to leave about{" "}
                     <strong>{money(ca.lift)}</strong>{" "}more over your lifetime — partly because delaying the higher earner
                     also locks in a larger benefit for whoever lives longer. It&apos;s a personal decision (health, cash
-                    needs); <strong>change it right here</strong> — this estimate already reflects your plan-to age.
-                    <div className="mt-2 rounded-xl border border-gain/30 bg-card/60 p-2">
-                      <Picker who="self" />
-                      {hasSp && <Picker who="spouse" />}
+                    needs) — claim ages live on the Social Security step, so there&apos;s one place to set them.
+                    <div className="mt-2">
+                      <button
+                        onClick={() => {
+                          const i = steps.findIndex((s) => s.key === "ssclaim");
+                          if (i >= 0) go(i);
+                        }}
+                        className="press rounded-lg border border-gain/40 bg-card/60 px-2.5 py-1 text-[11px] font-semibold text-primary"
+                      >
+                        ← Adjust claim ages (Social Security step)
+                      </button>
                     </div>
                   </>
                 );
@@ -2827,6 +3070,17 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 value: `claim at ${household.self.ssClaimAge}${hasSpouse && household.spouse.socialSecurityAnnual > 0 ? ` / ${household.spouse.ssClaimAge}` : ""}`,
                 key: "ssclaim",
               });
+            if ((household.pensionAnnual ?? 0) > 0 || taxableInvestmentIncome > 0)
+              recap.push({
+                label: "Other income",
+                value: [
+                  (household.pensionAnnual ?? 0) > 0 ? `pension ${moneyCompact(household.pensionAnnual)}/yr` : "",
+                  taxableInvestmentIncome > 0 ? `investments ${moneyCompact(taxableInvestmentIncome)}/yr` : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
+                key: "otherincome",
+              });
             if (hasInvestmentIncome)
               recap.push({ label: "Dividends", value: settings.dividendMode === "spend" ? "spent as income" : "reinvested", key: "dividends" });
             if (pretaxShare > 0.2)
@@ -2939,6 +3193,34 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             <div className="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-primary/25 border-t-primary" />
             <h2 className="mt-3 text-xl font-bold leading-snug">How solid is this plan?</h2>
             <p className="mt-1 text-[13px] text-foreground/55">Running the market-risk simulation…</p>
+          </div>
+        )}
+        {/* The living rhythm: what this plan means per month, and where to check
+            in. This is the handoff from "decide once" to "glance any day". */}
+        {(totalDraw > 0.5 || conversion > 0.5) && (
+          <div className="mt-4 rounded-2xl border border-border bg-background/50 p-3 text-left">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/45">Your monthly rhythm</div>
+            <ul className="mt-1.5 space-y-1 text-[13px] text-foreground/75">
+              {totalDraw > 0.5 && (
+                <li>
+                  💵 Withdraw about <strong>{money(Math.round(totalDraw / 12))}/mo</strong> from savings ({money(Math.round(totalDraw))} this year).
+                </li>
+              )}
+              {guaranteed > 0.5 && (
+                <li>
+                  🏦 About <strong>{money(Math.round(guaranteed / 12))}/mo</strong> arrives on its own (Social Security{household.pensionAnnual > 0 ? " + pension" : ""}).
+                </li>
+              )}
+              {conversion > 0.5 && (
+                <li>
+                  🔁 Roll <strong>{money(Math.round(conversion))}</strong> to Roth any time before <strong>Dec 31</strong>.
+                </li>
+              )}
+            </ul>
+            <p className="mt-1.5 text-[12px] leading-snug text-foreground/55">
+              The <strong>Plan</strong> tab keeps this pace live — open it any day and it shows where you should be by
+              that point in the year, plus the next real deadlines.
+            </p>
           </div>
         )}
         <p className="mt-4 text-[13px] text-foreground/70">
@@ -3063,15 +3345,20 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </div>
           )}
 
-          {/* fine progress dots (within the whole flow) */}
-          <div className="mb-3 flex items-center gap-1.5">
+          {/* fine progress dots (within the whole flow) — slim visual, 44px-class
+              touch target via padding so they're actually tappable on a phone */}
+          <div className="mb-1 flex items-center gap-1.5">
             {steps.map((s, i) => (
               <button
                 key={s.key}
                 onClick={() => go(i)}
                 aria-label={`Step ${i + 1}`}
-                className={`press h-1.5 flex-1 rounded-full transition-colors ${i <= safeStep ? "bg-primary" : "bg-foreground/10"}`}
-              />
+                className="press flex-1 py-2"
+              >
+                <span
+                  className={`block h-1.5 w-full rounded-full transition-colors duration-300 ${i <= safeStep ? "bg-primary" : "bg-foreground/10"}`}
+                />
+              </button>
             ))}
           </div>
           <div className="text-[11px] font-semibold uppercase tracking-wide text-primary">{current.eyebrow}</div>

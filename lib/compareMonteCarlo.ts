@@ -99,6 +99,9 @@ export function runPairedMonteCarlo(
   const L = cholesky(corr4);
   const tScale = df > 2 ? Math.sqrt((df - 2) / df) : 1;
 
+  // Common-random-numbers requires ONE shared inflation path, so the FIRST
+  // plan's inflationRate seeds it; any other plan's differing rate is ignored
+  // by design (callers compare plans under identical assumptions).
   const pibar = assumptionsA.inflationRate;
   const PHI = 0.6;
   const SIGMA_INFL = 0.0177;
@@ -123,7 +126,10 @@ export function runPairedMonteCarlo(
   for (let r = 0; r < runs; r++) {
     const rets: number[] = [];
     const infls: number[] = [];
-    let prevInfl = pibar;
+    // Seed the AR(1) from its STATIONARY distribution (sd = sigma/sqrt(1-phi^2)),
+    // not from the mean — starting at the mean understates inflation risk exactly
+    // in the sequence-risk-critical first years of retirement.
+    let prevInfl = pibar + (sigmaEps / Math.sqrt(1 - PHI * PHI)) * randn(rng);
     const ensure = (i: number) => {
       while (rets.length <= i) {
         const n = [randn(rng), randn(rng), randn(rng), randn(rng)];

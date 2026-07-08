@@ -22,6 +22,7 @@ import { Household } from "./accounts";
 import { projectLifetime, ProjectionAssumptions } from "./projection";
 import { ReturnModel } from "./returns";
 import { randn, cholesky } from "./monteCarlo";
+import { ROBUST_LTCG_RATE } from "./goals";
 
 function makeRng(seed: number): () => number {
   let a = seed >>> 0;
@@ -45,7 +46,9 @@ function percentile(sortedAsc: number[], p: number): number {
 export type MostMoneyMetric = "winRate" | "median" | "mean";
 
 export interface MostMoneyStat {
-  /** Share of common-random-number markets in which this plan ends RICHEST. */
+  /** Share of common-random-number markets in which this plan ends RICHEST —
+   *  judged on the step-up-ROBUST estate (brokerage gain taxed at 15%), so a
+   *  plan can't win purely on the all-or-nothing basis-step-up bet. */
   winRate: number;
   /** After-tax ending estate (today's dollars) across markets. */
   median: number;
@@ -94,6 +97,9 @@ export function rankMostMoney(
   ];
   const L = cholesky(corr4);
   const tScale = df > 2 ? Math.sqrt((df - 2) / df) : 1;
+  // Common-random-numbers requires ONE shared inflation path, so the FIRST
+  // plan's inflationRate seeds it; any other plan's differing rate is ignored
+  // by design (callers compare plans under identical assumptions).
   const pibar = candidates[0].inflationRate;
   const PHI = 0.6;
   const SIGMA_INFL = 0.0177;
@@ -110,7 +116,10 @@ export function rankMostMoney(
   for (let r = 0; r < runs; r++) {
     const rets: number[] = [];
     const infls: number[] = [];
-    let prevInfl = pibar;
+    // Seed the AR(1) from its STATIONARY distribution (sd = sigma/sqrt(1-phi^2)),
+    // not from the mean — starting at the mean understates inflation risk exactly
+    // in the sequence-risk-critical first years of retirement.
+    let prevInfl = pibar + (sigmaEps / Math.sqrt(1 - PHI * PHI)) * randn(rng);
     const ensure = (i: number) => {
       while (rets.length <= i) {
         const n = [randn(rng), randn(rng), randn(rng), randn(rng)];
@@ -147,6 +156,12 @@ export function rankMostMoney(
     };
 
     // EVERY candidate is projected on the SAME generated path (common random numbers).
+    // Two readings of each outcome: the DISPLAYED after-tax estate (full brokerage
+    // step-up, matching every other screen), and a ROBUST variant that taxes the
+    // unrealized brokerage gain at 15% instead of assuming the step-up. Wins are
+    // awarded on the robust number — same guard the deterministic ranking applies —
+    // so a plan can't win the probability ranking purely on the all-or-nothing
+    // step-up bet.
     const outcomes: number[] = new Array(N);
     for (let i = 0; i < N; i++) {
       const p = projectLifetime(household, {
@@ -155,8 +170,9 @@ export function rankMostMoney(
         inflationFor,
         futureRateOverride: futureRates[i],
       });
-      outcomes[i] = p.endingEstateAfterTaxReal;
-      ends[i].push(outcomes[i]);
+      const deflator = p.endDeflator > 0 ? p.endDeflator : 1;
+      outcomes[i] = Math.max(0, p.endingEstateAfterTaxReal - (ROBUST_LTCG_RATE * p.endingBuckets.taxableGain) / deflator);
+      ends[i].push(p.endingEstateAfterTaxReal);
       if (!p.depleted) success[i]++;
     }
     // Award the path to the richest plan(s); split ties so winRates sum to 1.

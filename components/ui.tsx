@@ -174,10 +174,11 @@ export function Pill({
 }
 
 export function PageTitle({ title, subtitle }: { title: string; subtitle?: string }) {
+  // iOS "large title" treatment: big, tight, confident — the page's anchor.
   return (
     <header className="mb-2 pt-2">
-      <h1 className="text-2xl font-bold tracking-tight text-foreground">{title}</h1>
-      {subtitle && <p className="mt-0.5 text-sm text-foreground/60">{subtitle}</p>}
+      <h1 className="text-[28px] font-bold leading-tight tracking-tight text-foreground">{title}</h1>
+      {subtitle && <p className="mt-1 text-sm leading-snug text-foreground/60">{subtitle}</p>}
     </header>
   );
 }

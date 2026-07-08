@@ -6,6 +6,9 @@ import { useStore } from "@/components/HouseholdProvider";
 import { Card, PageTitle, SectionTitle, Pill, Stat, Disclaimer, Callout, Explainer, Info, StackedBar, PageSkeleton, DesktopOnly, Collapsible, AdjustLink } from "@/components/ui";
 import { Donut, Legend, AnimatedNumber } from "@/components/charts";
 import { planYear, STRATEGY_META, StrategyId, BracketTarget } from "@/lib/optimizer";
+import { buildYearPace } from "@/lib/pace";
+import { PaceCard } from "@/components/PaceCard";
+import { MarketCheck } from "@/components/MarketCheck";
 import { ordinaryBracketCeiling } from "@/lib/tax/engine";
 import { detectOpportunities } from "@/lib/opportunities";
 import { projectLifetime } from "@/lib/projection";
@@ -51,14 +54,31 @@ export default function PlanPage() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const year = useMemo(() => new Date().getFullYear(), []);
 
+  // A genuinely single household (sentinel spouse, birthYear ≤ 1900) must be taxed
+  // on the SINGLE curve — defaulting to mfj would count the sentinel as a 65+
+  // spouse and grant double deductions/brackets and 2 IRMAA enrollees.
+  const filingStatus = household.spouse && household.spouse.birthYear > 1900 ? ("mfj" as const) : ("single" as const);
   const plan = useMemo(
-    () => planYear(household, { strategy: settings.strategy, bracketTarget: settings.bracketTarget, year, dividendMode: settings.dividendMode }),
-    [household, settings, year],
+    () =>
+      planYear(household, {
+        strategy: settings.strategy,
+        bracketTarget: settings.bracketTarget,
+        year,
+        filingStatus,
+        dividendMode: settings.dividendMode,
+      }),
+    [household, settings, year, filingStatus],
   );
   const opportunities = useMemo(
     () => detectOpportunities(household, plan, settings.bracketTarget),
     [household, plan, settings.bracketTarget],
   );
+  // Today's pace: the year plan spread across the calendar + upcoming real dates.
+  const pace = useMemo(() => {
+    const spouseReal = household.spouse && household.spouse.birthYear > 1900;
+    const medicareEligible = plan.selfAge >= 65 || (spouseReal && plan.spouseAge >= 65);
+    return buildYearPace(plan, { now: new Date(), medicareEligible });
+  }, [plan, household.spouse]);
   // Active lifetime plan (respects the conversion mode) — its first row is this year.
   const activeProj = useMemo(
     () =>
@@ -196,8 +216,39 @@ export default function PlanPage() {
         </div>
       </Card>
 
+      {/* ---------- RIGHT NOW: the year's plan translated to today's pace ----------
+          This is what makes the tab worth opening any day/week/month: the monthly
+          rhythm, where you should roughly be by today, and the next real dates. */}
+      <SectionTitle hint="check in any time">Right now</SectionTitle>
+      <PaceCard
+        pace={pace}
+        incomeNote={(() => {
+          const ages = (["self", "spouse"] as const)
+            .filter((who) => household[who].socialSecurityAnnual > 0 && ageInYear(household[who].birthYear, year) < household[who].ssClaimAge)
+            .map((who) => household[who].ssClaimAge);
+          return ages.length ? `Social Security starts at ${Math.min(...ages)}` : undefined;
+        })()}
+      />
+      {/* Today's market, translated into what it means for THIS plan (e.g. a down
+          market makes the planned Roth rollover more valuable, not less). */}
+      <MarketCheck
+        ctx={{
+          conversion: thisYearConversion,
+          totalDraw,
+          cashBalance: household.accounts.filter((a) => a.kind === "cash").reduce((s, a) => s + a.balance, 0),
+          guardrails: settings.spendingStrategy === "guardrails",
+          gainsAtZero: plan.tax.capitalGainsRate === 0,
+          hasBrokerageGain: household.accounts.some(
+            (a) => a.kind === "brokerage" && a.balance - (a.costBasis ?? a.balance) > 1000,
+          ),
+          hasLossHoldings: household.accounts.some((a) =>
+            (a.holdings ?? []).some((h) => h.costPerShare != null && h.shares * h.price < h.shares * h.costPerShare - 500),
+          ),
+        }}
+      />
+
       {/* ---------- THE HEADLINE: what to do ---------- */}
-      <Callout tone="good" icon="🧭" title="Your move this year">
+      <Callout tone="good" icon="🧭" title="Your move this year" className="mt-4">
         {coveredByIncome ? (
           <>
             Good news — your guaranteed income{spendInvestmentIncome ? " (Social Security, pension and the dividends you take as cash)" : " (Social Security and pension)"} already covers your{" "}
@@ -509,28 +560,32 @@ export default function PlanPage() {
         aria-expanded={showAdvanced}
         className="press mt-6 flex w-full items-center justify-between rounded-xl border border-border bg-card px-4 py-3 text-sm font-semibold text-foreground/70"
       >
-        <span>⚙️ Advanced: change the strategy yourself</span>
+        <span>⚙️ Advanced: how the withdrawal method works</span>
         <span className={`transition-transform ${showAdvanced ? "rotate-180" : ""}`}>⌄</span>
       </button>
       {showAdvanced && (
       <div className="rise mt-2">
       <Explainer>
         A &quot;strategy&quot; is just the <em>order</em>{" "}we pull money from your accounts — it&apos;s a method, not a
-        dollar amount or a tax rate. The robo-advisor already picks this for your goal; change it only to experiment.
+        dollar amount or a tax rate. The robo-advisor already picks this for your goal; you can override it on the
+        walkthrough&apos;s goal step.
       </Explainer>
       <Card>
-        <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-          {STRATEGIES.map((s) => (
-            <button
-              key={s}
-              onClick={() => updateSettings({ strategy: s, planCustomized: true })}
-              className={`press whitespace-nowrap rounded-full px-3 py-1.5 text-[13px] font-medium ${
-                settings.strategy === s ? "bg-primary text-white" : "border border-border bg-card text-foreground/70"
-              }`}
-            >
-              {STRATEGY_META[s].label}
-            </button>
-          ))}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {STRATEGIES.map((s) => (
+              <span
+                key={s}
+                className={`whitespace-nowrap rounded-full px-3 py-1.5 text-[13px] font-medium ${
+                  settings.strategy === s ? "bg-primary text-white" : "border border-border bg-card text-foreground/40"
+                }`}
+              >
+                {settings.strategy === s ? "✓ " : ""}
+                {STRATEGY_META[s].label}
+              </span>
+            ))}
+          </div>
+          <AdjustLink step="goal" />
         </div>
         <p className="mt-2 text-[13px] font-medium text-foreground/70">{STRATEGY_SHORT[settings.strategy]}</p>
         <p className="mt-1 text-[12px] text-foreground/55">{STRATEGY_META[settings.strategy].blurb}</p>
@@ -565,21 +620,23 @@ export default function PlanPage() {
             </p>
             <div className="mt-2.5 grid grid-cols-4 gap-2">
               {BRACKETS.map((b) => (
-                <button
+                <span
                   key={b}
-                  onClick={() => updateSettings({ bracketTarget: b, planCustomized: true })}
-                  className={`press rounded-xl border py-2 text-center ${
+                  className={`rounded-xl border py-2 text-center ${
                     settings.bracketTarget === b
                       ? "border-primary bg-primary/10 text-primary"
-                      : "border-border text-foreground/70"
+                      : "border-border text-foreground/40"
                   }`}
                 >
-                  <div className="text-sm font-bold">{Math.round(b * 100)}%</div>
+                  <div className="text-sm font-bold">{settings.bracketTarget === b ? "✓ " : ""}{Math.round(b * 100)}%</div>
                   <div className="text-[9px] leading-tight text-foreground/45">
                     to {moneyCompact(ordinaryBracketCeiling(b))}
                   </div>
-                </button>
+                </span>
               ))}
+            </div>
+            <div className="mt-2 text-right">
+              <AdjustLink step="goal" label="Change bracket" />
             </div>
             <p className="mt-2 text-[11px] text-foreground/55">
               Filling to <strong>{percent(settings.bracketTarget, 0)}</strong>{" "}means we keep pulling pre-tax

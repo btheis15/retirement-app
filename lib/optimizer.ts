@@ -70,16 +70,19 @@ export interface RmdDetail {
 /** Per-owner RMD for the year (current balance approximates prior year-end). */
 export function computeRmd(household: Household, year: number): { total: number; details: RmdDetail[] } {
   const details: RmdDetail[] = [];
+  // A non-real spouse (the app's "no spouse" sentinel is birthYear <= 1900) must
+  // never emit an RMD of their own — a sentinel age ~130 hits the age-120 floor
+  // (factor 2.0) and would force out 50% of the balance every year. But any
+  // account data still marked owner:"spouse" is REAL money, so it's attributed to
+  // self (otherwise it would silently never get an RMD at all).
+  const spouseIsReal = household.spouse.birthYear > 1900;
   for (const who of ["self", "spouse"] as const) {
     const person = household[who];
-    // Skip a non-real spouse (the app's "no spouse" sentinel is birthYear <= 1900).
-    // Without this, a sentinel age ~130 hits the age-120 RMD floor (factor 2.0) and
-    // would emit a phantom 50%-of-balance RMD on a person who doesn't exist.
-    if (who === "spouse" && person.birthYear <= 1900) continue;
+    if (who === "spouse" && !spouseIsReal) continue;
     const age = ageInYear(person.birthYear, year);
     const startAge = rmdStartAge(person.birthYear);
     const pretaxBalance = household.accounts
-      .filter((a) => a.owner === who && bucketOf(a.kind) === "pretax")
+      .filter((a) => (a.owner === who || (who === "self" && !spouseIsReal && a.owner === "spouse")) && bucketOf(a.kind) === "pretax")
       .reduce((s, a) => s + a.balance, 0);
     const factor = age >= startAge ? uniformLifetimeFactor(age) : 0;
     const amount = factor > 0 ? pretaxBalance / factor : 0;
@@ -506,6 +509,17 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
       }
     }
     }
+  }
+
+  // IRMAA fallback years must not price the conversion. When the caller has no
+  // 2-year MAGI lookback yet (the first two projection years), the engine falls
+  // back to same-year MAGI — but those years' real premiums were set by income
+  // from BEFORE the projection window, which this year's conversion cannot have
+  // raised. Left as-is, an early conversion was billed in the fallback years AND
+  // again when the real lookback kicked in (double-billed), biasing the advisor
+  // against early conversions. Price the fallback on pre-conversion MAGI instead.
+  if (params.irmaaMagi == null && conversion > 0) {
+    taxResult = { ...taxResult, irmaa: finalEval.tax.irmaa };
   }
 
   // IRMAA / NIIT awareness — reflect the conversion income too.

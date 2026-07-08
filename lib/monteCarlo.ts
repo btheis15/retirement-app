@@ -195,7 +195,10 @@ export function runMonteCarlo(
     // advances the AR(1) inflation. Generated lazily in order (AR(1) is sequential).
     const rets: number[] = [];
     const infls: number[] = [];
-    let prevInfl = pibar;
+    // Seed the AR(1) from its STATIONARY distribution (sd = sigma/sqrt(1-phi^2)),
+    // not from the mean — starting at the mean understates inflation risk exactly
+    // in the sequence-risk-critical first years of retirement.
+    let prevInfl = pibar + (sigmaEps / Math.sqrt(1 - PHI * PHI)) * randn(rng);
     const ensure = (i: number) => {
       while (rets.length <= i) {
         const n = [randn(rng), randn(rng), randn(rng), randn(rng)];

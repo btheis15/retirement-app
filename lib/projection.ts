@@ -113,6 +113,9 @@ export interface ProjectionResult {
    *  a pre-tax dollar still owes income tax when withdrawn. */
   endingEstateAfterTax: number;
   endingBuckets: { pretax: number; roth: number; taxable: number; taxableGain: number };
+  /** Final cumulative price level — divide an ending NOMINAL dollar figure by
+   *  this to state it in today's dollars (the deflator behind the *Real fields). */
+  endDeflator: number;
   yearsModeled: number;
   depleted: boolean; // ran out of money before endAge
   /** Years funded before the first shortfall (= yearsModeled if never short). Lets
@@ -263,7 +266,10 @@ function distributeFromBrokerage(accounts: Account[], amount: number) {
  *  never silently dropped. */
 function reinvestSurplus(accounts: Account[], amount: number) {
   if (amount <= 0) return;
-  let brokerage = accounts.find((a) => a.kind === "brokerage") ?? accounts.find((a) => bucketOf(a.kind) === "taxable");
+  // Strictly a BROKERAGE account — never fall back to cash, which growAll()
+  // treats as non-growing: parking decades of forced-RMD surplus at 0% for a
+  // pretax+cash household understated the ending estate by millions.
+  let brokerage = accounts.find((a) => a.kind === "brokerage");
   if (!brokerage) {
     brokerage = { id: "surplus-brokerage", label: "Brokerage (reinvested surplus)", kind: "brokerage", owner: "self", balance: 0, costBasis: 0 };
     accounts.push(brokerage);
@@ -469,7 +475,9 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
       const sv = h[survivorWho];
       // Survivor's benefit becomes the larger check, with a neutral (FRA) claim
       // factor so adjustedAnnualBenefit returns it directly; the deceased's stops.
-      h[survivorWho] = { ...sv, socialSecurityAnnual: keptBenefit, ssClaimAge: Math.round(fullRetirementAge(sv.birthYear)) };
+      // EXACT (possibly fractional) FRA — rounding it gave 1955–59 birth years a
+      // spurious ±few-% claim adjustment on the kept benefit for life.
+      h[survivorWho] = { ...sv, socialSecurityAnnual: keptBenefit, ssClaimAge: fullRetirementAge(sv.birthYear) };
       h[olderWho] = { ...h[olderWho], socialSecurityAnnual: 0 };
       for (const a of h.accounts) if (a.owner === olderWho) a.owner = survivorWho;
       h.annualSpending *= survivor.spendingFactor;
@@ -555,6 +563,37 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
         h.accounts,
         (h.brokerageDividendsAnnual ?? 0) + (h.ordinaryDividendsAnnual ?? 0) + (h.taxExemptInterestAnnual ?? 0),
       );
+    } else {
+      // Reinvest mode. Two credits keep the books honest:
+      // (1) CASH INTEREST — growAll() treats cash as non-growing, so unlike the
+      //     brokerage (whose dividends ride inside total-return growth) the cash
+      //     interest the household was just TAXED on has to be credited explicitly,
+      //     or it's income that was taxed and then vanished.
+      const interest = h.taxableInterestAnnual ?? 0;
+      if (interest > 0) {
+        const cashAccts = h.accounts.filter((a) => a.kind === "cash");
+        const cashTotal = cashAccts.reduce((s, a) => s + a.balance, 0);
+        for (const a of cashAccts) {
+          const share = cashTotal > 0 ? a.balance / cashTotal : 1 / Math.max(1, cashAccts.length);
+          a.balance += interest * share;
+          if (a.costBasis != null) a.costBasis += interest * share;
+        }
+      }
+      // (2) BASIS STEP-UP on retained brokerage payouts — a dividend that was taxed
+      //     this year and stays invested is after-tax new money (exactly like a real
+      //     reinvested distribution), so it raises cost basis. Without this, every
+      //     retained dividend is later taxed AGAIN as unrealized gain on sale and
+      //     overstates the gain the robust-estate yardstick prices in.
+      const retained = (h.brokerageDividendsAnnual ?? 0) + (h.ordinaryDividendsAnnual ?? 0) + (h.taxExemptInterestAnnual ?? 0);
+      if (retained > 0) {
+        const brk = h.accounts.filter((a) => a.kind !== "cash" && bucketOf(a.kind) === "taxable");
+        const brkTotal = brk.reduce((s, a) => s + a.balance, 0);
+        if (brkTotal > 0) {
+          for (const a of brk) {
+            a.costBasis = Math.min(a.balance, (a.costBasis ?? 0) + retained * (a.balance / brkTotal));
+          }
+        }
+      }
     }
 
     const endTotal = h.accounts.reduce((s, a) => s + a.balance, 0);
@@ -652,6 +691,7 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
     endingEstateAfterTax,
     endingEstateAfterTaxReal,
     endingBuckets: { pretax: endPretax, roth: endRoth, taxable: endTaxable, taxableGain: endTaxableGain },
+    endDeflator,
     yearsModeled: rows.length,
     depleted,
     solventYears,
