@@ -34,12 +34,12 @@ export type StrategyId = "smart" | "conventional" | "proportional";
 
 export const STRATEGY_META: Record<StrategyId, { label: string; blurb: string }> = {
   smart: {
-    label: "Smart (bracket-fill)",
+    label: "Pre-tax first (bracket-fill)",
     blurb:
       "Take required RMDs, then fill up the low tax brackets with pre-tax dollars, use the brokerage next, and spend tax-free Roth last. Aims for the lowest lifetime tax.",
   },
   conventional: {
-    label: "Conventional order",
+    label: "Brokerage-first (conventional)",
     blurb:
       "The common rule of thumb: spend taxable (brokerage) first, then pre-tax, then Roth last — RMDs still come out first.",
   },

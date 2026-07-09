@@ -59,7 +59,9 @@ function actionsForRow(row: ProjectionRow): PlanAction[] {
     actions.push({
       kind: "pretax",
       amount: voluntaryPretax,
-      text: `Withdraw ${money(voluntaryPretax)} more from pre-tax to fund spending`,
+      // "more" only makes sense on top of an RMD row — without one it implies a
+      // withdrawal that never appears anywhere.
+      text: row.rmd > 0.5 ? `Withdraw ${money(voluntaryPretax)} more from pre-tax to fund spending` : `Withdraw ${money(voluntaryPretax)} from pre-tax to fund spending`,
     });
   }
   if (row.conversion > 0.5) {

@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import { useStore } from "@/components/HouseholdProvider";
+import { adjustedAnnualBenefit } from "@/lib/socialSecurity";
 import { Card, PageTitle, SectionTitle, Stat, Pill, Disclaimer, Callout, Explainer, Info, PageSkeleton, DesktopOnly, Collapsible, AdjustLink } from "@/components/ui";
 import { StackedArea, Bars, CompareBars, AnimatedNumber, FanChart } from "@/components/charts";
 import { projectLifetime } from "@/lib/projection";
@@ -185,8 +186,12 @@ export default function ProjectionPage() {
   const endingAfterTaxDisp = real ? chosen.endingEstateAfterTaxReal : chosen.endingEstateAfterTax;
   const endingGrossDisp = real ? chosen.endingEstateReal : chosen.endingEstate;
   // Guaranteed-income floor (SS + pension): contextualizes "failure" as a spending
-  // cut, not $0. Uses the full benefits as the eventual lifetime floor.
-  const guaranteedAnnual = household.self.socialSecurityAnnual + household.spouse.socialSecurityAnnual + household.pensionAnnual;
+  // cut, not $0. Uses the CLAIM-AGE-ADJUSTED benefits — the checks actually
+  // arriving once both have claimed — so this matches every other SS figure shown.
+  const guaranteedAnnual =
+    adjustedAnnualBenefit(household.self.socialSecurityAnnual, household.self.birthYear, household.self.ssClaimAge) +
+    adjustedAnnualBenefit(household.spouse.socialSecurityAnnual, household.spouse.birthYear, household.spouse.ssClaimAge) +
+    household.pensionAnnual;
   const guaranteedMonthly = guaranteedAnnual / 12;
 
   const findSafeSpending = async () => {
@@ -764,16 +769,16 @@ export default function ProjectionPage() {
         <p className="mb-3 text-[13px] text-foreground/70">Estimated lifetime tax (federal + Illinois) — same spending & assumptions:</p>
         <CompareBars
           items={[
-            { label: "Smart (bracket-fill)", value: real ? smart.lifetimeTaxReal : smart.lifetimeTax, color: HEX.gain },
-            { label: "Conventional order", value: real ? conventional.lifetimeTaxReal : conventional.lifetimeTax, color: HEX.tax },
+            { label: "Pre-tax first (bracket-fill)", value: real ? smart.lifetimeTaxReal : smart.lifetimeTax, color: HEX.gain },
+            { label: "Brokerage-first (conventional)", value: real ? conventional.lifetimeTaxReal : conventional.lifetimeTax, color: HEX.tax },
           ]}
           format={(n) => money(n)}
         />
         <p className="mb-2 mt-5 text-[13px] text-foreground/70">After-tax estate left at age {settings.endAge}:</p>
         <CompareBars
           items={[
-            { label: "Smart (bracket-fill)", value: real ? smart.endingEstateAfterTaxReal : smart.endingEstateAfterTax, color: HEX.gain },
-            { label: "Conventional order", value: real ? conventional.endingEstateAfterTaxReal : conventional.endingEstateAfterTax, color: HEX.taxable },
+            { label: "Pre-tax first (bracket-fill)", value: real ? smart.endingEstateAfterTaxReal : smart.endingEstateAfterTax, color: HEX.gain },
+            { label: "Brokerage-first (conventional)", value: real ? conventional.endingEstateAfterTaxReal : conventional.endingEstateAfterTax, color: HEX.taxable },
           ]}
           format={(n) => money(n)}
         />

@@ -76,7 +76,16 @@ function estimatedTaxDates(year: number): Date[] {
   ];
 }
 
-export function buildYearPace(plan: YearPlan, opts: { now: Date; medicareEligible: boolean }): YearPace {
+export function buildYearPace(
+  plan: YearPlan,
+  opts: {
+    now: Date;
+    medicareEligible: boolean;
+    /** Tax the caller knows about beyond this plan's own (e.g. the active
+     *  projection's conversion tax when `plan` was computed without it). */
+    extraTax?: number;
+  },
+): YearPace {
   const now = opts.now;
   const year = now.getFullYear();
   const startOfYear = new Date(year, 0, 1);
@@ -94,11 +103,13 @@ export function buildYearPace(plan: YearPlan, opts: { now: Date; medicareEligibl
     tone,
   });
 
+  const yearTax = plan.tax.totalTax + plan.conversionTax + (opts.extraTax ?? 0);
   const items: PaceItem[] = [];
   if (totalDraw > 0.5) items.push(item("Withdraw from savings", totalDraw, "taxable"));
   // The tax set-aside is paced too — whether withheld from withdrawals or paid
-  // as quarterly estimates, the money has to be reserved as the year goes.
-  if (plan.tax.totalTax + plan.conversionTax > 0.5) items.push(item("Set aside for income tax", plan.tax.totalTax + plan.conversionTax, "tax"));
+  // as quarterly estimates, the money has to be reserved as the year goes. It
+  // includes the Roth conversion's tax so the pace never understates the bill.
+  if (yearTax > 0.5) items.push(item("Set aside for income tax", yearTax, "tax"));
 
   // Steady checks only (SS + pension). Dividend/interest cash-outs are lumpy and
   // already counted inside the plan's funding math, so they aren't paced here.
@@ -112,7 +123,7 @@ export function buildYearPace(plan: YearPlan, opts: { now: Date; medicareEligibl
     deadlines.push({ when: fmtWhen(date), date, label, detail, inDays });
   };
 
-  const estTaxQuarterly = plan.tax.totalTax + plan.conversionTax >= 4_000 ? (plan.tax.totalTax + plan.conversionTax) / 4 : 0;
+  const estTaxQuarterly = yearTax >= 4_000 ? yearTax / 4 : 0;
   if (estTaxQuarterly > 0) {
     const next = estimatedTaxDates(year).find((d) => d >= now);
     if (next) {

@@ -13,7 +13,6 @@ import { ordinaryBracketCeiling } from "@/lib/tax/engine";
 import { detectOpportunities } from "@/lib/opportunities";
 import { projectLifetime } from "@/lib/projection";
 import { recommendPlan, describePlan, planGist, configMatches, GOAL_META } from "@/lib/goals";
-import { analyzeConversions } from "@/lib/rothConversion";
 import { buildActionPlan, PlanAction } from "@/lib/actionPlan";
 import {
   adjustedAnnualBenefit,
@@ -23,7 +22,7 @@ import {
   CLAIM_MIN,
   CLAIM_MAX,
 } from "@/lib/socialSecurity";
-import { ageInYear, Household } from "@/lib/accounts";
+import { ageInYear, bucketOf, Household } from "@/lib/accounts";
 import { GoalId, PlannerSettings, survivorFromSettings } from "@/lib/defaults";
 import { MonteCarloResult } from "@/lib/monteCarlo";
 import { computeMonteCarlo } from "@/lib/mcClient";
@@ -73,12 +72,6 @@ export default function PlanPage() {
     () => detectOpportunities(household, plan, settings.bracketTarget),
     [household, plan, settings.bracketTarget],
   );
-  // Today's pace: the year plan spread across the calendar + upcoming real dates.
-  const pace = useMemo(() => {
-    const spouseReal = household.spouse && household.spouse.birthYear > 1900;
-    const medicareEligible = plan.selfAge >= 65 || (spouseReal && plan.spouseAge >= 65);
-    return buildYearPace(plan, { now: new Date(), medicareEligible });
-  }, [plan, household.spouse]);
   // Active lifetime plan (respects the conversion mode) — its first row is this year.
   const activeProj = useMemo(
     () =>
@@ -97,6 +90,18 @@ export default function PlanPage() {
     [household, settings],
   );
   const thisYearConversion = activeProj.rows[0]?.conversion ?? 0;
+  // The year's FULL tax bill includes the Roth conversion's tax — quoting only
+  // the spending tax next to a step list that orders a six-figure conversion
+  // understated the set-aside by ~an order of magnitude.
+  const thisYearConversionTax = Math.max(0, (activeProj.rows[0]?.tax ?? plan.tax.totalTax) - plan.tax.totalTax);
+  const yearTaxTotal = plan.tax.totalTax + thisYearConversionTax;
+
+  // Today's pace: the year plan spread across the calendar + upcoming real dates.
+  const pace = useMemo(() => {
+    const spouseReal = household.spouse && household.spouse.birthYear > 1900;
+    const medicareEligible = plan.selfAge >= 65 || (spouseReal && plan.spouseAge >= 65);
+    return buildYearPace(plan, { now: new Date(), medicareEligible, extraTax: thisYearConversionTax });
+  }, [plan, household.spouse, thisYearConversionTax]);
 
   if (!ready) return <PageSkeleton />;
 
@@ -223,10 +228,13 @@ export default function PlanPage() {
       <PaceCard
         pace={pace}
         incomeNote={(() => {
-          const ages = (["self", "spouse"] as const)
+          const pending = (["self", "spouse"] as const)
             .filter((who) => household[who].socialSecurityAnnual > 0 && ageInYear(household[who].birthYear, year) < household[who].ssClaimAge)
-            .map((who) => household[who].ssClaimAge);
-          return ages.length ? `Social Security starts at ${Math.min(...ages)}` : undefined;
+            .map((who) => ({ who, age: household[who].ssClaimAge, year: household[who].birthYear + household[who].ssClaimAge }));
+          if (!pending.length) return undefined;
+          const first = pending.sort((a, b) => a.year - b.year)[0];
+          const name = household[first.who].label || (first.who === "self" ? "you" : "spouse");
+          return `First check ${first.year} (${name} at ${first.age})`;
         })()}
       />
       {/* Today's market, translated into what it means for THIS plan (e.g. a down
@@ -259,7 +267,14 @@ export default function PlanPage() {
           <>
             To spend <strong>{money(plan.spendingTarget)}</strong>{" "}after tax this year, withdraw about{" "}
             <strong>{money(totalDraw)}</strong>{" "}total from your accounts (the steps below), and set aside
-            roughly <strong>{money(plan.tax.totalTax)}</strong>{" "}for tax (federal + Illinois).
+            roughly <strong>{money(yearTaxTotal)}</strong>{" "}for tax (federal + Illinois)
+            {thisYearConversionTax > 0.5 ? (
+              <>
+                {" "}— <strong>{money(thisYearConversionTax)}</strong>{" "}of that is the Roth rollover&apos;s tax,
+                best paid from cash
+              </>
+            ) : null}
+            .
           </>
         )}
       </Callout>
@@ -305,6 +320,12 @@ export default function PlanPage() {
             <span className="tabular">{money(plan.spendingTarget)}</span>
           </div>
         </div>
+        {thisYearConversionTax > 0.5 && (
+          <p className="mt-2 text-[11px] leading-snug text-foreground/50">
+            The Roth rollover adds <strong>{money(thisYearConversionTax)}</strong> of tax on top of this table — paid
+            from cash, not from the spending money above.
+          </p>
+        )}
         {ssPending.length > 0 && (
           <p className="mt-3 rounded-xl bg-ss/5 px-3 py-2 text-[12px] text-foreground/65">
             ⏳ {ssPending.join("; ")} — until then, withdrawals cover more (see &quot;when to claim&quot; below).
@@ -348,13 +369,24 @@ export default function PlanPage() {
 
         <div className="mt-4 border-t border-border pt-3 text-[13px] text-foreground/80">
           <strong>Bottom line:</strong>{" "}you keep <strong>{money(plan.spendingTarget)}</strong>{" "}to spend
-          after paying about <strong className="text-tax">{money(plan.tax.totalTax)}</strong>{" "}in tax
-          (federal + Illinois) — that&apos;s {percent(plan.tax.effectiveRate)} of your total income for the year.
+          after paying about <strong className="text-tax">{money(yearTaxTotal)}</strong>{" "}in tax
+          (federal + Illinois)
+          {thisYearConversionTax > 0.5 ? <>{" "}({money(thisYearConversionTax)} of it for the Roth rollover)</> : null}
+          {thisYearConversionTax > 0.5 ? "." : <>{" "}— that&apos;s {percent(plan.tax.effectiveRate)} of your total income for the year.</>}
         </div>
       </Card>
 
       {/* Why this order — defined right where the steps just used it. */}
-      <Info q="Why this order? (pre-tax → brokerage → Roth)" sources={[SOURCES.rmd, SOURCES.rothNoRmd, SOURCES.capGains]}>
+      <Info
+        q={`Why this order? (${
+          settings.strategy === "smart"
+            ? "pre-tax to fill low brackets → brokerage → Roth"
+            : settings.strategy === "conventional"
+              ? "brokerage & cash → pre-tax → Roth"
+              : "a little from everything"
+        })`}
+        sources={[SOURCES.rmd, SOURCES.rothNoRmd, SOURCES.capGains]}
+      >
         <p className="mb-1.5">Your accounts fall into three tax &quot;buckets,&quot; and the bucket — not the brand — sets the order:</p>
         <ul className="space-y-1">
           <li><strong className="text-deferred">Pre-tax</strong>{" "}(Traditional IRA / 401k): never taxed yet, so every dollar out is ordinary income. The IRS forces minimum withdrawals (RMDs) starting at 73–75.</li>
@@ -367,7 +399,7 @@ export default function PlanPage() {
       <LookingAhead />
 
       {/* ---------- ROLLOVER / ROTH-CONVERSION PLAN (the canonical, editable control) ---------- */}
-      <RolloverPlanCard />
+      <RolloverPlanCard activeProj={activeProj} />
 
       {/* ---------- SOCIAL SECURITY timing — the one place to act on claim age ---------- */}
       <SsTiming household={household} year={year} />
@@ -590,7 +622,7 @@ export default function PlanPage() {
         <p className="mt-2 text-[13px] font-medium text-foreground/70">{STRATEGY_SHORT[settings.strategy]}</p>
         <p className="mt-1 text-[12px] text-foreground/55">{STRATEGY_META[settings.strategy].blurb}</p>
 
-        <Info q="What does &quot;Smart (bracket-fill)&quot; actually mean?" sources={[SOURCES.brackets2026, SOURCES.rmd, SOURCES.rothConversion]}>
+        <Info q="What does &quot;Pre-tax first (bracket-fill)&quot; actually mean?" sources={[SOURCES.brackets2026, SOURCES.rmd, SOURCES.rothConversion]}>
           <p className="mb-1.5">
             It&apos;s a <strong>method for choosing which accounts to draw from</strong>{" "}— not a number, a total,
             or a tax rate. Each year it:
@@ -1163,23 +1195,48 @@ function ConvertUntilControl({
 }
 
 /** The RMD tax-bomb explainer + the Roth-conversion plan that defuses it. */
-function RolloverPlanCard() {
+function RolloverPlanCard({ activeProj }: { activeProj: ReturnType<typeof projectLifetime> }) {
   const { household, settings } = useStore();
-  const conv = useMemo(
+  // ONE engine for the whole page: this card compares the ACTIVE projection
+  // against the same strategy WITHOUT conversions (or, when rollovers are off,
+  // against what turning them on would do). The step list above quotes the same
+  // active projection, so the two can never disagree about sizes or years.
+  const flipped = useMemo(
     () =>
-      analyzeConversions(household, {
-        strategy: "smart",
+      projectLifetime(household, {
+        strategy: settings.strategy,
         bracketTarget: settings.bracketTarget,
         returnRate: settings.returnRate,
         inflationRate: settings.inflationRate,
         endAge: settings.endAge,
-        convertUntilAge: settings.convertUntilAge,
-        mode: settings.convertMode,
+        convert: settings.useConversions ? null : { untilAge: settings.convertUntilAge, mode: settings.convertMode },
         survivor: survivorFromSettings(settings),
+        heirTaxRate: settings.heirTaxRate,
+        spendingStrategy: settings.spendingStrategy,
+        dividendMode: settings.dividendMode,
       }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [household, settings],
   );
+  const withConv = settings.useConversions ? activeProj : flipped;
+  const noConv = settings.useConversions ? flipped : activeProj;
+
+  const pretax = household.accounts.filter((a) => bucketOf(a.kind) === "pretax").reduce((t, a) => t + a.balance, 0);
+  const total = household.accounts.reduce((t, a) => t + a.balance, 0);
+  const pretaxShare = total > 0 ? pretax / total : 0;
+  const convYears = withConv.rows.filter((r) => r.conversion > 0.5);
+  const conv = {
+    pretaxShare,
+    totalConverted: withConv.totalConverted,
+    avgAnnualConversion: convYears.length ? withConv.totalConverted / convYears.length : 0,
+    windowEndYear: convYears.length ? convYears[convYears.length - 1].year : 0,
+    windowYears: convYears.length,
+    peakRmdBaseline: noConv.peakRmd,
+    peakRmdWithConversions: withConv.peakRmd,
+    peakRmdReduction: Math.max(0, noConv.peakRmd - withConv.peakRmd),
+    estateGain: withConv.endingEstateAfterTax - noConv.endingEstateAfterTax,
+    lifetimeTaxDelta: withConv.lifetimeTax - noConv.lifetimeTax,
+    recommended: withConv.endingEstateAfterTax - noConv.endingEstateAfterTax > 0,
+  };
 
   // Only worth showing if there's a real pre-tax balance and a conversion to make.
   if (conv.pretaxShare < 0.25 || conv.totalConverted < 5_000) return null;
@@ -1200,8 +1257,9 @@ function RolloverPlanCard() {
         title={conv.recommended ? "Recommended: smooth some into Roth each year" : "Consider smoothing some into Roth"}
       >
         <p>
-          Rolling about <strong>{money(conv.avgAnnualConversion)}/yr</strong> through <strong>{conv.windowEndYear}</strong>{" "}
-          (≈{money(conv.totalConverted)} in total) cuts your worst-year RMD from{" "}
+          Rolling about <strong>{money(conv.avgAnnualConversion)}/yr</strong> across {conv.windowYears} year
+          {conv.windowYears === 1 ? "" : "s"} (through <strong>{conv.windowEndYear}</strong>, ≈{money(conv.totalConverted)} in
+          total — this year&apos;s amount is in the step list above) cuts your worst-year RMD from{" "}
           <strong className="text-tax">{money(conv.peakRmdBaseline)}</strong> down to{" "}
           <strong className="text-gain">{money(conv.peakRmdWithConversions)}</strong>.
         </p>
