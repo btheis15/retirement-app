@@ -224,6 +224,9 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   const year = useMemo(() => new Date().getFullYear(), []);
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState<"fwd" | "back">("fwd");
+  // Set when the user jumps out of the review recap to change an answer, so the
+  // target step offers a one-tap "back to your summary" instead of six Nexts.
+  const [returnToReview, setReturnToReview] = useState(false);
   const [, startTransition] = useTransition();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1114,10 +1117,13 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       },
     });
 
-    // STEP — Social Security claim age (the highest-value lever). Only when there's a
-    // benefit to time; surfaces the optimizer's suggestion.
+    // STEP — Social Security: the benefit AMOUNT and the claim age (the highest-
+    // value lever). ALWAYS asked — gating it on an existing benefit meant an
+    // own-numbers user was never asked at all, finished the flow with $0 Social
+    // Security, and got a terrifyingly wrong confidence verdict. A true $0 (no
+    // benefit) is a valid answer; the pickers handle it.
     const hasSS = household.self.socialSecurityAnnual > 0 || (hasSpouse && household.spouse.socialSecurityAnnual > 0);
-    if (hasSS) {
+    {
       steps.push({
         key: "ssclaim",
         chapter: "income",
@@ -1177,10 +1183,22 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           };
           return (
             <div>
-              <h2 className="text-xl font-bold leading-snug">When should you claim Social Security?</h2>
+              <h2 className="text-xl font-bold leading-snug">
+                {hasSS ? "When should you claim Social Security?" : "Your Social Security"}
+              </h2>
               <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
-                This is often the single highest-value lever. Claiming later means a bigger, inflation-protected check for
-                life — but you lean on savings more in the meantime.
+                {hasSS ? (
+                  <>
+                    This is often the single highest-value lever. Claiming later means a bigger, inflation-protected
+                    check for life — but you lean on savings more in the meantime.
+                  </>
+                ) : (
+                  <>
+                    Enter each person&apos;s <strong>full monthly benefit</strong>{" "}from your SSA statement (ssa.gov shows
+                    it under &ldquo;my Social Security&rdquo;) — the plan is very different with it than without it. If
+                    you genuinely won&apos;t receive a benefit, leave it at 0.
+                  </>
+                )}
               </p>
               {adv && adv.delayWho && (
                 <Callout tone="info" icon="🎯" title={`Our math suggests ${adv.self}${hasSpouse ? ` / ${adv.spouse}` : ""}`}>
@@ -1955,7 +1973,15 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   how much the markets could swing that.</>
               )}
               {zone === "short" && (
-                <>🔴 <strong>Too high.</strong> At this level your savings would run short around <strong>age {Number.isFinite(cur.depletionAge) ? cur.depletionAge : settings.endAge}</strong>.</>
+                <>
+                  🔴 <strong>Too high.</strong> At this level your savings would run short around{" "}
+                  <strong>age {Number.isFinite(cur.depletionAge) ? cur.depletionAge : settings.endAge}</strong>{" "}
+                  <em className="text-foreground/60">
+                    on a deliberately cautious (below-average) market path — the odds check at the end of the
+                    walkthrough weighs thousands of paths, good and bad, so its percentage can look friendlier than
+                    this conservative read. Both are true; this is the safety margin.
+                  </em>
+                </>
               )}
             </p>
           )}
@@ -2736,7 +2762,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 <DesktopOnly>{lowTax ? (
                   <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
                     Almost none of this year&apos;s <strong>{money(spending)}</strong> is taxable income — you funded it
-                    mostly from cash and dividends (money you&apos;ve already paid tax on, or that&apos;s taxed at the 0%
+                    largely from money you&apos;ve already paid tax on (cash, brokerage basis — or gains taxed at the 0%
                     rate), and your {money(t.deductions)} standard deduction covers the rest. So the bill is only about{" "}
                     <strong>{money(t.totalTax)}</strong>.
                   </p>
@@ -2874,9 +2900,19 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               <div>
                 <h2 className="text-xl font-bold leading-snug">Your rollover, in detail</h2>
                 <p className="mt-2 text-[13px] leading-relaxed text-foreground/65">
-                  Your plan moves small amounts to Roth across your low-tax years instead of facing one big forced
-                  withdrawal (RMD) later — projected to keep about <strong>{moneyCompact(gainVsNothing)}</strong>{" "}more
-                  after every tax. Open this on a larger screen for the full year-by-year comparison and bracket math.
+                  {gainVsNothing > 1_000 ? (
+                    <>
+                      Your plan moves small amounts to Roth across your low-tax years instead of facing one big forced
+                      withdrawal (RMD) later — projected to keep about <strong>{moneyCompact(gainVsNothing)}</strong>{" "}
+                      more after every tax.
+                    </>
+                  ) : (
+                    <>
+                      For your numbers, rollovers don&apos;t meaningfully change what you keep — so the plan doesn&apos;t
+                      lean on them. Nothing to do here.
+                    </>
+                  )}{" "}
+                  Open this on a larger screen for the full year-by-year comparison and bracket math.
                 </p>
               </div>
             }
@@ -3051,7 +3087,10 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             const hasSSben = household.self.socialSecurityAnnual > 0 || (hasSpouse && household.spouse.socialSecurityAnnual > 0);
             const jumpTo = (key: string) => {
               const i = steps.findIndex((s) => s.key === key);
-              if (i >= 0) go(i);
+              if (i >= 0) {
+                setReturnToReview(true);
+                go(i);
+              }
             };
             const growth =
               settings.spendingStrategy === "flatNominal" ? "flat" : settings.spendingStrategy === "guardrails" ? "guardrails" : "rises with inflation";
@@ -3084,7 +3123,11 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             if (hasInvestmentIncome)
               recap.push({ label: "Dividends", value: settings.dividendMode === "spend" ? "spent as income" : "reinvested", key: "dividends" });
             if (pretaxShare > 0.2)
-              recap.push({ label: "Roth rollover", value: settings.useConversions ? "on" : "skipped", key: "rollconfirm" });
+              recap.push({
+                label: "Roth rollover",
+                value: settings.useConversions ? (proj.totalConverted > 1 ? "on" : "on — none needed") : "skipped",
+                key: "rollconfirm",
+              });
             return (
               <div className="mt-4 overflow-hidden rounded-2xl border border-border">
                 <div className="bg-foreground/[0.03] px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-foreground/50">
@@ -3147,7 +3190,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
             <Collapsible title="Key terms">
               <div className="space-y-2 text-[13px] leading-relaxed text-foreground/70">
-                <p><strong>RMD</strong> — a Required Minimum Distribution: starting at 73, the IRS makes you withdraw a minimum from your pre-tax accounts each year and taxes it as ordinary income.</p>
+                <p><strong>RMD</strong> — a Required Minimum Distribution: starting at {rmdStartAge(household.self.birthYear)} (set by your birth year under SECURE 2.0), the IRS makes you withdraw a minimum from your pre-tax accounts each year and taxes it as ordinary income.</p>
                 <p><strong>Tax bracket</strong> — income is taxed in steps; your &ldquo;bracket&rdquo; is the rate the next dollar is taxed at.</p>
                 <p><strong>Roth</strong> — an account you&apos;ve already paid tax on; it grows tax-free, comes out tax-free, and is never force-withdrawn during your life.</p>
               </div>
@@ -3186,6 +3229,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               Across {confidence.runs.toLocaleString()} simulated market futures — including crashes and long slumps — your
               money lasted to age {settings.endAge} this often. Give or take a couple of points ({Math.round(confidence.successCI[0] * 100)}–
               {Math.round(confidence.successCI[1] * 100)}%), since it&apos;s based on {confidence.runs.toLocaleString()} sample runs.
+              (The Forecast tab runs a larger 1,000-path simulation, so its number can differ by a point or two — same
+              engine, finer read.)
             </p>
           </>
         ) : (
@@ -3277,6 +3322,11 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   // key line items visible on every later step so they never lose track of the
   // number they picked (or where the rest of the cash is going). Off on the
   // setup/intro steps and when there's nothing to fund.
+  useEffect(() => {
+    if (returnToReview && steps[safeStep]?.key === "breakdown") setReturnToReview(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [safeStep]);
+
   const spendStepIdx = steps.findIndex((s) => s.key === "spend");
   const irmaa = plan.tax.irmaa?.householdAnnual ?? 0;
   const showCashFlow = !needsOwnSetup && spendStepIdx >= 0 && safeStep > spendStepIdx;
@@ -3391,6 +3441,22 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             {current.render()}
           </div>
 
+          {/* One-tap return after a recap "tap to change" jump — no re-walking. */}
+          {returnToReview && current.key !== "breakdown" && (
+            <div className="mt-4 text-center">
+              <button
+                onClick={() => {
+                  setReturnToReview(false);
+                  const i = steps.findIndex((st) => st.key === "breakdown");
+                  if (i >= 0) go(i);
+                }}
+                className="press rounded-full border border-primary/30 bg-primary/5 px-4 py-1.5 text-[12px] font-semibold text-primary"
+              >
+                ← Back to your summary
+              </button>
+            </div>
+          )}
+
           {/* nav */}
           <div className="mt-5 flex items-center justify-between gap-3 border-t border-border pt-3">
             <button
@@ -3400,9 +3466,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             >
               ← Back
             </button>
-            <span className="text-[12px] text-foreground/45">
-              {safeStep + 1} / {steps.length}
-            </span>
+            <span className="text-[12px] text-foreground/45">{curChapter ? curChapter.label : ""}</span>
             {isLast ? (
               <button onClick={onSeeDetails} className="press rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-white">
                 Finish
@@ -3515,10 +3579,31 @@ function AccountOverview({ household, total }: { household: Household; total: nu
   const sumOf = (b: TaxBucket) =>
     household.accounts.filter((a) => bucketOf(a.kind) === b).reduce((s, a) => s + a.balance, 0);
   const groups: { bucket: TaxBucket; title: string; note: string; dot: string }[] = [
-    { bucket: "pretax", title: "Pre-tax (Traditional)", note: "Taxed as income when withdrawn · the IRS forces withdrawals (RMDs) starting at 73", dot: "bg-deferred" },
+    {
+      bucket: "pretax",
+      title: "Pre-tax (Traditional)",
+      note: `Taxed as income when withdrawn · the IRS forces withdrawals (RMDs) starting at ${rmdStartAge(household.self.birthYear)} for you`,
+      dot: "bg-deferred",
+    },
     { bucket: "roth", title: "Roth", note: "Already taxed · grows tax-free · no forced withdrawals", dot: "bg-roth" },
     { bucket: "taxable", title: "Taxable (brokerage & cash)", note: "Only the gains are taxed when you sell — not the original money you put in", dot: "bg-taxable" },
   ];
+  // Largest-remainder rounding so the displayed bucket percentages always sum
+  // to exactly 100 (independent Math.round could show 61+27+13 = 101).
+  const pctFor = (() => {
+    const vals: Record<TaxBucket, number> = { pretax: sumOf("pretax"), roth: sumOf("roth"), taxable: sumOf("taxable") };
+    const raw = (Object.entries(vals) as [TaxBucket, number][]).map(([k, v]) => ({ k, exact: total > 0 ? (v / total) * 100 : 0 }));
+    const floored = raw.map((r) => ({ ...r, pct: Math.floor(r.exact) }));
+    let left = 100 - floored.reduce((t, r) => t + r.pct, 0);
+    for (const r of floored.sort((a, b) => (b.exact - Math.floor(b.exact)) - (a.exact - Math.floor(a.exact)))) {
+      if (left <= 0) break;
+      r.pct += 1;
+      left -= 1;
+    }
+    const map = Object.fromEntries(floored.map((r) => [r.k, r.pct])) as Record<TaxBucket, number>;
+    return (b: TaxBucket) => map[b];
+  })();
+
   const legend: { label: string; dot: string; value: number }[] = [
     { label: "Pre-tax", dot: "bg-deferred", value: sumOf("pretax") },
     { label: "Taxable", dot: "bg-taxable", value: sumOf("taxable") },
@@ -3537,7 +3622,7 @@ function AccountOverview({ household, total }: { household: Household; total: nu
         {legend.filter((l) => l.value > 0.5).map((l) => (
           <span key={l.label} className="flex items-center gap-1.5">
             <span className={`inline-block h-2 w-2 rounded-full ${l.dot}`} />
-            {l.label} <span className="text-foreground/40">{Math.round((l.value / total) * 100)}%</span>
+            {l.label} <span className="text-foreground/40">{pctFor(l.label === "Pre-tax" ? "pretax" : l.label === "Roth" ? "roth" : "taxable")}%</span>
           </span>
         ))}
       </div>
@@ -3551,7 +3636,7 @@ function AccountOverview({ household, total }: { household: Household; total: nu
                 <span className="flex items-center gap-1.5 text-[12px] font-semibold">
                   <span className={`inline-block h-2 w-2 rounded-full ${g.dot}`} />
                   {g.title}
-                  <span className="font-normal text-foreground/40">· {Math.round((g.subtotal / total) * 100)}%</span>
+                  <span className="font-normal text-foreground/40">· {pctFor(g.bucket)}%</span>
                 </span>
                 <span className="tabular text-[13px] font-semibold">{money(g.subtotal)}</span>
               </div>

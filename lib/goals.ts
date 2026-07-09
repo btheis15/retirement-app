@@ -419,7 +419,7 @@ export function describePlan(config: PlanConfig, convertUntilAge: number): strin
     config.strategy === "smart"
       ? `Smart bracket-fill to ${Math.round(config.bracketTarget * 100)}%`
       : config.strategy === "conventional"
-        ? "Conventional order (taxable → pre-tax → Roth)"
+        ? "Brokerage-first — conventional (taxable → pre-tax → Roth)"
         : "Proportional";
   if (!config.useConversions) return base;
   const conv = config.convertMode === "recommended" ? "recommended Roth conversions" : "bracket-fill Roth conversions";
