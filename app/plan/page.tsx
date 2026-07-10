@@ -36,10 +36,11 @@ const GOALS: GoalId[] = ["maxCapital", "lowestTax", "lowestRate"];
 const STRATEGIES: StrategyId[] = ["smart", "conventional", "proportional"];
 const BRACKETS: BracketTarget[] = [0.12, 0.22, 0.24, 0.32];
 
-const STEP_TONE: Record<"deferred" | "taxable" | "roth", string> = {
+const STEP_TONE: Record<"deferred" | "taxable" | "roth" | "tax", string> = {
   deferred: "text-deferred",
   taxable: "text-taxable",
   roth: "text-roth",
+  tax: "text-tax",
 };
 
 const STRATEGY_SHORT: Record<StrategyId, string> = {
@@ -154,7 +155,7 @@ export default function PlanPage() {
   ].filter((s) => s.value > 0.5);
 
   // ---- Plain-English step list: exactly what to do, in order. ----
-  const steps: { label: string; amount: number; detail: string; tone: "deferred" | "taxable" | "roth" }[] = [];
+  const steps: { label: string; amount: number; detail: string; tone: "deferred" | "taxable" | "roth" | "tax" }[] = [];
   if (plan.rmd > 0.5) {
     steps.push({
       label: "Take your required withdrawal (RMD)",
@@ -196,8 +197,20 @@ export default function PlanPage() {
         settings.convertMode === "recommended"
           ? ", sized to your projected future RMD-era tax rate"
           : `, filling the ${percent(settings.bracketTarget, 0)} bracket`
-      }. Pay the tax from cash${(household.state ?? "IL") === "IL" ? " — Illinois doesn't tax the conversion" : ""} — and it shrinks every future RMD, then grows tax-free with no RMDs of its own.`,
+      }. It shrinks every future RMD, then grows tax-free with no RMDs of its own${(household.state ?? "IL") === "IL" ? " — and Illinois doesn't tax the conversion" : ""}. Its tax bill is the next step.`,
       tone: "roth",
+    });
+  }
+  if (settings.useConversions && thisYearConversion > 0.5 && thisYearConversionTax > 0.5) {
+    const cashBal = household.accounts.filter((a) => a.kind === "cash").reduce((s2, a) => s2 + a.balance, 0);
+    steps.push({
+      label: "Pay the rollover's tax — from cash",
+      amount: thisYearConversionTax,
+      detail:
+        cashBal >= thisYearConversionTax
+          ? `This comes out of your cash/savings (you have ${money(cashBal)}) — NOT from selling more investments, and NOT from the ${money(plan.spendingTarget)} you're spending. Paying from cash is what makes the rollover worth doing.`
+          : `Your cash covers about ${money(cashBal)} of it; the plan automatically withholds the remaining ${money(thisYearConversionTax - cashBal)} from the rollover itself (slightly less lands in Roth) rather than selling investments to pay tax.`,
+      tone: "tax",
     });
   }
 
