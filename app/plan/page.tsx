@@ -110,6 +110,14 @@ export default function PlanPage() {
   const totalDraw = w.pretax + w.taxable + w.roth;
   const voluntaryPretax = Math.max(0, w.pretax - plan.rmd);
   const coveredByIncome = totalDraw < 0.5;
+  // Cash/savings on hand, and the leftover when a required withdrawal (RMD) or a
+  // minimum draw forces out MORE than you spend. Surfacing the leftover is what
+  // makes the funding math tie out to the penny — otherwise "= yours to spend"
+  // silently drops the difference between after-tax cash and the spending target.
+  const cashBalance = household.accounts.filter((a) => a.kind === "cash").reduce((s2, a) => s2 + a.balance, 0);
+  const afterTaxCash = plan.netCash;
+  const leftover = Math.max(0, afterTaxCash - plan.spendingTarget);
+  const cashAfterRolloverTax = Math.max(0, cashBalance - thisYearConversionTax);
 
   // What funds this year's spending (Social Security shown explicitly). In the
   // default "reinvest" mode, dividends & interest are NOT taken as cash — they
@@ -202,14 +210,13 @@ export default function PlanPage() {
     });
   }
   if (settings.useConversions && thisYearConversion > 0.5 && thisYearConversionTax > 0.5) {
-    const cashBal = household.accounts.filter((a) => a.kind === "cash").reduce((s2, a) => s2 + a.balance, 0);
     steps.push({
       label: "Pay the rollover's tax — from cash",
       amount: thisYearConversionTax,
       detail:
-        cashBal >= thisYearConversionTax
-          ? `This comes out of your cash/savings (you have ${money(cashBal)}) — NOT from selling more investments, and NOT from the ${money(plan.spendingTarget)} you're spending. Paying from cash is what makes the rollover worth doing.`
-          : `Your cash covers about ${money(cashBal)} of it; the plan automatically withholds the remaining ${money(thisYearConversionTax - cashBal)} from the rollover itself (slightly less lands in Roth) rather than selling investments to pay tax.`,
+        cashBalance >= thisYearConversionTax
+          ? `This comes out of your cash/savings ($${Math.round(cashBalance).toLocaleString()}) — NOT from selling more investments, and NOT from the ${money(plan.spendingTarget)} you're spending. That leaves about ${money(cashAfterRolloverTax)} sitting in cash afterward. Paying the tax from cash is what makes the rollover worth doing.`
+          : `Your cash ($${Math.round(cashBalance).toLocaleString()}) covers most of it; the plan automatically withholds the remaining ${money(thisYearConversionTax - cashBalance)} from the rollover itself (that much less lands in Roth) rather than selling investments to pay tax — so your cash goes to about $0 this year, not negative.`,
       tone: "tax",
     });
   }
@@ -328,11 +335,37 @@ export default function PlanPage() {
             <span className="text-foreground/65">− Tax (federal + {plan.tax.state.state === "IL" ? "Illinois" : "state"})</span>
             <span className="tabular text-tax">− {money(plan.tax.totalTax)}</span>
           </div>
-          <div className="flex justify-between font-semibold">
-            <span>= Yours to spend</span>
-            <span className="tabular">{money(plan.spendingTarget)}</span>
-          </div>
+          {leftover > 0.5 ? (
+            <>
+              {/* RMD/minimum draw forced out more than the spending target — show the
+                  leftover explicitly so income − tax = spending + leftover ties out. */}
+              <div className="flex justify-between border-t border-border/60 pt-1 font-semibold">
+                <span>= After-tax cash</span>
+                <span className="tabular">{money(afterTaxCash)}</span>
+              </div>
+              <div className="flex justify-between pl-3">
+                <span className="text-foreground/65">→ Your spending</span>
+                <span className="tabular">{money(plan.spendingTarget)}</span>
+              </div>
+              <div className="flex justify-between pl-3">
+                <span className="text-foreground/65">→ Left over — stays in your accounts</span>
+                <span className="tabular text-gain">{money(leftover)}</span>
+              </div>
+            </>
+          ) : (
+            <div className="flex justify-between font-semibold">
+              <span>= Yours to spend</span>
+              <span className="tabular">{money(plan.spendingTarget)}</span>
+            </div>
+          )}
         </div>
+        {leftover > 0.5 && (
+          <p className="mt-2 text-[11px] leading-snug text-foreground/50">
+            You&apos;re pulling <strong>{money(leftover)}</strong> more than you spend this year because a required
+            withdrawal (RMD) forces it out. It isn&apos;t lost — it stays yours, reinvested in your brokerage (or parked
+            in cash if you prefer), and still shows up in your balances next year.
+          </p>
+        )}
         {thisYearConversionTax > 0.5 && (
           <p className="mt-2 text-[11px] leading-snug text-foreground/50">
             The Roth rollover adds <strong>{money(thisYearConversionTax)}</strong> of tax on top of this table — paid
