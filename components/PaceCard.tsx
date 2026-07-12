@@ -93,7 +93,7 @@ export function PaceCard({ pace, incomeNote }: { pace: YearPace; incomeNote?: st
       {/* Roth rollover: a deadline task, not a monthly chore */}
       {pace.conversion > 0.5 && (
         <p className="mt-3 rounded-xl bg-roth/5 px-3 py-2 text-[12px] leading-snug text-foreground/70">
-          🔁 <strong>Roth rollover this year: {money(Math.round(pace.conversion))}.</strong> It counts for {pace.year} as
+          🔁 <strong>Roth conversion this year: {money(Math.round(pace.conversion))}.</strong> It counts for {pace.year} as
           long as it&apos;s done by <strong>December 31</strong> — one transfer or a few chunks over the remaining{" "}
           {monthsLeft} month{monthsLeft === 1 ? "" : "s"} both work.
         </p>
@@ -127,7 +127,13 @@ export function PaceCard({ pace, incomeNote }: { pace: YearPace; incomeNote?: st
           <p className="mt-2.5 text-[12px] leading-snug text-foreground/55">
             Taxes: either have your custodian <strong>withhold</strong> from each withdrawal, or pay quarterly estimates
             of about <strong>{money(Math.round(pace.estTaxQuarterly))}</strong> (IRS 1040-ES: Apr 15, Jun 15, Sep 15,
-            Jan 15).
+            Jan 15), and Illinois expects its own quarterly estimates (Form IL-1040-ES) if you&apos;ll owe it more
+            than $1,000.
+          </p>
+          <p className="mt-2 text-[12px] leading-snug text-foreground/55">
+            No-penalty shortcut: if your withholding + estimates this year total at least 100% of last year&apos;s tax
+            bill (110% if your income was over $150k), the IRS charges no underpayment penalty even if you owe more
+            in April — especially useful in your first year of retirement or a big conversion year.
           </p>
         </DesktopOnly>
       )}
@@ -137,7 +143,7 @@ export function PaceCard({ pace, incomeNote }: { pace: YearPace; incomeNote?: st
           These are steady-pace guides, not rules — the plan works the same if you withdraw monthly, quarterly, or in a
           few larger moves. &ldquo;By now&rdquo; is simply the year&apos;s plan spread evenly across the calendar
           ({pct}% of the year is behind you). If you&apos;re a bit ahead or behind, nothing is wrong; it&apos;s the
-          December 31 totals that matter for taxes, RMDs, and rollovers.
+          December 31 totals that matter for taxes, RMDs, and conversions.
         </p>
       </Info>
     </Card>

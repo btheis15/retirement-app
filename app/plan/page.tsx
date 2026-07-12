@@ -211,12 +211,12 @@ export default function PlanPage() {
   }
   if (settings.useConversions && thisYearConversion > 0.5 && thisYearConversionTax > 0.5) {
     steps.push({
-      label: "Pay the rollover's tax — from cash",
+      label: "Pay the conversion's tax — from cash",
       amount: thisYearConversionTax,
       detail:
         cashBalance >= thisYearConversionTax
-          ? `This comes out of your cash/savings ($${Math.round(cashBalance).toLocaleString()}) — NOT from selling more investments, and NOT from the ${money(plan.spendingTarget)} you're spending. That leaves about ${money(cashAfterRolloverTax)} sitting in cash afterward. Paying the tax from cash is what makes the rollover worth doing.`
-          : `Your cash ($${Math.round(cashBalance).toLocaleString()}) covers most of it; the plan automatically withholds the remaining ${money(thisYearConversionTax - cashBalance)} from the rollover itself (that much less lands in Roth) rather than selling investments to pay tax — so your cash goes to about $0 this year, not negative.`,
+          ? `This comes out of your cash/savings ($${Math.round(cashBalance).toLocaleString()}) — NOT from selling more investments, and NOT from the ${money(plan.spendingTarget)} you're spending. That leaves about ${money(cashAfterRolloverTax)} sitting in cash afterward. Paying the tax from cash is what makes the conversion worth doing.`
+          : `Your cash ($${Math.round(cashBalance).toLocaleString()}) covers most of it; the plan automatically withholds the remaining ${money(thisYearConversionTax - cashBalance)} from the conversion itself (that much less lands in Roth) rather than selling investments to pay tax — so your cash goes to about $0 this year, not negative.`,
       tone: "tax",
     });
   }
@@ -290,7 +290,7 @@ export default function PlanPage() {
             roughly <strong>{money(yearTaxTotal)}</strong>{" "}for tax (federal + Illinois)
             {thisYearConversionTax > 0.5 ? (
               <>
-                {" "}— <strong>{money(thisYearConversionTax)}</strong>{" "}of that is the Roth rollover&apos;s tax,
+                {" "}— <strong>{money(thisYearConversionTax)}</strong>{" "}of that is the Roth conversion&apos;s tax,
                 best paid from cash
               </>
             ) : null}
@@ -368,7 +368,7 @@ export default function PlanPage() {
         )}
         {thisYearConversionTax > 0.5 && (
           <p className="mt-2 text-[11px] leading-snug text-foreground/50">
-            The Roth rollover adds <strong>{money(thisYearConversionTax)}</strong> of tax on top of this table — paid
+            The Roth conversion adds <strong>{money(thisYearConversionTax)}</strong> of tax on top of this table — paid
             from cash, not from the spending money above.
           </p>
         )}
@@ -417,7 +417,7 @@ export default function PlanPage() {
           <strong>Bottom line:</strong>{" "}you keep <strong>{money(plan.spendingTarget)}</strong>{" "}to spend
           after paying about <strong className="text-tax">{money(yearTaxTotal)}</strong>{" "}in tax
           (federal + Illinois)
-          {thisYearConversionTax > 0.5 ? <>{" "}({money(thisYearConversionTax)} of it for the Roth rollover)</> : null}
+          {thisYearConversionTax > 0.5 ? <>{" "}({money(thisYearConversionTax)} of it for the Roth conversion)</> : null}
           {thisYearConversionTax > 0.5 ? "." : <>{" "}— that&apos;s {percent(plan.tax.effectiveRate)} of your total income for the year.</>}
         </div>
       </Card>
@@ -1098,7 +1098,7 @@ function GoalAndRecommendation() {
           <p className="mt-3 text-[12px] font-medium text-gain">✓ This is your plan — active everywhere, automatically.</p>
         ) : (
           <p className="mt-3 text-[12px] leading-relaxed text-foreground/60">
-            Your active plan differs because you adjusted the rollover yourself.{" "}
+            Your active plan differs because you adjusted the conversion yourself.{" "}
             <button
               onClick={() => applyGoal(settings.goal)}
               className="press font-semibold text-primary underline underline-offset-2"
@@ -1166,7 +1166,7 @@ function LookingAhead() {
     <>
       <SectionTitle hint={`next ${years.length} years`}>The next few years</SectionTitle>
       <Explainer>
-        What to actually do each year, so you can plan around it{settings.useConversions ? ", including the Roth rollovers" : ""}.
+        What to actually do each year, so you can plan around it{settings.useConversions ? ", including the Roth conversions" : ""}.
         It re-runs whenever you change your goal, spending, or assumptions.
       </Explainer>
       <div className="space-y-2 lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0">
@@ -1311,7 +1311,7 @@ function RolloverPlanCard({ activeProj }: { activeProj: ReturnType<typeof projec
         </p>
         {(household.state ?? "IL") === "IL" && (
           <p className="mt-2 rounded-lg bg-gain/10 px-2.5 py-1.5 text-[12px] text-gain">
-            🟢 In Illinois the rollover itself is <strong>state-tax-free</strong> — you only owe federal tax to convert,
+            🟢 In Illinois the conversion itself is <strong>state-tax-free</strong> — you only owe federal tax to convert,
             which makes converting more attractive here than in most states.
           </p>
         )}
@@ -1338,9 +1338,9 @@ function RolloverPlanCard({ activeProj }: { activeProj: ReturnType<typeof projec
             <div className="min-w-0">
               <div className="text-[13px] font-semibold">
                 {settings.useConversions ? (
-                  <span className="text-gain">✓ Rollover plan is on</span>
+                  <span className="text-gain">✓ Conversion plan is on</span>
                 ) : (
-                  <span className="text-foreground/60">Rollover plan is off</span>
+                  <span className="text-foreground/60">Conversion plan is off</span>
                 )}
               </div>
               <div className="mt-0.5 text-[12px] leading-snug text-foreground/55">

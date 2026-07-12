@@ -647,7 +647,7 @@ export default function ProjectionPage() {
         mobileNote={
           <Card className="mt-2">
             <p className="text-[13px] leading-relaxed text-foreground/65">
-              📊 The full detail — balances over time, your RMD schedule, the rollover comparison, smart-vs-conventional,
+              📊 The full detail — balances over time, your RMD schedule, the conversion comparison, smart-vs-conventional,
               key milestones, and the year-by-year table — is on the <strong>desktop version</strong>, where there&apos;s room
               to lay it out. Open this on a laptop to dig in. Roth conversions are turned on and tuned in the{" "}
               <strong>walkthrough</strong>.
@@ -726,7 +726,7 @@ export default function ProjectionPage() {
       <Card>
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="font-semibold">Rollover plan {settings.useConversions ? "on" : "off"}</div>
+            <div className="font-semibold">Conversion plan {settings.useConversions ? "on" : "off"}</div>
             <p className="text-[12px] text-foreground/60">
               {settings.useConversions
                 ? `Rolls about ${moneyCompact(conv.avgAnnualConversion)}/yr through ${conv.windowEndYear} (${moneyCompact(conv.totalConverted)} total).`
@@ -738,8 +738,8 @@ export default function ProjectionPage() {
         <p className="mb-2 mt-4 text-[13px] text-foreground/70">Worst-year RMD — the forced &quot;tax bomb&quot;:</p>
         <CompareBars
           items={[
-            { label: "No rollovers", value: conv.peakRmdBaseline, color: HEX.tax },
-            { label: "With rollovers", value: conv.peakRmdWithConversions, color: HEX.gain },
+            { label: "No conversions", value: conv.peakRmdBaseline, color: HEX.tax },
+            { label: "With conversions", value: conv.peakRmdWithConversions, color: HEX.gain },
           ]}
           format={(n) => money(n)}
         />
