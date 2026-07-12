@@ -1171,7 +1171,7 @@ function GoalAndRecommendation() {
           <span className="font-medium text-foreground/85">{planGist(rec.best.config)}</span>
           {confidence ? (
             <Pill tone={confidence.successPct >= 0.8 ? "gain" : confidence.successPct >= 0.6 ? "ss" : "tax"}>
-              {Math.round(confidence.successPct * 100)}% confidence ({Math.round(confidence.successCI[0] * 100)}–{Math.round(confidence.successCI[1] * 100)}%)
+              {Math.round(confidence.successPct * 100)}% confidence
             </Pill>
           ) : (
             <Pill tone="ss">calculating confidence…</Pill>
@@ -1180,6 +1180,12 @@ function GoalAndRecommendation() {
         <p className="-mt-0.5 mb-1 text-[11px] text-foreground/45">
           Technical version: {describePlan(rec.best.config, rec.chosenConvertUntilAge)}.
         </p>
+        {confidence && (
+          <p className="-mt-0.5 mb-1 text-[12px] text-foreground/60">
+            In about <strong>{Math.round(confidence.successPct * 10)} of 10</strong> of the market histories we
+            simulated, this plan holds for life.
+          </p>
+        )}
         <p className="mt-1">{rec.rationale}</p>
         {rec.claimAdvice && (
           <p className="mt-2 rounded-xl bg-gain/10 px-3 py-2 text-[12px] leading-relaxed text-gain">
@@ -1204,7 +1210,9 @@ function GoalAndRecommendation() {
             <>
               In {confidence.runs.toLocaleString()} simulations of randomized market returns (about {percent(returnModel(household.accounts).volatility, 0)} volatility for your
               mix), this plan funded your full spending to age {settings.endAge} in <strong>{Math.round(confidence.successPct * 100)}%</strong> of
-              them. Median money left: {moneyCompact(confidence.endingWealth.p50)}; an unlucky run (10th percentile) leaves{" "}
+              them — give or take a couple of points ({Math.round(confidence.successCI[0] * 100)}–
+              {Math.round(confidence.successCI[1] * 100)}%), since it&apos;s based on a limited sample of runs. Median money left:{" "}
+              {moneyCompact(confidence.endingWealth.p50)}; an unlucky run (10th percentile) leaves{" "}
               {moneyCompact(confidence.endingWealth.p10)}. Returns are modeled as independent draws — directional, not a guarantee.
             </>
           ) : (

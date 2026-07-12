@@ -155,6 +155,10 @@ export default function ScenariosPage() {
           </>
         )}
       </Callout>
+      <p className="mt-2 text-[12px] leading-relaxed text-foreground/55">
+        The recommendation is chosen at a standard reference spending level (about 4% of savings), so it stays stable
+        as you explore; each card&apos;s numbers use your actual spending.
+      </p>
 
       {/* ───── Assumed return ───── */}
       <SectionTitle hint={`spending ${moneyCompact(household.annualSpending)}/yr · to age ${settings.endAge}`}>Assumed yearly return</SectionTitle>

@@ -729,7 +729,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             ))}
           </ol>
           <p className="mt-2 text-[11px] leading-snug text-foreground/50">
-            About 5–10 minutes · your answers save automatically, so you can stop and pick up where you left off anytime.
+            About 15 minutes — you can stop and pick up where you left off any time. Your answers save automatically.
           </p>
         </div>
         <div className="mt-5 grid gap-3">
@@ -816,7 +816,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   {b.gains && acct && acct.balance > 0 && (
                     <div className="mt-3 rounded-xl border border-border bg-background/40 p-3">
                       <div className="text-[12px] font-medium text-foreground/70">Roughly how much of that is profit (gains)?</div>
-                      <p className="mt-0.5 text-[11px] leading-snug text-foreground/55">
+                      <p className="mt-0.5 text-[13px] leading-snug text-foreground/55">
                         Only the gain is taxed when you sell, so this sharpens the tax math. Not sure? Leave it — we’ll
                         assume no gain for now, and you can refine it on the Accounts page.
                       </p>
@@ -1047,7 +1047,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     </button>
                   ))}
               </div>
-              <p className="mt-2 text-[11px] leading-snug text-foreground/45">
+              <p className="mt-2 text-[13px] leading-snug text-foreground/45">
                 We use this to frame your plan. The year-by-year projection currently begins this year; tying it fully to
                 your retirement year is coming next.
               </p>
@@ -1944,7 +1944,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </div>
           </div>
           {pretaxShare > 0.2 && (
-            <p className="mt-1.5 text-[11px] leading-snug text-foreground/45">
+            <p className="mt-1.5 text-[13px] leading-snug text-foreground/45">
               This is from your <strong>spending alone</strong>. Your Roth conversion is the <strong>next step</strong> — it adds
               taxable income on top of this, which is what can push your Medicare (IRMAA) tier up.
             </p>
@@ -2184,7 +2184,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   </p>
                 );
               })()}
-              <p className="mt-1 text-[11px] text-foreground/55">
+              <p className="mt-1 text-[13px] text-foreground/55">
                 IRMAA is based on your income from two years prior, so today&apos;s choices set your premiums then.
               </p>
             </div>
@@ -2987,50 +2987,14 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         }
 
         return (
-          <DesktopOnly
-            mobileNote={
-              <div>
-                <h2 className="text-xl font-bold leading-snug">Your conversion, in detail</h2>
-                <p className="mt-2 text-[13px] leading-relaxed text-foreground/65">
-                  {gainVsNothing > 1_000 ? (
-                    <>
-                      Your plan moves small amounts to Roth across your low-tax years instead of facing one big forced
-                      withdrawal (RMD) later — projected to keep about <strong>{moneyCompact(gainVsNothing)}</strong>{" "}
-                      more after every tax.
-                    </>
-                  ) : (
-                    <>
-                      For your numbers, conversions don&apos;t meaningfully change what you keep — so the plan doesn&apos;t
-                      lean on them. Nothing to do here.
-                    </>
-                  )}{" "}
-                  Open this on a larger screen for the full year-by-year comparison and bracket math.
-                </p>
-              </div>
-            }
-          >
           <div>
             <h2 className="text-xl font-bold leading-snug">Your conversion, in detail</h2>
-            <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
-              RMDs aren&apos;t the enemy — a steady withdrawal is fine. The trap is one <strong>big</strong>{" "}forced
-              withdrawal that lands in a high bracket. The fix: move a little to Roth each year, only up to the top of a
-              low bracket, so the balance that drives future RMDs shrinks gently. We never convert a dollar at a higher
-              rate than you&apos;d pay later.
-            </p>
 
-            {/* Bracket reference: what "a low bracket" actually means, in dollars */}
-            <BracketLadder
-              status={plan.filingStatus}
-              fillRate={settings.bracketTarget}
-              futureRate={compare.none.peakMarginalRate}
-              year={year}
-              ordinaryIncome={plan.tax.ordinaryTaxableIncome}
-              baseOrdinary={planNoConv.tax.ordinaryTaxableIncome}
-              conversion={plan.conversion}
-            />
-
-            {/* Proof: three approaches on YOUR numbers */}
-            <div className="mt-4 overflow-hidden rounded-2xl border border-border">
+            {/* Decision-critical content lives here, OUTSIDE DesktopOnly, so phones
+                get it too: the 3-approach comparison and the personalized verdict.
+                Only the deep-dive bracket visualization and long explanatory prose
+                below are desktop-only. */}
+            <div className="mt-3 overflow-hidden rounded-2xl border border-border">
               <div className="grid grid-cols-[1.5fr_1fr_1fr] bg-foreground/[0.03] px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-foreground/50">
                 <span>Approach</span>
                 <span className="text-right">Money you keep</span>
@@ -3060,72 +3024,100 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               triggers. A taxable brokerage left to heirs gets a step-up in basis, so its gains pass tax-free.
               &ldquo;Biggest RMD&rdquo; is the largest single forced withdrawal you&apos;d ever face.
             </p>
-            {compare.aggressive.lifetimeIrmaa > compare.smooth.lifetimeIrmaa + 5_000 && (
-              <p className="mt-1.5 rounded-xl bg-ss/[0.06] px-3 py-2 text-[11px] leading-relaxed text-foreground/65">
-                🩺 Converting aggressively pushes your income into higher Medicare (IRMAA) tiers — about{" "}
-                <strong>{moneyCompact(compare.aggressive.lifetimeIrmaa)}</strong> in lifetime Part B/D surcharges vs.{" "}
-                <strong>{moneyCompact(compare.smooth.lifetimeIrmaa)}</strong>{" "}with smoothing. That extra premium cost
-                is already counted in &ldquo;money you keep&rdquo; above — it&apos;s part of why bigger isn&apos;t always
-                better.
-              </p>
-            )}
-
-            {/* Detailed, plain-English explanation of each choice — collapsed by
-                default so the page stays calm; tap any row to understand it fully. */}
-            <div className="mt-3">
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-foreground/45">
-                What each choice means — tap to read
-              </div>
-              {explain.map((e) => (
-                <Info key={e.q} q={e.q}>
-                  <p>{e.body}</p>
-                  {e.catchFirst ? (
-                    <>
-                      <p className="mt-2 text-tax">
-                        <strong>The catch:</strong> {e.downside}
-                      </p>
-                      <p className="mt-1 text-gain">
-                        <strong>Good thing:</strong> {e.upside}
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="mt-2 text-gain">
-                        <strong>Good thing:</strong> {e.upside}
-                      </p>
-                      <p className="mt-1 text-tax">
-                        <strong>The catch:</strong> {e.downside}
-                      </p>
-                    </>
-                  )}
-                </Info>
-              ))}
-              <div className="mb-1 mt-2 text-[11px] font-semibold uppercase tracking-wide text-foreground/45">
-                New to these words? Tap any
-              </div>
-              <Info q="What's an RMD?">{RMD_DEF}</Info>
-              <Info q="What's a tax bracket?">{BRACKET_DEF}</Info>
-              <Info q="What's a Roth?">{ROTH_DEF}</Info>
-            </div>
 
             {/* The single, honest recommendation for THIS household. */}
             <Callout tone="good" icon="💡" title="Bottom line for you" className="mt-3">
               {takeaway}
             </Callout>
 
-            {/* No decision here — the rollover is chosen ONCE, on the "Confirm your
-                rollover" step. This step is just the detailed comparison behind it. */}
-            <p className="mt-4 rounded-xl border border-border bg-background/40 px-3 py-2 text-[12px] text-foreground/60">
-              You decide whether to do this back on the <strong>&ldquo;Confirm your Roth conversion&rdquo;</strong> step — this is
-              just the detailed comparison behind that choice.
-            </p>
-            {isIL && (
-              <p className="mt-2 rounded-xl bg-gain/10 px-3 py-2 text-[12px] text-gain">
-                🟢 In Illinois the conversion itself is <strong>state-tax-free</strong> — you only owe federal tax to do it.
-              </p>
-            )}
+            <DesktopOnly
+              mobileNote={
+                <p className="mt-3 text-[13px] leading-relaxed text-foreground/65">
+                  Open this on a larger screen for the bracket-by-bracket math and a full explanation of each approach.
+                </p>
+              }
+            >
+              <div>
+                <p className="mt-3 text-[13px] leading-relaxed text-foreground/60">
+                  RMDs aren&apos;t the enemy — a steady withdrawal is fine. The trap is one <strong>big</strong>{" "}forced
+                  withdrawal that lands in a high bracket. The fix: move a little to Roth each year, only up to the top of a
+                  low bracket, so the balance that drives future RMDs shrinks gently. We never convert a dollar at a higher
+                  rate than you&apos;d pay later.
+                </p>
+
+                {/* Bracket reference: what "a low bracket" actually means, in dollars */}
+                <BracketLadder
+                  status={plan.filingStatus}
+                  fillRate={settings.bracketTarget}
+                  futureRate={compare.none.peakMarginalRate}
+                  year={year}
+                  ordinaryIncome={plan.tax.ordinaryTaxableIncome}
+                  baseOrdinary={planNoConv.tax.ordinaryTaxableIncome}
+                  conversion={plan.conversion}
+                />
+
+                {compare.aggressive.lifetimeIrmaa > compare.smooth.lifetimeIrmaa + 5_000 && (
+                  <p className="mt-1.5 rounded-xl bg-ss/[0.06] px-3 py-2 text-[11px] leading-relaxed text-foreground/65">
+                    🩺 Converting aggressively pushes your income into higher Medicare (IRMAA) tiers — about{" "}
+                    <strong>{moneyCompact(compare.aggressive.lifetimeIrmaa)}</strong> in lifetime Part B/D surcharges vs.{" "}
+                    <strong>{moneyCompact(compare.smooth.lifetimeIrmaa)}</strong>{" "}with smoothing. That extra premium cost
+                    is already counted in &ldquo;money you keep&rdquo; above — it&apos;s part of why bigger isn&apos;t always
+                    better.
+                  </p>
+                )}
+
+                {/* Detailed, plain-English explanation of each choice — collapsed by
+                    default so the page stays calm; tap any row to understand it fully. */}
+                <div className="mt-3">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-foreground/45">
+                    What each choice means — tap to read
+                  </div>
+                  {explain.map((e) => (
+                    <Info key={e.q} q={e.q}>
+                      <p>{e.body}</p>
+                      {e.catchFirst ? (
+                        <>
+                          <p className="mt-2 text-tax">
+                            <strong>The catch:</strong> {e.downside}
+                          </p>
+                          <p className="mt-1 text-gain">
+                            <strong>Good thing:</strong> {e.upside}
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="mt-2 text-gain">
+                            <strong>Good thing:</strong> {e.upside}
+                          </p>
+                          <p className="mt-1 text-tax">
+                            <strong>The catch:</strong> {e.downside}
+                          </p>
+                        </>
+                      )}
+                    </Info>
+                  ))}
+                  <div className="mb-1 mt-2 text-[11px] font-semibold uppercase tracking-wide text-foreground/45">
+                    New to these words? Tap any
+                  </div>
+                  <Info q="What's an RMD?">{RMD_DEF}</Info>
+                  <Info q="What's a tax bracket?">{BRACKET_DEF}</Info>
+                  <Info q="What's a Roth?">{ROTH_DEF}</Info>
+                </div>
+
+                {/* No decision here — the rollover is chosen ONCE, on the "Confirm your
+                    rollover" step. This step is just the detailed comparison behind it. */}
+                <p className="mt-4 rounded-xl border border-border bg-background/40 px-3 py-2 text-[12px] text-foreground/60">
+                  You decide whether to do this back on the <strong>&ldquo;Confirm your Roth conversion&rdquo;</strong> step — this is
+                  just the detailed comparison behind that choice.
+                </p>
+                {isIL && (
+                  <p className="mt-2 rounded-xl bg-gain/10 px-3 py-2 text-[12px] text-gain">
+                    🟢 In Illinois the conversion itself is <strong>state-tax-free</strong> — you only owe federal tax to do it.
+                  </p>
+                )}
+              </div>
+            </DesktopOnly>
           </div>
-          </DesktopOnly>
         );
       },
     });
@@ -3383,13 +3375,18 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               <AnimatedNumber value={confidence.successPct * 100} format={(n) => `${Math.round(n)}%`} />
             </div>
             <p className="mt-1 text-[13px] text-foreground/65">
-              Across {confidence.runs.toLocaleString()} simulated market futures — including crashes and long slumps — your
-              money lasted to age {settings.endAge} this often. Give or take a couple of points ({Math.round(confidence.successCI[0] * 100)}–
-              {Math.round(confidence.successCI[1] * 100)}%), since it&apos;s based on {confidence.runs.toLocaleString()} sample runs.
+              In about <strong>{Math.round(confidence.successPct * 10)} of 10</strong> of the market histories we
+              simulated — including crashes and long slumps — this plan holds for life, with your money lasting to
+              age {settings.endAge}.
               {confidence.successPct < 0.7
                 ? " A little less spending, a later claim age, or a different mix can move this a lot."
                 : " (The Forecast tab runs a larger 1,000-path simulation, so its number can differ by a point or two — same engine, finer read.)"}
             </p>
+            <Info q="How precise is this number?" className="mt-2 text-left">
+              This is based on {confidence.runs.toLocaleString()} simulated market futures, so the true odds are
+              likely within a couple of points of {Math.round(confidence.successPct * 100)}% — give or take, call it{" "}
+              {Math.round(confidence.successCI[0] * 100)}–{Math.round(confidence.successCI[1] * 100)}%.
+            </Info>
             {mode === "demo" && (
               <p className="mt-1 text-[12px] text-foreground/50">
                 This verdict is for the built-in example — enter your own numbers to see yours.
@@ -3434,12 +3431,21 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         <p className="mt-4 text-[13px] text-foreground/70">
           That&apos;s your plan. Come back and adjust your spending or income anytime — every step updates automatically.
         </p>
+        {/* Hand-off: once the verdict lands, point the client at their day-to-day
+            home base instead of leaving them stranded at the end of the walkthrough. */}
+        <p className="mt-3 text-[13px] text-foreground/70">
+          You&apos;re set up. Day to day, your home base is the <strong>Plan</strong> tab — this walkthrough is here
+          whenever you want to change a decision.
+        </p>
         <div className="mt-4 space-y-2">
+          <Link href="/plan" className="press block w-full rounded-xl bg-primary py-2.5 text-center text-sm font-semibold text-white">
+            Go to your Plan →
+          </Link>
+          <button onClick={onSeeDetails} className="press w-full rounded-xl border border-border py-2.5 text-sm font-semibold text-foreground/70">
+            See all the numbers & charts →
+          </button>
           <button onClick={() => setStep(0)} className="press w-full rounded-xl border border-border py-2.5 text-sm font-semibold text-foreground/70">
             ↺ Walk through it again
-          </button>
-          <button onClick={onSeeDetails} className="press w-full rounded-xl bg-primary py-2.5 text-sm font-semibold text-white">
-            See all the numbers & charts →
           </button>
         </div>
       </div>
