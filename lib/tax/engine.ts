@@ -102,7 +102,15 @@ export interface TaxResult {
    *  the senior-bonus phaseout, which the statutory bracket rate alone misses.
    *  This is what rate-arbitrage conversion decisions should compare. */
   effectiveMarginalRate: number;
-  irmaa: { perPerson: number; householdAnnual: number; label: string };
+  irmaa: {
+    perPerson: number;
+    householdAnnual: number;
+    label: string;
+    /** Index into the filing status's IRMAA tier table (0 = standard premium,
+     *  no surcharge). −1 when nobody is on Medicare yet. Lets downstream code
+     *  detect tier CROSSINGS without comparing inflation-moving dollars. */
+    tierIndex: number;
+  };
 }
 
 /** Apply a progressive bracket table to an amount. */
@@ -184,18 +192,29 @@ function irmaaFor(
   tiers: { upTo: number; monthlyPerPerson: number; label: string }[],
   enrollees: number, // people age 65+ on Medicare this year (pre-65 → 0 → no IRMAA)
 ) {
-  if (enrollees <= 0) return { perPerson: 0, householdAnnual: 0, label: "Not yet on Medicare" };
-  for (const tier of tiers) {
+  if (enrollees <= 0) return { perPerson: 0, householdAnnual: 0, label: "Not yet on Medicare", tierIndex: -1 };
+  // Both the MAGI thresholds AND the surcharge dollars are indexed by the
+  // inflation factor: CMS re-sets the premium amounts every year alongside the
+  // brackets, so billing 2026 surcharge dollars in 2050 would understate
+  // late-life IRMAA (and bias comparisons toward high-RMD "do nothing" paths).
+  for (let i = 0; i < tiers.length; i++) {
+    const tier = tiers[i];
     if (magi <= tier.upTo * factor) {
       return {
-        perPerson: tier.monthlyPerPerson,
-        householdAnnual: tier.monthlyPerPerson * 12 * enrollees,
+        perPerson: tier.monthlyPerPerson * factor,
+        householdAnnual: tier.monthlyPerPerson * factor * 12 * enrollees,
         label: tier.label,
+        tierIndex: i,
       };
     }
   }
   const last = tiers[tiers.length - 1];
-  return { perPerson: last.monthlyPerPerson, householdAnnual: last.monthlyPerPerson * 12 * enrollees, label: last.label };
+  return {
+    perPerson: last.monthlyPerPerson * factor,
+    householdAnnual: last.monthlyPerPerson * factor * 12 * enrollees,
+    label: last.label,
+    tierIndex: tiers.length - 1,
+  };
 }
 
 export function computeTaxes(input: TaxInput): TaxResult {

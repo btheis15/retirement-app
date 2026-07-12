@@ -54,9 +54,11 @@ check("lookback: current MAGI 300k but irmaaMagi 100k → $0", look.irmaa.househ
 const nolook = computeTaxes({ ...base, otherOrdinaryIncome: 300_000, num65Plus: 2 });
 check("no irmaaMagi → falls back to this year's MAGI (300k → tier 2)", nolook.irmaa.householdAnnual, 5_760);
 
-// IRMAA tier boundaries ARE inflation-indexed
+// IRMAA tier boundaries AND surcharge dollars are both inflation-indexed (CMS
+// re-sets premiums yearly alongside the brackets): tier 1 at f=1.5 → 96×1.5/mo.
 check("f=1.5: MAGI 300k < 218k×1.5=327k → standard", irmaa(300_000, 2, "mfj", 1.5).householdAnnual, 0);
-check("f=1.5: MAGI 328k → tier 1", irmaa(328_000, 2, "mfj", 1.5).householdAnnual, 2_304);
+check("f=1.5: MAGI 328k → tier 1, dollars ×1.5 (96×1.5×12×2)", irmaa(328_000, 2, "mfj", 1.5).householdAnnual, 3_456);
+check("f=1.5: tier 1 per-person/mo = 96×1.5", irmaa(328_000, 2, "mfj", 1.5).perPerson, 144);
 
 // ---- effective marginal rate / torpedo ----
 const t = computeTaxes({ ...base, otherOrdinaryIncome: 40_000, socialSecurity: 40_000, num65Plus: 0, state: "IL" });

@@ -86,6 +86,12 @@ export interface ProjectionRow {
   inflationFactor: number;
   /** Annual household Medicare IRMAA surcharge triggered by this year's income. */
   irmaa: number;
+  /** IRMAA tier index this year (0 = standard premium, −1 = not on Medicare yet).
+   *  Dollar amounts inflate with the price level, so tier CROSSINGS must be
+   *  detected from this index, not from year-over-year dollar changes. */
+  irmaaTier: number;
+  /** Human label for the IRMAA tier ("Standard premium", "Tier 1 surcharge", …). */
+  irmaaLabel: string;
   netCash: number;
   spendingTarget: number;
   startBalances: { pretax: number; roth: number; taxable: number; total: number };
@@ -614,6 +620,8 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
       magi: plan.tax.magi,
       inflationFactor,
       irmaa: plan.tax.irmaa.householdAnnual,
+      irmaaTier: plan.tax.irmaa.tierIndex,
+      irmaaLabel: plan.tax.irmaa.label,
       netCash: plan.netCash,
       spendingTarget: plan.spendingTarget,
       startBalances,
