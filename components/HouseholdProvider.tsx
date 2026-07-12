@@ -30,6 +30,13 @@ interface Store {
   removeAccount: (id: string) => void;
   updateSettings: (patch: Partial<PlannerSettings>) => void;
   resetOwn: () => void;
+  /** When the user last touched the plan / last edited account balances (own
+   *  mode; epoch ms; null until first known). Drives the "plan ages" nudges. */
+  meta: { touchedAt: number | null; balancesAt: number | null };
+  /** "I've re-checked the plan" — clears the new-tax-year nudge. */
+  markReviewed: () => void;
+  /** "My balances are current" — clears the stale-balances nudge. */
+  markBalancesCurrent: () => void;
   /** Apply fresh per-symbol prices to your own holdings (re-values balances).
    *  No-op in demo mode so the example stays fixed; only ticker symbols were
    *  ever sent to fetch these — never amounts. */
@@ -51,6 +58,7 @@ const KEY_MODE = "rto-mode";
 const KEY_OWN = "rto-own-household";
 const KEY_SETTINGS = "rto-settings";
 const KEY_DEMO_SEED = "rto-demo-seed";
+const KEY_META = "rto-meta";
 
 const Ctx = createContext<Store | null>(null);
 
@@ -70,6 +78,12 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   // seed. "New example" hands a fresh seed; it persists so the example stays put
   // across navigation/reload until you re-roll.
   const [demoSeed, setDemoSeed] = useState<number | null>(null);
+  // "Plan ages" bookkeeping: when the plan was last touched and balances last
+  // confirmed. Not part of the household data — it's about the DATA's freshness.
+  const [meta, setMeta] = useState<{ touchedAt: number | null; balancesAt: number | null }>({
+    touchedAt: null,
+    balancesAt: null,
+  });
 
   // Hydrate from localStorage after mount (avoids SSR mismatch).
   useEffect(() => {
@@ -85,10 +99,33 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         const n = Number(seed);
         if (Number.isFinite(n) && n !== 0) setDemoSeed(n);
       }
+      const rawMeta = localStorage.getItem(KEY_META);
+      if (rawMeta) {
+        const parsed = JSON.parse(rawMeta);
+        setMeta({ touchedAt: parsed.touchedAt ?? null, balancesAt: parsed.balancesAt ?? null });
+      } else if (own) {
+        // Existing data with no freshness record: baseline it as "current now" so
+        // the nudges measure from today instead of nagging immediately.
+        const now = Date.now();
+        setMeta({ touchedAt: now, balancesAt: now });
+        localStorage.setItem(KEY_META, JSON.stringify({ touchedAt: now, balancesAt: now }));
+      }
     } catch {
       /* ignore */
     }
     setReady(true);
+  }, []);
+
+  const stampMeta = useCallback((patch: { touchedAt?: number; balancesAt?: number }) => {
+    setMeta((prev) => {
+      const next = { ...prev, ...patch };
+      try {
+        localStorage.setItem(KEY_META, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
   }, []);
 
   const persistOwn = useCallback((h: Household) => {
@@ -147,8 +184,9 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       } else {
         persistOwn(next);
       }
+      stampMeta({ touchedAt: Date.now() });
     },
-    [mode, persistOwn, setMode],
+    [mode, persistOwn, setMode, stampMeta],
   );
 
   const updateHousehold = useCallback(
@@ -172,8 +210,9 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     (accounts: Account[]) => {
       const base = mode === "demo" ? demoHousehold(demoSeed) : ownHousehold;
       editApply({ ...base, accounts });
+      stampMeta({ balancesAt: Date.now() });
     },
-    [mode, ownHousehold, demoSeed, editApply],
+    [mode, ownHousehold, demoSeed, editApply, stampMeta],
   );
 
   const upsertAccount = useCallback(
@@ -182,29 +221,35 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       const exists = base.accounts.some((x) => x.id === a.id);
       const accounts = exists ? base.accounts.map((x) => (x.id === a.id ? a : x)) : [...base.accounts, a];
       editApply({ ...base, accounts });
+      stampMeta({ balancesAt: Date.now() });
     },
-    [mode, ownHousehold, demoSeed, editApply],
+    [mode, ownHousehold, demoSeed, editApply, stampMeta],
   );
 
   const removeAccount = useCallback(
     (id: string) => {
       const base = mode === "demo" ? demoHousehold(demoSeed) : ownHousehold;
       editApply({ ...base, accounts: base.accounts.filter((x) => x.id !== id) });
+      stampMeta({ balancesAt: Date.now() });
     },
-    [mode, ownHousehold, demoSeed, editApply],
+    [mode, ownHousehold, demoSeed, editApply, stampMeta],
   );
 
-  const updateSettings = useCallback((patch: Partial<PlannerSettings>) => {
-    setSettings((prev) => {
-      const next = { ...prev, ...patch };
-      try {
-        localStorage.setItem(KEY_SETTINGS, JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, []);
+  const updateSettings = useCallback(
+    (patch: Partial<PlannerSettings>) => {
+      setSettings((prev) => {
+        const next = { ...prev, ...patch };
+        try {
+          localStorage.setItem(KEY_SETTINGS, JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+      stampMeta({ touchedAt: Date.now() });
+    },
+    [stampMeta],
+  );
 
   const resetOwn = useCallback(() => {
     persistOwn(emptyHousehold());
@@ -284,6 +329,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     (h: Household, s?: Partial<PlannerSettings>) => {
       setMode("own");
       persistOwn(h);
+      stampMeta({ touchedAt: Date.now(), balancesAt: Date.now() });
       if (s) {
         setSettings((prev) => {
           // Treat an imported plan as the user's deliberate state: if the backup
@@ -299,7 +345,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         });
       }
     },
-    [setMode, persistOwn],
+    [setMode, persistOwn, stampMeta],
   );
 
   const value = useMemo<Store>(
@@ -316,11 +362,14 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       removeAccount,
       updateSettings,
       resetOwn,
+      meta,
+      markReviewed: () => stampMeta({ touchedAt: Date.now() }),
+      markBalancesCurrent: () => stampMeta({ balancesAt: Date.now() }),
       applyLivePrices,
       applyLiveDividends,
       loadOwn,
     }),
-    [ready, mode, household, settings, setMode, newExample, updateHousehold, setAccounts, upsertAccount, removeAccount, updateSettings, resetOwn, applyLivePrices, applyLiveDividends, loadOwn],
+    [ready, mode, household, settings, setMode, newExample, updateHousehold, setAccounts, upsertAccount, removeAccount, updateSettings, resetOwn, meta, stampMeta, applyLivePrices, applyLiveDividends, loadOwn],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
