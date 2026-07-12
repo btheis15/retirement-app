@@ -39,17 +39,26 @@ or are in open PRs; line numbers in the body are historical.
   on the integrated chain tip. Merge each chain in order; GitHub retargets stacked PRs
   automatically as predecessors merge.
 
-**Still open (highest value first):**
-- 1.2 remainder: a printable "Do this in January" closing checklist step (per-account
-  amounts; buildActionPlan is per-person for RMDs now but not per-account)
-- 2.4 remainder: optional "MAGI two years ago" input so year-1/2 premiums are real
-- 4.2 year-end checklist mode (Oct–Dec: RMD done? conversion executed & re-sized on
-  near-final numbers?) — PaceCard's deadlines cover part of this
-- 4.3 post-onboarding wayfinding (Plan tab as home base after the walkthrough)
-- 3.4 remainder: mobile parity audit of every DesktopOnly (the roll step's personalized
-  verdict is still desktop-only)
-- P5 polish: type-size floor (13px for decision-relevant), honest time estimate,
-  plain-language confidence framing, print stylesheet, Compare reference-spend sentence
+**Second execution wave (merged same day, PRs #61–#63):**
+- **#61** 1.2 complete: the printable "This year, do this" closing checklist —
+  custodian-ready per-account instructions via `lib/checklist.ts` (mirrors the engine's
+  draw order exactly), conversion vocabulary, withholding-% / 1040-ES / safe-harbor
+  mechanics, IRMAA line, print stylesheet
+- **#62** 2.4 complete: optional prior-years income input (`Household.priorMagi`) seeds
+  the projection's lookback so a new retiree's first two IRMAA years reflect their real
+  working income; SSA-44 pointer at the input
+- **#63** 4.3 wayfinding (Plan tab as home base + CTA), 3.4 roll-step verdict + comparison
+  on mobile, and the P5 batch: 15-minute honest estimate, "X of 10 market histories"
+  confidence framing (CI behind an Info), Compare reference-spend sentence, 13px floor on
+  the four decision-relevant disclosures
+
+**Still open (small, deliberate leftovers):**
+- 4.2 a year-end re-check *mode* (an Oct–Dec prompt: RMD done? conversion re-sized on
+  near-final numbers?) — PaceCard's deadlines + the printable checklist cover most of it
+- P5: broader print/export (the breakdown recap), any remaining sub-13px copy outside the
+  four audited spots
+- Per-owner balances in the lifetime projection (would make FUTURE years' RMD splits
+  per-person too; current-year splits are exact)
 
 **What's already strong (keep, don't touch):** gross-up math is correct — the recommended
 withdrawal is gross of tax, so a customer following it won't come up short
