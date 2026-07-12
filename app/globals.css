@@ -280,3 +280,27 @@ body {
 .field-focus:focus-within {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary) 10%, transparent);
 }
+
+/* ---- Print: only the checklist's .print-area renders (nav, chrome, buttons
+   all hidden), full-width on white. The classic visibility trick keeps the
+   DOM untouched — no reparenting, no print-specific route. ---- */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 24px;
+  }
+  .print-area .rounded-2xl,
+  .print-area [class*="rounded"] {
+    box-shadow: none !important;
+  }
+}

@@ -21,6 +21,8 @@ import { spendImpact } from "@/lib/spendImpact";
 import { dividendBreakdown, dividendIncomeTrajectory } from "@/lib/dividends";
 import { AnimatedNumber, FanChart } from "@/components/charts";
 import { planYear, STRATEGY_META } from "@/lib/optimizer";
+import { buildChecklist } from "@/lib/checklist";
+import { buildIrmaaStatus } from "@/lib/irmaaStatus";
 import { ltcgZeroCeiling } from "@/lib/tax/engine";
 import { FILING_CONSTANTS, FilingStatus } from "@/lib/tax/constants";
 import { projectLifetime, ProjectionAssumptions } from "@/lib/projection";
@@ -3266,6 +3268,65 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             Want the live numbers and charts? The <strong>Plan</strong> and <strong>Forecast</strong> tabs have the full
             year-by-year detail — in the menu any time, or via &ldquo;See all the numbers&rdquo; on the next step.
           </Callout>
+        </div>
+      );
+    },
+  });
+
+  // ---- STEP: the closing artifact — this year's plan as custodian-ready
+  // instructions with named accounts, deadlines, and how the tax gets paid.
+  // Printable: the one thing a customer brings to their custodian or CPA. ----
+  steps.push({
+    key: "checklist",
+    chapter: "review",
+    eyebrow: "your to-do list",
+    render: () => {
+      const irmaaStat = buildIrmaaStatus(household, plan.tax.magi, filingStatus, year);
+      const irmaaLine = !irmaaStat
+        ? null
+        : irmaaStat.inSurcharge
+          ? `This year's income sets your ${irmaaStat.billingYear} Medicare premium${irmaaStat.enrolleesAtBilling > 1 ? "s" : ""} at ${irmaaStat.label.toLowerCase()} — about ${money(Math.round(irmaaStat.perPersonMonthly))}/mo per person on top of the standard premium.`
+          : `No Medicare surcharge at this income${Number.isFinite(irmaaStat.headroom) ? ` — ${money(Math.round(irmaaStat.headroom))} of room below the first line` : ""}${irmaaStat.inWindow ? "; remember, this year's income sets your first premium at 65" : ""}. Check the Plan tab's meter before any extra withdrawal.`;
+      const items = buildChecklist(household, plan, { yearTaxTotal: plan.tax.totalTax, irmaaLine });
+      const ICON: Record<string, string> = { rmd: "📌", withdraw: "🏦", sell: "💼", roth: "🌱", convert: "🔁", tax: "🧾", irmaa: "🏥" };
+      return (
+        <div>
+          <div className="text-2xl">📋</div>
+          <h2 className="mt-1 text-xl font-bold leading-snug">This year, do this</h2>
+          <p className="mt-1 text-[13px] leading-relaxed text-foreground/65">
+            Your whole plan, as the calls to actually make{items.some((i) => i.deadline === "Dec 31") ? " — nothing here is urgent today, but the Dec 31 items must happen this calendar year" : ""}. Print it, or bring it to your custodian or CPA.
+          </p>
+          <div className="print-area mt-3 space-y-2">
+            <div className="hidden print:block">
+              <div className="text-lg font-bold">Retirement plan — {year} action list</div>
+              <div className="text-[12px] text-foreground/60">
+                Prepared {new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })} · educational estimates, not tax advice
+              </div>
+            </div>
+            {items.map((it, i) => (
+              <Card key={i} className="!p-3">
+                <div className="flex items-start gap-2.5">
+                  <span aria-hidden className="text-lg leading-none">{ICON[it.kind]}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                      <span className="text-[14px] font-semibold leading-snug">{it.title}</span>
+                      {it.deadline && <Pill tone={it.deadline === "Dec 31" ? "tax" : undefined}>{it.deadline}</Pill>}
+                    </div>
+                    {it.detail && <p className="mt-1 text-[13px] leading-relaxed text-foreground/65">{it.detail}</p>}
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+          <button
+            onClick={() => window.print()}
+            className="press mt-3 w-full rounded-2xl border border-border bg-card px-4 py-2.5 text-[14px] font-semibold text-foreground/80 print:hidden"
+          >
+            🖨️ Print this list (or save as PDF)
+          </button>
+          <p className="mt-2 text-[12px] leading-snug text-foreground/50 print:hidden">
+            Amounts are estimates — your custodian's cents will differ; the order and the deadlines are what matter.
+          </p>
         </div>
       );
     },
