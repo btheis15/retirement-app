@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "@/components/HouseholdProvider";
-import { Card, PageTitle, SectionTitle, Pill, Disclaimer } from "@/components/ui";
+import { Card, PageTitle, SectionTitle, Pill, Disclaimer, AdjustLink } from "@/components/ui";
 import { money, moneyCompact } from "@/lib/format";
 import {
   Account,
@@ -107,7 +107,7 @@ export default function AccountsPage() {
                 onChange={(e) => updateHousehold({ [who]: { ...p, label: e.target.value } } as never)}
               />
             </Field>
-            <div className="mt-2 grid grid-cols-3 gap-3">
+            <div className="mt-2 grid grid-cols-2 gap-3">
               <Field label="Birth year">
                 <input
                   className={INPUT}
@@ -126,15 +126,15 @@ export default function AccountsPage() {
                   }
                 />
               </Field>
-              <Field label="SS claim age">
-                <input
-                  className={INPUT}
-                  inputMode="numeric"
-                  value={p.ssClaimAge}
-                  onChange={(e) => updateHousehold({ [who]: { ...p, ssClaimAge: num(e.target.value) } } as never)}
-                />
-              </Field>
             </div>
+            {/* SS claim age is a coached decision (compares breakeven, survivor angle) —
+                read-only here, with a single home in the walkthrough to change it. */}
+            <Field label="SS claim age" className="mt-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-base font-medium text-foreground/80">Claims at {p.ssClaimAge}</span>
+                <AdjustLink step="ssclaim" />
+              </div>
+            </Field>
             <p className="mt-1 text-[11px] text-foreground/55">
               RMDs begin at age {rmdStartAge(p.birthYear)} for {p.label || (who === "self" ? "you" : "your spouse")}{" "}
               (SECURE 2.0, based on birth year).
@@ -173,8 +173,16 @@ export default function AccountsPage() {
       {/* Income & spending */}
       <SectionTitle>Income & spending</SectionTitle>
       <Card>
+        {/* Spending is a coached decision (weighed against comfortable/sustainable
+            ceilings and IRMAA cliffs) — read-only here, with a single home to change it. */}
         <Field label="Desired annual spending (after tax)">
-          <MoneyInput value={household.annualSpending} onChange={(v) => updateHousehold({ annualSpending: v })} />
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="tabular text-xl font-bold text-primary">{money(household.annualSpending)}</div>
+              <div className="tabular text-[12px] text-foreground/50">{money(Math.round(household.annualSpending / 12))}/mo</div>
+            </div>
+            <AdjustLink step="spend" />
+          </div>
         </Field>
         <Field label="Pension / annuity (annual, fully taxable)" className="mt-2">
           <MoneyInput value={household.pensionAnnual} onChange={(v) => updateHousehold({ pensionAnnual: v })} />
