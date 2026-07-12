@@ -348,8 +348,15 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
   let peakMarginalRate = 0; // highest ordinary bracket touched in ANY year (incl. conversions)
   // IRMAA for premium year T is set by MAGI from year T−2 (statutory lookback).
   // Record each year's MAGI so a later year can look it up. The first two years
-  // have no in-projection lookback, so the engine falls back to same-year MAGI.
+  // have no in-projection lookback — but a new retiree's REAL first premiums are
+  // set by their old working income, so when the household provides those prior
+  // years' MAGI we seed the map with them and the existing lookback just works.
+  // Unset → the engine falls back to same-year MAGI (the old approximation).
   const magiByYear = new Map<number, number>();
+  if (household.priorMagi?.twoYearsAgo != null && household.priorMagi.twoYearsAgo > 0)
+    magiByYear.set(startYear - 2, household.priorMagi.twoYearsAgo);
+  if (household.priorMagi?.lastYear != null && household.priorMagi.lastYear > 0)
+    magiByYear.set(startYear - 1, household.priorMagi.lastYear);
 
   // For recommended-mode conversions, derive the marginal rate this household
   // would face in its worst future RMD year if it did NOTHING extra. We use a
