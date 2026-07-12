@@ -568,7 +568,15 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   // ---- IRMAA cliff awareness (a hard step: cross a MAGI line by $1 → the full
   // surcharge for BOTH enrollees, two years later). Surfaced right where spending
   // is chosen, since spending drives the withdrawals that drive MAGI. ----
-  const medicareEnrollees = (plan.selfAge >= 65 ? 1 : 0) + (plan.spouseAge >= 65 ? 1 : 0);
+  // The sentinel "no spouse" (birthYear ≤ 1900 → age ~126) must never count as an
+  // enrollee, and because this year's MAGI is billed TWO YEARS OUT, the cliff math
+  // counts whoever is on Medicare THEN — a 63-year-old's income today sets their
+  // very first premium at 65, so the warnings must already be live for them.
+  const spouseOnMedicare = dHousehold.spouse.birthYear > 1900 && plan.spouseAge >= 65;
+  const medicareEnrollees = (plan.selfAge >= 65 ? 1 : 0) + (spouseOnMedicare ? 1 : 0);
+  const enrolleesAtBilling =
+    (plan.selfAge + 2 >= 65 ? 1 : 0) + (dHousehold.spouse.birthYear > 1900 && plan.spouseAge + 2 >= 65 ? 1 : 0);
+  const irmaaEnrollees = medicareEnrollees > 0 ? medicareEnrollees : enrolleesAtBilling;
 
   // The Roth rollover this plan does, sized at a SPEND-INDEPENDENT reference (the
   // ~4% recommended spend). The spend-impact sweep holds the rollover at THIS fixed
@@ -596,10 +604,10 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           inflationFactor: plan.inflationFactor,
         },
         FILING_CONSTANTS[plan.filingStatus].irmaaTiers,
-        medicareEnrollees,
+        irmaaEnrollees,
         SPEND_MAX,
       ),
-    [dHousehold, settings.strategy, settings.bracketTarget, year, plan.inflationFactor, plan.filingStatus, medicareEnrollees],
+    [dHousehold, settings.strategy, settings.bracketTarget, year, plan.inflationFactor, plan.filingStatus, irmaaEnrollees],
   );
   // The picture at the CURRENT slider position — interpolated, so it updates every
   // frame of a drag without re-running the planner.
@@ -610,7 +618,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     liveImpact.magi,
     plan.inflationFactor,
     FILING_CONSTANTS[plan.filingStatus].irmaaTiers,
-    medicareEnrollees,
+    irmaaEnrollees,
   );
 
   const applyGoal = (goal: GoalId) => {
@@ -1677,7 +1685,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       // can't trim your way under the cliff. Say that honestly instead of implying
       // a smaller spend would help.
       const baseMagi = impact.points[0]?.magi ?? 0;
-      const irmaaPinned = medicareEnrollees > 0 && !!irmaaCliff?.inSurcharge && liveImpact.magi <= baseMagi + 5_000;
+      const irmaaPinned = irmaaEnrollees > 0 && !!irmaaCliff?.inSurcharge && liveImpact.magi <= baseMagi + 5_000;
 
       return (
         <div>
@@ -1845,17 +1853,26 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </div>
             <div className={`rounded-xl border p-2.5 ${irmaaCliff?.inSurcharge ? "border-tax/30 bg-tax/[0.05]" : "border-border bg-card/60"}`}>
               <div className="text-[10px] uppercase tracking-wide text-foreground/50">Medicare (IRMAA)</div>
-              {medicareEnrollees === 0 ? (
+              {irmaaEnrollees === 0 ? (
                 <>
                   <div className="text-[13px] font-bold text-foreground/70">Not yet</div>
                   <div className="text-[10px] leading-snug text-foreground/45">starts at 65</div>
+                </>
+              ) : medicareEnrollees === 0 && !irmaaCliff?.inSurcharge ? (
+                <>
+                  <div className="text-[13px] font-bold text-gain">No surcharge</div>
+                  <div className="text-[10px] leading-snug text-foreground/45">
+                    counts already — this income sets your first premium at 65
+                    {irmaaCliff && Number.isFinite(irmaaCliff.distance) ? ` · ${moneyCompact(irmaaCliff.distance)} of room` : ""}
+                  </div>
                 </>
               ) : irmaaCliff?.inSurcharge ? (
                 <>
                   <div className="tabular text-lg font-bold text-tax">+{moneyCompact(irmaaCliff.curSurcharge)}/yr</div>
                   <div className="text-[10px] leading-snug text-foreground/45">
                     {shortTier(irmaaCliff.curLabel)} · {money(Math.round(irmaaCliff.curPerPersonMo))}/mo per person
-                    {irmaaCliff.enrollees > 1 ? ` × ${irmaaCliff.enrollees} on Medicare` : ""}
+                    {irmaaCliff.enrollees > 1 ? ` × ${irmaaCliff.enrollees}` : ""}
+                    {medicareEnrollees === 0 ? " · your first premium, at 65" : ""}
                   </div>
                   <div className="mt-0.5 text-[10px] leading-snug text-foreground/40">
                     = {money(Math.round(irmaaCliff.curPartB))} Part B + {money(Math.round(irmaaCliff.curPartD))} Part D
@@ -1905,7 +1922,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
           {/* Deep IRMAA policy — desktop only; mobile keeps the live tier readout above. */}
           <DesktopOnly>
-          {medicareEnrollees > 0 && (
+          {irmaaEnrollees > 0 && (
             <Info q="How is this Medicare (IRMAA) number figured — and why doesn't it match Medicare's premium table?" sources={[SOURCES.irmaa]}>
               <p>
                 <strong>IRMAA</strong> is an income-related surcharge that gets <strong>added on top of</strong> the standard
@@ -1916,7 +1933,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 Medicare quotes it <strong>per person, per month</strong>, and splits it into Part&nbsp;B and Part&nbsp;D. The figure
                 here is the <strong>surcharge only</strong> (not the total premium), with Part&nbsp;B and Part&nbsp;D{" "}
                 <strong>combined</strong>, then shown <strong>per year</strong> for the{" "}
-                {medicareEnrollees > 1 ? `${medicareEnrollees} of you` : "one of you"}{" "}on Medicare. So Medicare&apos;s own
+                {irmaaEnrollees > 1 ? `${irmaaEnrollees} of you` : "one of you"}{" "}on Medicare{medicareEnrollees === 0 ? " when this bills (two years out — Medicare looks back at this year's income)" : ""}. So Medicare&apos;s own
                 table looks bigger because it shows the <em>whole</em> monthly premium (standard + surcharge), each part on its own
                 line — this shows just the added yearly cost.
               </p>
@@ -2188,15 +2205,15 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         const on = settings.useConversions;
         const tiers = FILING_CONSTANTS[plan.filingStatus].irmaaTiers;
         const fct = plan.inflationFactor;
-        const before = irmaaCliffInfo(planNoConv.tax.magi, fct, tiers, medicareEnrollees);
-        const after = irmaaCliffInfo(planWithRoll.tax.magi, fct, tiers, medicareEnrollees);
+        const before = irmaaCliffInfo(planNoConv.tax.magi, fct, tiers, irmaaEnrollees);
+        const after = irmaaCliffInfo(planWithRoll.tax.magi, fct, tiers, irmaaEnrollees);
         const rollAmt = planWithRoll.conversion;
         const rollTax = planWithRoll.conversionTax;
         const addlMagi = Math.max(0, planWithRoll.tax.magi - planNoConv.tax.magi);
         const irmaaJump = (after?.curSurcharge ?? 0) - (before?.curSurcharge ?? 0);
         const tierName = (l: string) => l.replace(" surcharge", "").replace("Standard premium", "no surcharge");
         const irmaaCell = (c: ReturnType<typeof irmaaCliffInfo>) =>
-          medicareEnrollees === 0 ? "—" : c?.inSurcharge ? `+${moneyCompact(c.curSurcharge)}/yr` : "none";
+          irmaaEnrollees === 0 ? "—" : c?.inSurcharge ? `+${moneyCompact(c.curSurcharge)}/yr` : "none";
         return (
           <div>
             <h2 className="text-xl font-bold leading-snug">Confirm your Roth conversion (sometimes called a rollover)</h2>
@@ -2306,7 +2323,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                       <span className="block text-[10px] font-normal text-foreground/45">≈{moneyCompact(rollTax)} income tax</span>
                     </span>
                     <span className="tabular text-right text-foreground/70">
-                      {medicareEnrollees === 0 ? "—" : irmaaJump > 1 ? `+${moneyCompact(irmaaJump)}/yr` : "none"}
+                      {irmaaEnrollees === 0 ? "—" : irmaaJump > 1 ? `+${moneyCompact(irmaaJump)}/yr` : "none"}
                     </span>
                   </div>
                   <div className="grid grid-cols-[1fr_6.5rem_5.5rem] items-center gap-x-3 border-t border-border/60 px-3 py-2 font-semibold">
@@ -2316,27 +2333,27 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   </div>
                 </div>
 
-                {medicareEnrollees > 0 && (before?.inSurcharge || after?.inSurcharge) && (() => {
+                {irmaaEnrollees > 0 && (before?.inSurcharge || after?.inSurcharge) && (() => {
                   const t = after?.inSurcharge ? after : before;
                   const perMo = Math.round(t?.curPerPersonMo ?? 0);
                   return (
                     <p className="mt-1.5 px-1 text-[10px] leading-relaxed text-foreground/45">
                       The Medicare figures are the <strong>yearly total for everyone on Medicare</strong>, not per person.{" "}
-                      {medicareEnrollees > 1
-                        ? `Both of you are enrolled — about ${money(perMo)}/mo each (${money(perMo)} × 12 × 2).`
-                        : `Only one of you is 65+ so far, so it covers one person (${money(perMo)}/mo × 12); your spouse adds the same once they reach 65.`}
+                      {irmaaEnrollees > 1
+                        ? `It covers both of you — about ${money(perMo)}/mo each (${money(perMo)} × 12 × 2)${medicareEnrollees === 0 ? ", starting with your first premiums at 65 (set by this year's income)" : ""}.`
+                        : `It covers one person (${money(perMo)}/mo × 12)${medicareEnrollees === 0 ? " — your first premium at 65, set by this year's income" : ""}; a spouse adds the same once they reach 65.`}
                     </p>
                   );
                 })()}
 
-                {medicareEnrollees > 0 && irmaaJump > 1 && (
+                {irmaaEnrollees > 0 && irmaaJump > 1 && (
                   <p className="mt-2 rounded-xl border border-tax/30 bg-tax/[0.06] px-3 py-2 text-[12px] leading-relaxed text-foreground/80">
                     🏥 <strong>Only in the years you convert.</strong> Adding this {money(rollAmt)} conversion on top of your
                     income lifts your taxable income (MAGI) this year from{" "}
                     <strong>{money(Math.round(planNoConv.tax.magi))}</strong>{" "}to{" "}
                     <strong>{money(Math.round(planWithRoll.tax.magi))}</strong> — high enough to reach Medicare&apos;s{" "}
                     <strong>{tierName(after?.curLabel ?? "")}</strong> surcharge band, about <strong>+{money(irmaaJump)}/yr</strong>{" "}
-                    {medicareEnrollees > 1 ? "for both of you combined" : "for the one of you on Medicare"} (billed two years
+                    {irmaaEnrollees > 1 ? "for both of you combined" : "for the one of you on Medicare then"} (billed two years
                     out). You&apos;re <strong>not</strong> in that tier today — without the conversion you&apos;d owe no surcharge
                     (the top row) — and you&apos;d pay it only in years you actually convert. The next step shows the full
                     bracket math.
@@ -2363,7 +2380,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                       ) : (
                         <> Converting now shrinks that forced withdrawal and the tax on it</>
                       )}
-                      {medicareEnrollees > 0 && noneIrmaa > smoothIrmaa + 100 ? (
+                      {irmaaEnrollees > 0 && noneIrmaa > smoothIrmaa + 100 ? (
                         <>, and holds your lifetime Medicare surcharges near <strong>{moneyCompact(smoothIrmaa)}</strong>{" "}instead
                         of about <strong>{moneyCompact(noneIrmaa)}</strong> if you wait</>
                       ) : null}
@@ -3205,6 +3222,12 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 Once your income crosses certain lines, Medicare adds a surcharge on top of the standard premium — billed
                 per person, and set by your income from two years earlier. It&apos;s a step, not a slope: cross a line and the
                 whole next surcharge kicks in. That&apos;s why the plan watches those lines when sizing your withdrawals and conversion.
+              </p>
+              <p className="mt-2 text-[13px] leading-relaxed text-foreground/70">
+                <strong>Just retired?</strong> The two-year lookback means your first premium bill is based on your old{" "}
+                <em>working</em> income — probably higher than your income now. You don&apos;t have to just accept that:
+                file Social Security&apos;s <strong>Form SSA-44</strong> (life-changing event: &ldquo;work stoppage&rdquo;)
+                and Medicare will re-figure your premium on your new, lower retirement income.
               </p>
             </Collapsible>
 
