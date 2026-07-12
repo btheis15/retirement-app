@@ -14,6 +14,7 @@ import { detectOpportunities } from "@/lib/opportunities";
 import { projectLifetime } from "@/lib/projection";
 import { recommendPlan, describePlan, planGist, configMatches, GOAL_META } from "@/lib/goals";
 import { buildActionPlan, PlanAction } from "@/lib/actionPlan";
+import { buildIrmaaStatus } from "@/lib/irmaaStatus";
 import {
   adjustedAnnualBenefit,
   ssBenefitFactor,
@@ -96,6 +97,14 @@ export default function PlanPage() {
   // understated the set-aside by ~an order of magnitude.
   const thisYearConversionTax = Math.max(0, (activeProj.rows[0]?.tax ?? plan.tax.totalTax) - plan.tax.totalTax);
   const yearTaxTotal = plan.tax.totalTax + thisYearConversionTax;
+  // Medicare meter runs on the WITH-conversion MAGI (the projection row) — the
+  // conversion is precisely the income most likely to cross an IRMAA line.
+  const irmaaStatus = buildIrmaaStatus(
+    household,
+    activeProj.rows[0]?.magi ?? plan.tax.magi,
+    filingStatus,
+    year,
+  );
 
   // Today's pace: the year plan spread across the calendar + upcoming real dates.
   const pace = useMemo(() => {
@@ -313,6 +322,62 @@ export default function PlanPage() {
           </>
         )}
       </Callout>
+
+      {/* ---------- Medicare premium meter: always visible (mobile included).
+          IRMAA is the number a retiree can silently wreck mid-year — an extra
+          withdrawal that crosses a MAGI line costs the full next-tier surcharge
+          two years later. A calm, always-on readout of tier + headroom is the
+          guard rail; it must never live in a collapsed expander. ---------- */}
+      {irmaaStatus && (
+        <Card className="mt-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[13px] font-semibold text-foreground/80">Medicare premium check (IRMAA)</div>
+            <Pill tone={irmaaStatus.inSurcharge ? "tax" : "gain"}>{irmaaStatus.label}</Pill>
+          </div>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-foreground/70">
+            This year&apos;s income (MAGI) is <strong>{money(Math.round(irmaaStatus.magi))}</strong> — it sets your{" "}
+            {irmaaStatus.billingYear} premium{irmaaStatus.enrolleesAtBilling > 1 ? "s" : ""}.{" "}
+            {irmaaStatus.inSurcharge ? (
+              <>
+                That lands in <strong>{irmaaStatus.label.toLowerCase()}</strong>: about{" "}
+                <strong>{money(Math.round(irmaaStatus.perPersonMonthly))}/mo per person</strong> on top of the standard
+                premium ({money(Math.round(irmaaStatus.householdAnnual))}/yr household).
+              </>
+            ) : (
+              <>No surcharge at this income.</>
+            )}
+          </p>
+          {!irmaaStatus.atTop && (
+            <p
+              className={`mt-1 text-[13px] font-medium ${
+                irmaaStatus.headroom < 10_000 ? "text-tax" : irmaaStatus.headroom < 25_000 ? "text-accent" : "text-gain"
+              }`}
+            >
+              {irmaaStatus.headroom < 10_000 ? "⚠️ " : ""}
+              {money(Math.round(irmaaStatus.headroom))} of headroom below the next line — crossing it adds ~
+              {money(Math.round(irmaaStatus.nextJumpAnnual))}/yr. Check here before any extra withdrawal or conversion.
+            </p>
+          )}
+          {irmaaStatus.inWindow && (
+            <p className="mt-1 text-[13px] leading-relaxed text-foreground/70">
+              You&apos;re not on Medicare yet — but Medicare looks back two years, so this year&apos;s income already
+              counts: it sets your first premium at 65.
+            </p>
+          )}
+          <Info q="Just retired? Your first premium may be set by your old paycheck" sources={[SOURCES.irmaa]}>
+            <p>
+              Medicare sets each year&apos;s premium from your income <strong>two years earlier</strong> — so your first
+              bill in retirement is usually based on your old <em>working</em> income. File Social Security&apos;s{" "}
+              <strong>Form SSA-44</strong> (life-changing event: &ldquo;work stoppage&rdquo;) and they&apos;ll re-figure
+              it on your new retirement income instead.
+            </p>
+            <p className="mt-2">
+              The surcharge isn&apos;t a separate bill to remember: it&apos;s taken out of your Social Security check (or
+              invoiced by Medicare if you haven&apos;t claimed yet).
+            </p>
+          </Info>
+        </Card>
+      )}
 
       {/* ---------- What funds the spending (SS shown) ---------- */}
       <SectionTitle>What pays for it</SectionTitle>
