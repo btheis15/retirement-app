@@ -46,15 +46,16 @@ const SPEND_MAX = 400_000;
 // are. Steps are tagged with a chapter and stable-sorted into this order; the
 // visible chapter list is derived from whichever steps are actually present
 // (conditional steps never make the "of N" count lie).
-type ChapterId = "opening" | "you" | "money" | "income" | "goal" | "spending" | "markets" | "review";
-const CHAPTER_ORDER: ChapterId[] = ["opening", "you", "money", "income", "goal", "spending", "markets", "review"];
+type ChapterId = "opening" | "you" | "money" | "income" | "goal" | "spending" | "markets" | "conversion" | "review";
+const CHAPTER_ORDER: ChapterId[] = ["opening", "you", "money", "income", "goal", "markets", "spending", "conversion", "review"];
 const CHAPTERS: { id: ChapterId; label: string; icon: string; blurb: string }[] = [
   { id: "you", label: "You", icon: "👤", blurb: "A couple of quick things about you, so the plan fits your life." },
   { id: "money", label: "Your money", icon: "💼", blurb: "Now your savings — just the totals, grouped by type of account." },
   { id: "income", label: "Income", icon: "🏦", blurb: "Money coming in — Social Security, and any pension." },
   { id: "goal", label: "Your goal", icon: "🎯", blurb: "What you want this money to do. We build the whole plan around it." },
+  { id: "markets", label: "Markets & taxes", icon: "📈", blurb: "The return and inflation assumptions behind the forecast." },
   { id: "spending", label: "Spending", icon: "💵", blurb: "How much you want to spend, and how it changes over the years." },
-  { id: "markets", label: "Markets & taxes", icon: "📈", blurb: "The assumptions behind the forecast, and your Roth conversion." },
+  { id: "conversion", label: "Your conversion & taxes", icon: "🔁", blurb: "The one big tax move to confirm — and how this year's spending and tax get paid." },
   { id: "review", label: "Review", icon: "✅", blurb: "Your plan at a glance — and how solid it looks." },
 ];
 
@@ -70,7 +71,7 @@ const STEP_CHAPTER: Record<string, ChapterId> = {
   spend: "spending",
   "spend-growth": "spending",
   markets: "markets",
-  rollconfirm: "markets",
+  rollconfirm: "conversion",
   roll: "markets",
 };
 
@@ -909,6 +910,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       chapter: "you",
       eyebrow: "a little about you",
       render: () => {
+        const optBtn = (on: boolean) =>
+          `press flex w-full items-start gap-3 rounded-2xl border p-3.5 text-left ${on ? "border-primary bg-primary/10" : "border-border"}`;
         const YearInput = ({
           value,
           onChange,
@@ -971,24 +974,41 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               {aboutHasSpouse && <BirthRow who="spouse" />}
             </div>
 
-            {/* Optional spouse/partner */}
-            <button
-              onClick={() =>
-                updateHousehold({
-                  spouse: aboutHasSpouse
-                    ? { ...household.spouse, birthYear: 1900 } // sentinel → filed single everywhere
-                    : { ...household.spouse, birthYear: household.spouse.birthYear > 1900 ? household.spouse.birthYear : year - 61 },
-                } as never)
-              }
-              className="press mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-border px-3 py-2.5 text-left"
-            >
-              <span className="text-[13px] text-foreground/70">
-                {aboutHasSpouse ? "Planning as a couple" : "Planning just for myself"}
-              </span>
-              <span className={`shrink-0 rounded-full border px-3 py-1 text-[12px] font-semibold ${aboutHasSpouse ? "border-primary bg-primary text-white" : "border-border text-foreground/60"}`}>
-                {aboutHasSpouse ? "I have a spouse/partner" : "Add a spouse/partner"}
-              </span>
-            </button>
+            {/* Household: just me, or planning as a couple. Two explicit options rather
+                than a toggle — a toggle showing "I have a spouse/partner" as the thing you
+                tap to REMOVE the spouse misfires when it's read as a statement, not a switch. */}
+            <div className="mt-2 grid gap-2">
+              <button
+                onClick={() => updateHousehold({ spouse: { ...household.spouse, birthYear: 1900 } } as never)} // sentinel → filed single everywhere
+                className={optBtn(!aboutHasSpouse)}
+              >
+                <span className="text-2xl leading-none">🧍</span>
+                <span className="min-w-0 flex-1">
+                  <span className={`font-semibold ${!aboutHasSpouse ? "text-primary" : ""}`}>Just me</span>
+                  <span className="mt-0.5 block text-[12px] leading-snug text-foreground/60">
+                    The plan is built around your numbers alone.
+                  </span>
+                </span>
+                {!aboutHasSpouse && <span className="ml-auto shrink-0 self-start text-primary">✓</span>}
+              </button>
+              <button
+                onClick={() =>
+                  updateHousehold({
+                    spouse: { ...household.spouse, birthYear: household.spouse.birthYear > 1900 ? household.spouse.birthYear : year - 61 },
+                  } as never)
+                }
+                className={optBtn(aboutHasSpouse)}
+              >
+                <span className="text-2xl leading-none">👥</span>
+                <span className="min-w-0 flex-1">
+                  <span className={`font-semibold ${aboutHasSpouse ? "text-primary" : ""}`}>Me + my spouse or partner</span>
+                  <span className="mt-0.5 block text-[12px] leading-snug text-foreground/60">
+                    We&apos;ll plan for both of you, including survivor income.
+                  </span>
+                </span>
+                {aboutHasSpouse && <span className="ml-auto shrink-0 self-start text-primary">✓</span>}
+              </button>
+            </div>
 
             {/* Planned retirement year */}
             <div className="mt-5 rounded-2xl border border-border p-3">
@@ -1521,26 +1541,28 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             <h2 className="text-xl font-bold leading-snug">Which plan most likely leaves you the most?</h2>
             <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
               &ldquo;Most money&rdquo; depends on the markets you get. So we run your top {finalists.length} plans through the{" "}
-              <strong>same</strong>{" "}hundreds of simulated markets and rank them. How do you want &ldquo;most&rdquo; measured?
+              <strong>same</strong>{" "}hundreds of simulated markets and rank them.
             </p>
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              {(["winRate", "median", "mean"] as const).map((k) => (
-                <button
-                  key={k}
-                  onClick={() => updateSettings({ mostMoneyMetric: k, planCustomized: false })}
-                  className={`press rounded-xl border px-2 py-2 text-[12px] font-semibold ${metric === k ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/65"}`}
-                >
-                  {METRIC_BTN[k]}
-                </button>
-              ))}
-            </div>
-            <p className="mt-1.5 text-[11px] leading-snug text-foreground/45">
-              {metric === "winRate"
-                ? "Ends up with the most in the largest share of markets (it can lose some — it wins most)."
-                : metric === "median"
-                  ? "Highest typical (middle) ending estate — the steadiest, most-likely outcome."
-                  : "Highest average ending estate — rewards upside, can favor a riskier plan."}
-            </p>
+            <Collapsible title={<>Advanced: how we score &ldquo;most money&rdquo;</>} className="mt-3">
+              <div className="grid grid-cols-3 gap-2">
+                {(["winRate", "median", "mean"] as const).map((k) => (
+                  <button
+                    key={k}
+                    onClick={() => updateSettings({ mostMoneyMetric: k, planCustomized: false })}
+                    className={`press rounded-xl border px-2 py-2 text-[12px] font-semibold ${metric === k ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/65"}`}
+                  >
+                    {METRIC_BTN[k]}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[11px] leading-snug text-foreground/45">
+                {metric === "winRate"
+                  ? "Ends up with the most in the largest share of markets (it can lose some — it wins most)."
+                  : metric === "median"
+                    ? "Highest typical (middle) ending estate — the steadiest, most-likely outcome."
+                    : "Highest average ending estate — rewards upside, can favor a riskier plan."}
+              </p>
+            </Collapsible>
 
             {!mmFresh ? (
               <div className="mt-4 rounded-2xl border border-border p-5 text-center text-[13px] text-foreground/55">
@@ -2199,7 +2221,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   if (pretaxShare > 0.2) {
     steps.push({
       key: "rollconfirm",
-      chapter: "markets",
+      chapter: "conversion",
       eyebrow: "confirm your conversion",
       render: () => {
         const on = settings.useConversions;
@@ -2494,7 +2516,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
   steps.push({
     key: "fund",
-    chapter: "markets",
+    chapter: "conversion",
     eyebrow: "what pays for it — and from where",
     render: () => {
       const pct = Math.round(coverageRatio * 100);
@@ -3253,28 +3275,34 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     key: "done",
     chapter: "review",
     eyebrow: confidence
-      ? confidence.successPct >= 0.8
+      ? confidence.successPct >= 0.85
         ? "you're set"
-        : confidence.successPct >= 0.6
-          ? "looking good"
+        : confidence.successPct >= 0.7
+          ? "solid — worth keeping an eye on"
           : "worth a closer look"
       : "the verdict",
     render: () => (
       <div className="text-center">
         {confidence ? (
           <>
-            <div className="emoji-bounce text-4xl">{confidence.successPct >= 0.8 ? "🎉" : confidence.successPct >= 0.6 ? "👍" : "⚠️"}</div>
+            <div className="emoji-bounce text-4xl">{confidence.successPct >= 0.85 ? "🎉" : confidence.successPct >= 0.7 ? "👍" : "⚠️"}</div>
             <h2 className="mt-2 text-xl font-bold leading-snug">How solid is this plan?</h2>
-            <div className="pop mt-3 tabular text-5xl font-bold" style={{ color: confidence.successPct >= 0.8 ? "var(--color-gain)" : confidence.successPct >= 0.6 ? "var(--color-accent)" : "var(--color-tax)" }}>
+            <div className="pop mt-3 tabular text-5xl font-bold" style={{ color: confidence.successPct >= 0.85 ? "var(--color-gain)" : confidence.successPct >= 0.7 ? "var(--color-accent)" : "var(--color-tax)" }}>
               <AnimatedNumber value={confidence.successPct * 100} format={(n) => `${Math.round(n)}%`} />
             </div>
             <p className="mt-1 text-[13px] text-foreground/65">
               Across {confidence.runs.toLocaleString()} simulated market futures — including crashes and long slumps — your
               money lasted to age {settings.endAge} this often. Give or take a couple of points ({Math.round(confidence.successCI[0] * 100)}–
               {Math.round(confidence.successCI[1] * 100)}%), since it&apos;s based on {confidence.runs.toLocaleString()} sample runs.
-              (The Forecast tab runs a larger 1,000-path simulation, so its number can differ by a point or two — same
-              engine, finer read.)
+              {confidence.successPct < 0.7
+                ? " A little less spending, a later claim age, or a different mix can move this a lot."
+                : " (The Forecast tab runs a larger 1,000-path simulation, so its number can differ by a point or two — same engine, finer read.)"}
             </p>
+            {mode === "demo" && (
+              <p className="mt-1 text-[12px] text-foreground/50">
+                This verdict is for the built-in example — enter your own numbers to see yours.
+              </p>
+            )}
           </>
         ) : (
           <div className="py-8">
@@ -3454,7 +3482,10 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               </button>
             ))}
           </div>
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-primary">{current.eyebrow}</div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-primary">{current.eyebrow}</div>
+            {mode === "demo" && <Pill>📊 Example data</Pill>}
+          </div>
 
           {/* Chapter intro — a one-line "now we'll look at X" framing on the first
               step of each chapter, the way an advisor frames the next topic. */}
