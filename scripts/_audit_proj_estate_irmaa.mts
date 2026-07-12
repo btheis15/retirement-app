@@ -17,8 +17,10 @@ const chk = (cond: boolean, msg: string) => { if (!cond) { bad++; console.log("F
 
 function irmaaLookup(magi: number, tiers: any[], f: number, enrollees: number) {
   if (enrollees <= 0) return 0;
-  for (const t of tiers) if (magi <= t.upTo * f) return t.monthlyPerPerson * 12 * enrollees;
-  return tiers[tiers.length - 1].monthlyPerPerson * 12 * enrollees;
+  // Thresholds AND surcharge dollars are both indexed by the inflation factor
+  // (CMS re-sets premium amounts yearly alongside the brackets).
+  for (const t of tiers) if (magi <= t.upTo * f) return t.monthlyPerPerson * f * 12 * enrollees;
+  return tiers[tiers.length - 1].monthlyPerPerson * f * 12 * enrollees;
 }
 
 for (const { label, hh } of archetypes()) {

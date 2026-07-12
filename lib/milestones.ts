@@ -99,7 +99,45 @@ export function detectMilestones(household: Household, proj: ProjectionResult): 
     });
   }
 
-  // IRMAA tier crossings + bracket step-ups.
+  // IRMAA tier crossings. Premiums are set by MAGI from TWO YEARS EARLIER, so
+  // each crossing is really a verdict on income choices two years before it —
+  // that's the actionable framing. Crossings are detected from the tier INDEX
+  // (dollar amounts inflate every year even inside a single tier).
+  let prevTier: number | null = null;
+  for (const r of proj.rows) {
+    if (r.irmaaTier < 0) {
+      prevTier = null; // not on Medicare yet — nothing to compare
+      continue;
+    }
+    const first = prevTier === null;
+    if ((first && r.irmaaTier > 0) || (!first && r.irmaaTier > (prevTier as number))) {
+      const begins = first || prevTier === 0;
+      ms.push({
+        year: r.year,
+        age: r.selfAge,
+        icon: "🏥",
+        title: begins
+          ? `Medicare surcharge (IRMAA) begins — ${r.irmaaLabel}`
+          : `Medicare surcharge rises — ${r.irmaaLabel}`,
+        detail: `Income in ${r.year - 2} sets this year's Medicare premium: about ${money(
+          r.irmaa,
+        )}/yr extra for the household. Keeping ${r.year - 2}'s income (withdrawals + conversions) under the tier line is what avoids this.`,
+        tone: "warn",
+      });
+    } else if (!first && r.irmaaTier === 0 && (prevTier as number) > 0) {
+      ms.push({
+        year: r.year,
+        age: r.selfAge,
+        icon: "🏥",
+        title: "Medicare surcharge ends — back to the standard premium",
+        detail: `Lower income in ${r.year - 2} drops the household back to the standard Medicare premium — the surcharge was temporary, not permanent.`,
+        tone: "good",
+      });
+    }
+    prevTier = r.irmaaTier;
+  }
+
+  // Bracket step-ups.
   let prevMarginal = -1;
   for (const r of proj.rows) {
     if (prevMarginal >= 0 && r.marginalRate > prevMarginal) {
