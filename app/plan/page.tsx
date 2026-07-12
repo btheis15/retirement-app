@@ -73,6 +73,9 @@ export default function PlanPage() {
         bracketTarget: settings.bracketTarget,
         year,
         filingStatus,
+        // A new retiree's ACTUAL premium this year comes from their old working
+        // income (2-year lookback) — use it when they've told us.
+        irmaaMagi: household.priorMagi?.twoYearsAgo || undefined,
         dividendMode: settings.dividendMode,
       }),
     [household, settings, year, filingStatus],

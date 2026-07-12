@@ -304,6 +304,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         bracketTarget: settings.bracketTarget,
         year,
         filingStatus,
+        irmaaMagi: household.priorMagi?.twoYearsAgo || undefined,
         dividendMode: settings.dividendMode,
         conversion: settings.useConversions
           ? settings.convertMode === "recommended"
@@ -319,7 +320,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   // vs. the part the rollover tops off. (Gross conversion can't be subtracted from
   // taxable income directly — the standard deduction sits between them.)
   const planNoConv = useMemo(
-    () => planYear(household, { strategy: settings.strategy, bracketTarget: settings.bracketTarget, year, filingStatus, dividendMode: settings.dividendMode, conversion: null }),
+    () => planYear(household, { strategy: settings.strategy, bracketTarget: settings.bracketTarget, year, filingStatus, irmaaMagi: household.priorMagi?.twoYearsAgo || undefined, dividendMode: settings.dividendMode, conversion: null }),
     [household, settings.strategy, settings.bracketTarget, year, filingStatus, settings.dividendMode],
   );
   // The worst future RMD-era marginal rate, computed independently of whether the
@@ -345,6 +346,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             bracketTarget: settings.bracketTarget,
             year,
             filingStatus,
+            irmaaMagi: household.priorMagi?.twoYearsAgo || undefined,
             dividendMode: settings.dividendMode,
             conversion:
               settings.convertMode === "fillBracket"
@@ -1349,6 +1351,35 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 </div>
               </div>
             )}
+            {/* Optional: real income from the two pre-retirement years. Medicare's
+                2-year lookback means those years — not this plan — set the first
+                two premium years; without them the model guesses from THIS year's
+                (usually much lower) income. Collapsed: it's a refinement, not a gate. */}
+            <Collapsible title="Just retired? Set your first Medicare premiums straight (optional)">
+              <p className="text-[13px] leading-relaxed text-foreground/65">
+                Medicare sets each year&apos;s premium from your income <strong>two years earlier</strong> — so your{" "}
+                {year} and {year + 1} premiums come from your {year - 2} and {year - 1} tax returns (often working
+                years, with higher income). Enter the rough <strong>AGI</strong> from those returns and the plan&apos;s
+                first two years show your real premiums. If they&apos;re high, remember{" "}
+                <strong>Form SSA-44</strong> (&ldquo;work stoppage&rdquo;) can get them re-figured on your new income.
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-3">
+                <IncomeField
+                  label={`Income in ${year - 2} (AGI)`}
+                  hint={`Sets your ${year} premium.`}
+                  value={Math.round(household.priorMagi?.twoYearsAgo || 0)}
+                  onCommit={(v) => updateHousehold({ priorMagi: { ...household.priorMagi, twoYearsAgo: v } })}
+                  readOnly={isDemoIncome}
+                />
+                <IncomeField
+                  label={`Income in ${year - 1} (AGI)`}
+                  hint={`Sets your ${year + 1} premium.`}
+                  value={Math.round(household.priorMagi?.lastYear || 0)}
+                  onCommit={(v) => updateHousehold({ priorMagi: { ...household.priorMagi, lastYear: v } })}
+                  readOnly={isDemoIncome}
+                />
+              </div>
+            </Collapsible>
           </div>
           <DesktopOnly>
             <div className="mt-4 rounded-2xl border border-border bg-background/50 p-3 text-[12px] leading-relaxed text-foreground/60">

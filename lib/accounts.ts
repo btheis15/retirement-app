@@ -131,6 +131,12 @@ export interface Household {
   taxExemptInterestAnnual?: number;
   /** State of residence for state income tax (defaults to Illinois). */
   state?: StateCode;
+  /** Rough MAGI from the two years BEFORE the plan starts (usually working-year
+   *  income — the AGI line on those returns is close enough). Medicare's IRMAA
+   *  looks back two years, so these set the plan's first two premium years: a
+   *  brand-new retiree's actual first bill comes from their old paycheck, not
+   *  their retirement income. Optional — unset falls back to same-year MAGI. */
+  priorMagi?: { twoYearsAgo?: number; lastYear?: number };
   /** Calendar year the household plans to start retirement. Captured up front so
    *  the plan can be framed around it; the projection currently still begins at the
    *  present year (see lib/projection.ts), so this is an informational input for now. */
