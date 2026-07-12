@@ -133,11 +133,11 @@ export function marketNotices(pulse: MarketPulse, ctx: NoticeContext): MarketNot
     out.push({
       icon: "🔁",
       tone: "good",
-      title: `Markets are ~${ddPct}% below their recent high — a good moment for your Roth rollover`,
+      title: `Markets are ~${ddPct}% below their recent high — a good moment for your Roth conversion`,
       body:
         `Your conversion amount and its tax bill don't change, but the same dollars move MORE shares while prices are ` +
         `marked down — and when those shares recover, the growth happens inside the Roth, tax-free, with no future RMDs. ` +
-        `(No one can time the bottom — markets can fall further — but a down market makes the rollover you already ` +
+        `(No one can time the bottom — markets can fall further — but a down market makes the conversion you already ` +
         `planned more valuable, not less.)`,
     });
   }

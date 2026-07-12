@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useStore } from "@/components/HouseholdProvider";
 
 // Single source of truth for routes + labels + icons.
 const TABS = [
@@ -15,7 +16,12 @@ const TABS = [
 
 export function TabBar() {
   const pathname = usePathname();
+  const { ready, household } = useStore();
   const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
+  // Same single-vs-joint convention as app/plan/page.tsx: a sentinel spouse
+  // (missing, or birthYear <= 1900) means a genuinely single household.
+  const isSingle = !household.spouse || household.spouse.birthYear <= 1900;
+  const filingLabel = !ready ? "2026 rules" : isSingle ? "Filing single · 2026 rules" : "Filing jointly · 2026 rules";
   return (
     <>
       {/* Phone / tablet: frosted bottom tab bar (iOS-style: heavy blur + saturation,
@@ -54,7 +60,7 @@ export function TabBar() {
       {/* Desktop (MacBook): left sidebar — roomier, always visible */}
       <nav className="fixed inset-y-0 left-0 z-40 hidden w-56 flex-col border-r border-border/70 bg-card/80 px-3 py-5 backdrop-blur-xl backdrop-saturate-150 lg:flex">
         <div className="px-2 pb-1 text-[15px] font-bold leading-tight text-primary">Retirement Tax Optimizer</div>
-        <div className="mb-4 px-2 text-[11px] text-foreground/45">Filing jointly · 2026 rules</div>
+        <div className="mb-4 px-2 text-[11px] text-foreground/45">{filingLabel}</div>
         <ul className="flex flex-col gap-1">
           {TABS.map((tab) => {
             const active = isActive(tab.href);

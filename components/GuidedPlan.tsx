@@ -54,7 +54,7 @@ const CHAPTERS: { id: ChapterId; label: string; icon: string; blurb: string }[] 
   { id: "income", label: "Income", icon: "🏦", blurb: "Money coming in — Social Security, and any pension." },
   { id: "goal", label: "Your goal", icon: "🎯", blurb: "What you want this money to do. We build the whole plan around it." },
   { id: "spending", label: "Spending", icon: "💵", blurb: "How much you want to spend, and how it changes over the years." },
-  { id: "markets", label: "Markets & taxes", icon: "📈", blurb: "The assumptions behind the forecast, and your Roth rollover." },
+  { id: "markets", label: "Markets & taxes", icon: "📈", blurb: "The assumptions behind the forecast, and your Roth conversion." },
   { id: "review", label: "Review", icon: "✅", blurb: "Your plan at a glance — and how solid it looks." },
 ];
 
@@ -1873,7 +1873,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           </div>
           {pretaxShare > 0.2 && (
             <p className="mt-1.5 text-[11px] leading-snug text-foreground/45">
-              This is from your <strong>spending alone</strong>. Your Roth rollover is the <strong>next step</strong> — it adds
+              This is from your <strong>spending alone</strong>. Your Roth conversion is the <strong>next step</strong> — it adds
               taxable income on top of this, which is what can push your Medicare (IRMAA) tier up.
             </p>
           )}
@@ -2077,8 +2077,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   {irmaaPinned ? (
                     <>
                       {" "}
-                      Dialing spending up or down won&apos;t clear this — your tier is set by your Roth rollover and fixed
-                      income (dividends, RMDs), not your spending. Adjust the rollover (next step) to change it.
+                      Dialing spending up or down won&apos;t clear this — your tier is set by your Roth conversion and fixed
+                      income (dividends, RMDs), not your spending. Adjust the conversion (next step) to change it.
                     </>
                   ) : (
                     irmaaCliff.overBy > 0 && irmaaCliff.overBy < 15_000 && irmaaCliff.dropSaving > 0 && (
@@ -2183,7 +2183,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     steps.push({
       key: "rollconfirm",
       chapter: "markets",
-      eyebrow: "confirm your rollover",
+      eyebrow: "confirm your conversion",
       render: () => {
         const on = settings.useConversions;
         const tiers = FILING_CONSTANTS[plan.filingStatus].irmaaTiers;
@@ -2199,7 +2199,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           medicareEnrollees === 0 ? "—" : c?.inSurcharge ? `+${moneyCompact(c.curSurcharge)}/yr` : "none";
         return (
           <div>
-            <h2 className="text-xl font-bold leading-snug">Confirm your Roth rollover</h2>
+            <h2 className="text-xl font-bold leading-snug">Confirm your Roth conversion (sometimes called a rollover)</h2>
             <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
               Separate from your spending, your plan can move some pre-tax money into a Roth this year — taxed at a low,
               controlled rate now — to shrink the big forced withdrawals (RMDs) that would be taxed harder later. Here&apos;s
@@ -2226,12 +2226,12 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   const avgPerYear = Math.round(total / Math.max(1, convRows.length));
                   return (
                     <>
-                      <Callout tone="info" icon="📅" title={`Start rolling over in ${fc.year} — at age ${fc.selfAge}`}>
+                      <Callout tone="info" icon="📅" title={`Start converting in ${fc.year} — at age ${fc.selfAge}`}>
                         Not this year. Your plan converts only in years when moving the money costs less than letting it
                         come out later as a forced withdrawal (RMD) — and <strong>{fc.year}</strong>
                         {yearsAway > 0 ? <>, about {yearsAway} {yearsAway === 1 ? "year" : "years"} out,</> : null}{" "}is the
                         first year that&apos;s true for you. Converting sooner would push your next dollars into a higher
-                        rate (counting how a rollover adds to your taxable Social Security and Medicare premiums), so the
+                        rate (counting how a conversion adds to your taxable Social Security and Medicare premiums), so the
                         plan waits for the room to open.
                       </Callout>
 
@@ -2241,7 +2241,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                         </div>
                         <ul className="mt-2 space-y-1.5 text-foreground/75">
                           <li>
-                            📅 First rollover in <strong>{fc.year}</strong> (age {fc.selfAge}), then about{" "}
+                            📅 First conversion in <strong>{fc.year}</strong> (age {fc.selfAge}), then about{" "}
                             <strong>{convRows.length} {convRows.length === 1 ? "year" : "years"}</strong> of conversions —
                             roughly <strong>{moneyCompact(avgPerYear)}/yr</strong>, <strong>{moneyCompact(total)}</strong>{" "}
                             moved into tax-free Roth in all.
@@ -2265,7 +2265,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 }
 
                 return (
-                  <Callout tone="info" icon="✓" title="No rollover pays off — this year or later">
+                  <Callout tone="info" icon="✓" title="No conversion pays off — this year or later">
                     The plan checked every year through age <strong>{settings.convertUntilAge}</strong> and found none where
                     converting clearly wins: your taxable income never drops far enough below the{" "}
                     <strong>{percent(peakRate, 0)}</strong> your future RMDs are taxed at to make paying the tax early worth
@@ -2300,7 +2300,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     <span className="tabular text-right text-foreground/70">{irmaaCell(before)}</span>
                   </div>
                   <div className="grid grid-cols-[1fr_6.5rem_5.5rem] items-center gap-x-3 bg-gain/[0.05] px-3 py-2">
-                    <span className="font-medium text-gain">+ Roth rollover</span>
+                    <span className="font-medium text-gain">+ Roth conversion</span>
                     <span className="tabular text-right text-gain">
                       +{money(Math.round(addlMagi))}
                       <span className="block text-[10px] font-normal text-foreground/45">≈{moneyCompact(rollTax)} income tax</span>
@@ -2331,13 +2331,13 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
                 {medicareEnrollees > 0 && irmaaJump > 1 && (
                   <p className="mt-2 rounded-xl border border-tax/30 bg-tax/[0.06] px-3 py-2 text-[12px] leading-relaxed text-foreground/80">
-                    🏥 <strong>Only in the years you convert.</strong> Adding this {money(rollAmt)} rollover on top of your
+                    🏥 <strong>Only in the years you convert.</strong> Adding this {money(rollAmt)} conversion on top of your
                     income lifts your taxable income (MAGI) this year from{" "}
                     <strong>{money(Math.round(planNoConv.tax.magi))}</strong>{" "}to{" "}
                     <strong>{money(Math.round(planWithRoll.tax.magi))}</strong> — high enough to reach Medicare&apos;s{" "}
                     <strong>{tierName(after?.curLabel ?? "")}</strong> surcharge band, about <strong>+{money(irmaaJump)}/yr</strong>{" "}
                     {medicareEnrollees > 1 ? "for both of you combined" : "for the one of you on Medicare"} (billed two years
-                    out). You&apos;re <strong>not</strong> in that tier today — without the rollover you&apos;d owe no surcharge
+                    out). You&apos;re <strong>not</strong> in that tier today — without the conversion you&apos;d owe no surcharge
                     (the top row) — and you&apos;d pay it only in years you actually convert. The next step shows the full
                     bracket math.
                   </p>
@@ -2358,10 +2358,10 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                       (RMD) climbs to about <strong>{moneyCompact(peakBomb)}</strong>{" "}in a single year, taxed up at{" "}
                       <strong>{percent(bombRate, 0)}</strong>{" "}— a tax bomb you don&apos;t get to time.
                       {worthIt ? (
-                        <> Rolling over now heads that off: it&apos;s projected to leave your family about{" "}
+                        <> Converting now heads that off: it&apos;s projected to leave your family about{" "}
                         <strong>{moneyCompact(gainReal)}</strong>{" "}more (in today&apos;s dollars) after every tax is paid</>
                       ) : (
-                        <> Rolling over now shrinks that forced withdrawal and the tax on it</>
+                        <> Converting now shrinks that forced withdrawal and the tax on it</>
                       )}
                       {medicareEnrollees > 0 && noneIrmaa > smoothIrmaa + 100 ? (
                         <>, and holds your lifetime Medicare surcharges near <strong>{moneyCompact(smoothIrmaa)}</strong>{" "}instead
@@ -2381,10 +2381,10 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     the Roth). Only shown when today's market is meaningfully down. */}
                 {marketPulse && marketPulse.drawdownPct <= -0.08 && (
                   <Callout tone="good" icon="📉" title={`Markets are ~${Math.round(Math.abs(marketPulse.drawdownPct) * 100)}% below their recent high — that helps this move`} className="mt-3">
-                    The dollar amount and its tax don&apos;t change, but the same rollover moves <strong>more shares</strong>{" "}
+                    The dollar amount and its tax don&apos;t change, but the same conversion moves <strong>more shares</strong>{" "}
                     while prices are marked down — and their recovery then happens inside the Roth, tax-free, with no
                     future RMDs. (Markets can always fall further — this isn&apos;t timing advice, just why a down market
-                    makes the rollover you already planned more attractive, not less.)
+                    makes the conversion you already planned more attractive, not less.)
                   </Callout>
                 )}
 
@@ -2397,7 +2397,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                       onClick={() => updateSettings({ useConversions: true, planCustomized: true })}
                       className={`press flex-1 rounded-xl border px-3 py-2 text-[13px] font-semibold ${on ? "border-primary bg-primary text-white" : "border-border text-foreground/70"}`}
                     >
-                      ✓ Yes, do the rollover
+                      ✓ Yes, do the conversion
                     </button>
                     <button
                       onClick={() => updateSettings({ useConversions: false, planCustomized: true })}
@@ -2408,7 +2408,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   </div>
                   <p className="mt-1.5 text-[11px] leading-snug text-foreground/45">
                     {on ? (
-                      <>Applied. Everything after this — your tax, your future RMDs, and what your family keeps — reflects this rollover.</>
+                      <>Applied. Everything after this — your tax, your future RMDs, and what your family keeps — reflects this conversion.</>
                     ) : (
                       <>
                         Skipped. Your taxable income stays at {money(Math.round(planNoConv.tax.magi))} and your Medicare stays{" "}
@@ -2462,6 +2462,12 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   </p>
                 </div>
               </div>
+            </Info>
+
+            <Info q="Is there a waiting period on converted money?">
+              Each conversion starts a 5-year clock before that converted amount can be withdrawn penalty-free if
+              you&apos;re under 59½. After 59½ the clock only matters for earnings in a brand-new Roth. It never blocks
+              you from converting.
             </Info>
           </div>
         );
@@ -2810,11 +2816,11 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     steps.push({
       key: "roll",
       chapter: "review",
-      eyebrow: "the rollover, in detail",
+      eyebrow: "the conversion, in detail",
       render: () => {
         const rows = [
           { name: "Do nothing extra", p: compare.none, hint: "RMDs arrive in big, high-bracket chunks" },
-          { name: "Smooth (recommended)", p: compare.smooth, hint: "small rollovers, stay in low brackets", best: true },
+          { name: "Smooth (recommended)", p: compare.smooth, hint: "small conversions, stay in low brackets", best: true },
           { name: "Convert aggressively", p: compare.aggressive, hint: "fill the 32% bracket every year" },
         ];
         const mostKept = Math.max(...rows.map((r) => r.p.endingEstateAfterTax));
@@ -2898,7 +2904,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           <DesktopOnly
             mobileNote={
               <div>
-                <h2 className="text-xl font-bold leading-snug">Your rollover, in detail</h2>
+                <h2 className="text-xl font-bold leading-snug">Your conversion, in detail</h2>
                 <p className="mt-2 text-[13px] leading-relaxed text-foreground/65">
                   {gainVsNothing > 1_000 ? (
                     <>
@@ -2908,7 +2914,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     </>
                   ) : (
                     <>
-                      For your numbers, rollovers don&apos;t meaningfully change what you keep — so the plan doesn&apos;t
+                      For your numbers, conversions don&apos;t meaningfully change what you keep — so the plan doesn&apos;t
                       lean on them. Nothing to do here.
                     </>
                   )}{" "}
@@ -2918,7 +2924,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             }
           >
           <div>
-            <h2 className="text-xl font-bold leading-snug">Your rollover, in detail</h2>
+            <h2 className="text-xl font-bold leading-snug">Your conversion, in detail</h2>
             <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
               RMDs aren&apos;t the enemy — a steady withdrawal is fine. The trap is one <strong>big</strong>{" "}forced
               withdrawal that lands in a high bracket. The fix: move a little to Roth each year, only up to the top of a
@@ -3024,12 +3030,12 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             {/* No decision here — the rollover is chosen ONCE, on the "Confirm your
                 rollover" step. This step is just the detailed comparison behind it. */}
             <p className="mt-4 rounded-xl border border-border bg-background/40 px-3 py-2 text-[12px] text-foreground/60">
-              You decide whether to do this back on the <strong>&ldquo;Confirm your rollover&rdquo;</strong> step — this is
+              You decide whether to do this back on the <strong>&ldquo;Confirm your Roth conversion&rdquo;</strong> step — this is
               just the detailed comparison behind that choice.
             </p>
             {isIL && (
               <p className="mt-2 rounded-xl bg-gain/10 px-3 py-2 text-[12px] text-gain">
-                🟢 In Illinois the rollover itself is <strong>state-tax-free</strong> — you only owe federal tax to do it.
+                🟢 In Illinois the conversion itself is <strong>state-tax-free</strong> — you only owe federal tax to do it.
               </p>
             )}
           </div>
@@ -3124,7 +3130,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               recap.push({ label: "Dividends", value: settings.dividendMode === "spend" ? "spent as income" : "reinvested", key: "dividends" });
             if (pretaxShare > 0.2)
               recap.push({
-                label: "Roth rollover",
+                label: "Roth conversion",
                 value: settings.useConversions ? (proj.totalConverted > 1 ? "on" : "on — none needed") : "skipped",
                 key: "rollconfirm",
               });
@@ -3168,14 +3174,14 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </Collapsible>
 
             {pretaxShare > 0.2 && (
-              <Collapsible title="Your Roth rollover, compared">
+              <Collapsible title="Your Roth conversion, compared">
                 <p className="text-[13px] leading-relaxed text-foreground/70">
                   Smoothing small amounts to Roth each year is projected to leave your family about{" "}
                   <strong>{moneyCompact(Math.max(0, compare.smooth.endingEstateAfterTax - compare.none.endingEstateAfterTax))}</strong>{" "}
                   more than doing nothing, and keeps your biggest forced withdrawal (RMD) down near{" "}
                   <strong>{moneyCompact(compare.smooth.peakRmd)}</strong> instead of{" "}
                   <strong>{moneyCompact(compare.none.peakRmd)}</strong>. The full three-way comparison is on the
-                  &ldquo;Your rollover, in detail&rdquo; step.
+                  &ldquo;Your conversion, in detail&rdquo; step.
                 </p>
               </Collapsible>
             )}
@@ -3184,7 +3190,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               <p className="text-[13px] leading-relaxed text-foreground/70">
                 Once your income crosses certain lines, Medicare adds a surcharge on top of the standard premium — billed
                 per person, and set by your income from two years earlier. It&apos;s a step, not a slope: cross a line and the
-                whole next surcharge kicks in. That&apos;s why the plan watches those lines when sizing your withdrawals and rollover.
+                whole next surcharge kicks in. That&apos;s why the plan watches those lines when sizing your withdrawals and conversion.
               </p>
             </Collapsible>
 
@@ -3513,12 +3519,12 @@ function CashFlowBar({
           shown in full on the steps that explain them, so they're not repeated here. */}
       <div className="flex flex-wrap gap-x-5 gap-y-1.5">
         <CFItem icon="💵" label="Personal spending" value={spending} tone="text-foreground" />
-        {conversion > 0.5 && <CFItem icon="🔄" label="Roth rollover" value={conversion} tone="text-roth" />}
+        {conversion > 0.5 && <CFItem icon="🔄" label="Roth conversion" value={conversion} tone="text-roth" />}
       </div>
       <div className="mt-1.5 border-t border-border/50 pt-1 text-[10.5px] leading-snug text-foreground/45">
         Funded by {money(guaranteed)} of guaranteed income
         {fromSavings > 0.5 ? <> + {money(fromSavings)} pulled from your accounts</> : <> — no withdrawals needed</>}.
-        {conversion > 0.5 && " The rollover moves to Roth (not spent); its tax is best paid from cash."}
+        {conversion > 0.5 && " The conversion moves to Roth (not spent); its tax is best paid from cash."}
       </div>
     </div>
   );
@@ -3860,13 +3866,13 @@ function BracketLadder({
       {hasIncome && (
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 px-2 text-[9px] text-foreground/45">
           <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-sm bg-ss/70" /> from spending &amp; other income</span>
-          {hasRollover && <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-sm bg-gain" /> from the Roth rollover</span>}
+          {hasRollover && <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-sm bg-gain" /> from the Roth conversion</span>}
         </div>
       )}
       {hasIncome && hasRollover && fillBracket && (
         <p className="mt-2 rounded-lg bg-gain/[0.06] px-2 py-1.5 text-[11px] leading-relaxed text-foreground/75">
           💡 Your spending &amp; other income add about <strong>{money(baseOrdinary)}</strong> of ordinary taxable income
-          {baseOrdinary > fillBracket.from + 0.5 ? <> — partway up your <strong className="text-gain">{Math.round(fillRate * 100)}%</strong> bracket</> : <>, so your low brackets start nearly empty</>}. The rollover then moves{" "}
+          {baseOrdinary > fillBracket.from + 0.5 ? <> — partway up your <strong className="text-gain">{Math.round(fillRate * 100)}%</strong> bracket</> : <>, so your low brackets start nearly empty</>}. The conversion then moves{" "}
           <strong>{money(conversion)}</strong> to Roth; after your standard deduction that&apos;s about{" "}
           <strong>{money(Math.max(0, ordinaryIncome - baseOrdinary))}</strong> of taxable income — just enough to fill your{" "}
           <strong className="text-gain">{Math.round(fillRate * 100)}%</strong> bracket to about its <strong>{fmt(fillTop)}</strong>{" "}
@@ -3891,7 +3897,7 @@ function BracketLadder({
         </p>
       )}
       <p className="mt-2 text-[11px] leading-relaxed text-foreground/50">
-        Each rollover fills only up to the top of your{" "}
+        Each conversion fills only up to the top of your{" "}
         <span className="font-semibold text-gain">{Math.round(fillRate * 100)}%</span> bracket
         {showFuture ? (
           <>
