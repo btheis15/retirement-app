@@ -13,6 +13,7 @@
 import { Household } from "./accounts";
 import { ProjectionResult, ProjectionRow } from "./projection";
 import { rmdStartAge } from "./tax/constants";
+import { computeRmd } from "./optimizer";
 import { money } from "./format";
 
 export interface PlanAction {
@@ -48,12 +49,34 @@ function eventsForYear(household: Household, row: ProjectionRow): string[] {
   return events;
 }
 
-function actionsForRow(row: ProjectionRow): PlanAction[] {
+function actionsForRow(household: Household, row: ProjectionRow, isCurrentYear: boolean): PlanAction[] {
   const actions: PlanAction[] = [];
   const voluntaryPretax = Math.max(0, row.fromPretax - row.rmd);
 
   if (row.rmd > 0.5) {
-    actions.push({ kind: "rmd", amount: row.rmd, text: `Take your required RMD of ${money(row.rmd)} from pre-tax` });
+    // For THIS year the live balances give the exact per-person split — and each
+    // person's RMD must legally come out of their OWN pre-tax accounts, so a
+    // couple needs the two numbers, not the household total. Future years keep
+    // the pooled figure (the projection doesn't track per-owner balances), and
+    // the split is only shown when it ties out to the row's total.
+    const details = isCurrentYear ? computeRmd(household, row.year).details.filter((d) => d.amount > 0.5) : [];
+    const tiesOut = Math.abs(details.reduce((s, d) => s + d.amount, 0) - row.rmd) < 1;
+    if (details.length > 1 && tiesOut) {
+      for (const d of details) {
+        const name = household[d.owner].label || (d.owner === "self" ? "You" : "Spouse");
+        actions.push({
+          kind: "rmd",
+          amount: d.amount,
+          text: `Take ${name}'s required RMD of ${money(d.amount)} — from ${name === "You" ? "your" : "their"} own pre-tax accounts, by Dec 31`,
+        });
+      }
+    } else {
+      actions.push({
+        kind: "rmd",
+        amount: row.rmd,
+        text: `Take your required RMD of ${money(row.rmd)} from pre-tax${isCurrentYear ? " (by Dec 31)" : ""}`,
+      });
+    }
   }
   if (voluntaryPretax > 0.5) {
     actions.push({
@@ -87,14 +110,14 @@ function actionsForRow(row: ProjectionRow): PlanAction[] {
  * Build the next `years` years of the action plan from a projection.
  */
 export function buildActionPlan(household: Household, proj: ProjectionResult, years = 6): PlanYear[] {
-  return proj.rows.slice(0, years).map((row) => {
+  return proj.rows.slice(0, years).map((row, i) => {
     const withdrawals = row.fromPretax + row.fromTaxable + row.fromRoth;
     return {
       year: row.year,
       selfAge: row.selfAge,
       spouseAge: row.spouseAge,
       events: eventsForYear(household, row),
-      actions: actionsForRow(row),
+      actions: actionsForRow(household, row, i === 0),
       tax: row.tax,
       spendingTarget: row.spendingTarget,
       coveredByIncome: withdrawals < 0.5 && row.conversion < 0.5,
