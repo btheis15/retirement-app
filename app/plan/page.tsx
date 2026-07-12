@@ -51,9 +51,16 @@ const STRATEGY_SHORT: Record<StrategyId, string> = {
 };
 
 export default function PlanPage() {
-  const { ready, household, settings, updateSettings } = useStore();
+  const { ready, mode, household, settings, updateSettings, meta, markReviewed, markBalancesCurrent } = useStore();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const year = useMemo(() => new Date().getFullYear(), []);
+  // "The plan ages": the calendar rolled past the last confirmation, or manually
+  // entered balances (accounts without ticker holdings) haven't been touched in
+  // 6+ months. Ticker holdings reprice automatically and don't go stale.
+  const planIsFromLastYear = meta.touchedAt != null && new Date(meta.touchedAt).getFullYear() < year;
+  const hasManualBalances = household.accounts.some((a) => !a.holdings || a.holdings.length === 0);
+  const balancesAreStale =
+    hasManualBalances && meta.balancesAt != null && Date.now() - meta.balancesAt > 183 * 24 * 3600 * 1000;
 
   // A genuinely single household (sentinel spouse, birthYear ≤ 1900) must be taxed
   // on the SINGLE curve — defaulting to mfj would count the sentinel as a 65+
@@ -248,6 +255,33 @@ export default function PlanPage() {
   return (
     <div>
       <PageTitle title={`Your ${year} plan`} subtitle="What to do this year, and the tax math behind it. (New to this? The Start tab walks you through it.)" />
+
+      {/* ---------- The plan ages: nudge when the calendar rolled or balances
+           went stale. One banner at a time; new-tax-year wins (it has a real
+           deadline behind it — new constants, a re-sized conversion). ---------- */}
+      {mode === "own" && planIsFromLastYear && (
+        <Callout tone="info" icon="🗓️" title={`New tax year — re-check your ${year} plan`} className="mt-3">
+          The numbers on this page already use {year} rules, but your decisions (spending, this year&apos;s conversion,
+          claim ages) were last confirmed in {new Date(meta.touchedAt!).getFullYear()}. Two minutes in the{" "}
+          <Link href="/" className="font-semibold underline">walkthrough</Link>{" "}re-confirms them against the new
+          brackets, this year&apos;s RMD, and a freshly sized conversion.{" "}
+          <button className="font-semibold text-primary underline" onClick={markReviewed}>
+            I&apos;ve re-checked it
+          </button>
+        </Callout>
+      )}
+      {mode === "own" && !planIsFromLastYear && balancesAreStale && (
+        <Callout tone="info" icon="🔄" title="Your balances may be out of date" className="mt-3">
+          Account balances were last updated{" "}
+          {new Date(meta.balancesAt!).toLocaleDateString(undefined, { month: "long", year: "numeric" })}. Holdings with
+          tickers reprice automatically, but manually-entered balances don&apos;t move — markets did.{" "}
+          <Link href="/accounts" className="font-semibold underline">Refresh them</Link> so this plan matches reality, or{" "}
+          <button className="font-semibold text-primary underline" onClick={markBalancesCurrent}>
+            confirm they&apos;re current
+          </button>
+          .
+        </Callout>
+      )}
 
       <div className="mt-1">
       {/* ---------- The spending target (decided once in the walkthrough; every
