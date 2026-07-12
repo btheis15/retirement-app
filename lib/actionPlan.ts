@@ -13,7 +13,6 @@
 import { Household } from "./accounts";
 import { ProjectionResult, ProjectionRow } from "./projection";
 import { rmdStartAge } from "./tax/constants";
-import { computeRmd } from "./optimizer";
 import { money } from "./format";
 
 export interface PlanAction {
@@ -54,20 +53,19 @@ function actionsForRow(household: Household, row: ProjectionRow, isCurrentYear: 
   const voluntaryPretax = Math.max(0, row.fromPretax - row.rmd);
 
   if (row.rmd > 0.5) {
-    // For THIS year the live balances give the exact per-person split — and each
-    // person's RMD must legally come out of their OWN pre-tax accounts, so a
-    // couple needs the two numbers, not the household total. Future years keep
-    // the pooled figure (the projection doesn't track per-owner balances), and
-    // the split is only shown when it ties out to the row's total.
-    const details = isCurrentYear ? computeRmd(household, row.year).details.filter((d) => d.amount > 0.5) : [];
-    const tiesOut = Math.abs(details.reduce((s, d) => s + d.amount, 0) - row.rmd) < 1;
-    if (details.length > 1 && tiesOut) {
+    // Each person's RMD must legally come out of THEIR OWN pre-tax accounts, so
+    // a couple needs the two numbers, not the household total. The projection
+    // tracks per-account balances year by year, so the split is exact for EVERY
+    // year, not just the current one. The Dec 31 stamp stays current-year only
+    // (it's true every year, but it's noise on a 2031 row).
+    const details = row.rmdByOwner;
+    if (details.length > 1) {
       for (const d of details) {
         const name = household[d.owner].label || (d.owner === "self" ? "You" : "Spouse");
         actions.push({
           kind: "rmd",
           amount: d.amount,
-          text: `Take ${name}'s required RMD of ${money(d.amount)} — from ${name === "You" ? "your" : "their"} own pre-tax accounts, by Dec 31`,
+          text: `Take ${name}'s required RMD of ${money(d.amount)} — from ${name === "You" ? "your" : "their"} own pre-tax accounts${isCurrentYear ? ", by Dec 31" : ""}`,
         });
       }
     } else {

@@ -54,6 +54,7 @@ export default function PlanPage() {
   const { ready, mode, household, settings, updateSettings, meta, markReviewed, markBalancesCurrent } = useStore();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const year = useMemo(() => new Date().getFullYear(), []);
+  const taxScopeLabel = (household.state ?? "IL") === "IL" ? "federal + Illinois" : "federal";
   // "The plan ages": the calendar rolled past the last confirmation, or manually
   // entered balances (accounts without ticker holdings) haven't been touched in
   // 6+ months. Ticker holdings reprice automatically and don't go stale.
@@ -273,6 +274,25 @@ export default function PlanPage() {
           </button>
         </Callout>
       )}
+      {/* ---------- Year-end mode: from October, the two deadlines that actually
+           burn retirees (RMD not finished, conversion not executed) get their own
+           banner, plus the re-size reminder — conversions are sized on projected
+           year-end numbers, so December is when to true them up. ---------- */}
+      {mode === "own" && new Date().getMonth() >= 9 && (plan.rmd > 0.5 || thisYearConversion > 0.5) && (
+        <Callout tone="warn" icon="🍂" title={`Year-end check — due December 31`} className="mt-3">
+          {plan.rmd > 0.5 && (
+            <>Your household RMD of <strong>{money(plan.rmd)}</strong> must be fully withdrawn by Dec 31 (a 25% excise
+            tax applies to any shortfall). </>
+          )}
+          {thisYearConversion > 0.5 && (
+            <>The <strong>{money(thisYearConversion)}</strong> Roth conversion also counts only if completed by Dec 31 —
+            and it was sized on projected numbers, so in December re-open the{" "}
+            <AdjustLink step="rollconfirm" label="conversion step" /> to true it up against your actual year-end
+            income before executing. </>
+          )}
+          The pace tracker below shows where you should be by today.
+        </Callout>
+      )}
       {mode === "own" && !planIsFromLastYear && balancesAreStale && (
         <Callout tone="info" icon="🔄" title="Your balances may be out of date" className="mt-3">
           Account balances were last updated{" "}
@@ -348,7 +368,7 @@ export default function PlanPage() {
           <>
             To spend <strong>{money(plan.spendingTarget)}</strong>{" "}after tax this year, withdraw about{" "}
             <strong>{money(totalDraw)}</strong>{" "}total from your accounts (the steps below), and set aside
-            roughly <strong>{money(yearTaxTotal)}</strong>{" "}for tax (federal + Illinois)
+            roughly <strong>{money(yearTaxTotal)}</strong>{" "}for tax ({taxScopeLabel})
             {thisYearConversionTax > 0.5 ? (
               <>
                 {" "}— <strong>{money(thisYearConversionTax)}</strong>{" "}of that is the Roth conversion&apos;s tax,
@@ -499,7 +519,16 @@ export default function PlanPage() {
       {/* ---------- The step-by-step ---------- */}
       <SectionTitle>Do this, in order</SectionTitle>
       <Explainer>We always satisfy required withdrawals first, then pull from the most tax-friendly source next, saving tax-free Roth for last.</Explainer>
-      <Card>
+      <Card className="print-area">
+        <div className="hidden print:block">
+          <div className="text-lg font-bold">
+            Your {year} plan — do this, in order{mode === "demo" ? " (EXAMPLE DATA — not your plan)" : ""}
+          </div>
+          <div className="mb-2 text-[12px] text-foreground/60">
+            Prepared {new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })} ·
+            educational estimates, not tax advice
+          </div>
+        </div>
         {steps.length === 0 ? (
           <p className="text-sm text-foreground/75">
             Nothing to withdraw — your guaranteed income covers your spending. Any surplus can be reinvested
@@ -533,11 +562,17 @@ export default function PlanPage() {
         <div className="mt-4 border-t border-border pt-3 text-[13px] text-foreground/80">
           <strong>Bottom line:</strong>{" "}you keep <strong>{money(plan.spendingTarget)}</strong>{" "}to spend
           after paying about <strong className="text-tax">{money(yearTaxTotal)}</strong>{" "}in tax
-          (federal + Illinois)
+          ({taxScopeLabel})
           {thisYearConversionTax > 0.5 ? <>{" "}({money(thisYearConversionTax)} of it for the Roth conversion)</> : null}
           {thisYearConversionTax > 0.5 ? "." : <>{" "}— that&apos;s {percent(plan.tax.effectiveRate)} of your total income for the year.</>}
         </div>
       </Card>
+      <button
+        onClick={() => window.print()}
+        className="press mt-2 w-full rounded-2xl border border-border bg-card px-4 py-2 text-[13px] font-semibold text-foreground/70 print:hidden"
+      >
+        🖨️ Print this list (or save as PDF)
+      </button>
 
       {/* Why this order — defined right where the steps just used it. */}
       <Info

@@ -84,6 +84,11 @@ export interface ProjectionRow {
    *  Monte-Carlo run deflate this year's balance to today's dollars by ITS OWN
    *  inflation path, not a flat average. */
   inflationFactor: number;
+  /** Per-owner RMD split this year (only owners actually owing; empty when no
+   *  RMD). Populated from live per-account balances inside the projection, so a
+   *  couple's future years split correctly too — each spouse's RMD must come
+   *  from their OWN accounts. */
+  rmdByOwner: { owner: "self" | "spouse"; amount: number }[];
   /** Annual household Medicare IRMAA surcharge triggered by this year's income. */
   irmaa: number;
   /** IRMAA tier index this year (0 = standard premium, −1 = not on Medicare yet).
@@ -616,6 +621,7 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
       selfAge,
       spouseAge,
       rmd: plan.rmd,
+      rmdByOwner: plan.rmdDetails.filter((d) => d.amount > 0.5).map((d) => ({ owner: d.owner, amount: d.amount })),
       fromPretax: plan.withdrawals.pretax,
       fromTaxable: plan.withdrawals.taxable,
       fromRoth: plan.withdrawals.roth,

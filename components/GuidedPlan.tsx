@@ -2842,21 +2842,33 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </div>
           )}
 
-          {/* The tax on this year's SPENDING — folded in here so there's no separate
-              tax page. Uses the spending-only plan (the conversion's tax is its own step). */}
+          {/* The year's FULL tax bill. This step now renders AFTER the conversion
+              is confirmed (the "conversion" chapter ordering), so the headline must
+              be all-in — quoting only the spending tax right after the user okayed
+              a five-figure conversion understates the set-aside. The prose still
+              explains the spending mechanics; the conversion's share is called out
+              as its own line. */}
           {(() => {
             const t = planNoConv.tax;
+            const convOn = settings.useConversions && plan.conversion > 0.5;
+            const shown = convOn ? plan.tax : planNoConv.tax; // all-in when converting
             const fedZero = t.federalTax < 100 && t.taxableIncome > 1000;
             const lowTax = t.taxableIncome < 2000;
             return (
               <div className="mt-5 border-t border-border pt-4">
-                <h3 className="text-base font-bold leading-snug">Set aside about {money(t.totalTax)} for tax</h3>
+                <h3 className="text-base font-bold leading-snug">Set aside about {money(shown.totalTax)} for tax</h3>
+                {convOn && (
+                  <p className="mt-1 text-[13px] leading-relaxed text-foreground/65">
+                    That includes ≈<strong>{money(plan.conversionTax)}</strong> for the Roth conversion you just
+                    confirmed — best paid from cash — and about {money(t.totalTax)} on the spending itself.
+                  </p>
+                )}
                 <DesktopOnly>{lowTax ? (
                   <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
                     Almost none of this year&apos;s <strong>{money(spending)}</strong> is taxable income — you funded it
                     largely from money you&apos;ve already paid tax on (cash, brokerage basis — or gains taxed at the 0%
-                    rate), and your {money(t.deductions)} standard deduction covers the rest. So the bill is only about{" "}
-                    <strong>{money(t.totalTax)}</strong>.
+                    rate), and your {money(t.deductions)} standard deduction covers the rest. So the spending itself
+                    costs only about <strong>{money(t.totalTax)}</strong> in tax.
                   </p>
                 ) : (
                   <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
@@ -2864,18 +2876,18 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     <strong>{money(t.taxableIncome)}</strong> is taxed: the cash you spend is money you already paid tax on
                     (and a brokerage sale is taxed only on its <em>gain</em>), and your {money(t.deductions)} standard
                     deduction shields the first slice of the rest. Your top rate is{" "}
-                    <strong>{percent(t.marginalOrdinaryRate, 0)}</strong>, so the bill is about{" "}
-                    <strong>{money(t.totalTax)}</strong> — roughly {percent(t.effectiveRate)} of your income.
+                    <strong>{percent(t.marginalOrdinaryRate, 0)}</strong>, so the spending itself costs about{" "}
+                    <strong>{money(t.totalTax)}</strong> in tax — roughly {percent(t.effectiveRate)} of your income.
                   </p>
                 )}</DesktopOnly>
                 <div className="mt-2 grid grid-cols-2 gap-2 text-[12px]">
                   <div className="rounded-xl border border-border bg-background/60 p-2 text-center">
                     <div className="text-[10px] uppercase tracking-wide text-foreground/45">Federal</div>
-                    <div className="tabular text-sm font-bold text-tax">{moneyCompact(t.federalTax)}</div>
+                    <div className="tabular text-sm font-bold text-tax">{moneyCompact(shown.federalTax)}</div>
                   </div>
                   <div className="rounded-xl border border-border bg-background/60 p-2 text-center">
                     <div className="text-[10px] uppercase tracking-wide text-foreground/45">{isIL ? "Illinois" : "State"} (4.95%)</div>
-                    <div className="tabular text-sm font-bold text-tax">{moneyCompact(t.stateTax)}</div>
+                    <div className="tabular text-sm font-bold text-tax">{moneyCompact(shown.stateTax)}</div>
                   </div>
                 </div>
                 <DesktopOnly>{fedZero ? (
@@ -3321,7 +3333,9 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           </p>
           <div className="print-area mt-3 space-y-2">
             <div className="hidden print:block">
-              <div className="text-lg font-bold">Retirement plan — {year} action list</div>
+              <div className="text-lg font-bold">
+                Retirement plan — {year} action list{mode === "demo" ? " (EXAMPLE DATA — not your plan)" : ""}
+              </div>
               <div className="text-[12px] text-foreground/60">
                 Prepared {new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })} · educational estimates, not tax advice
               </div>
