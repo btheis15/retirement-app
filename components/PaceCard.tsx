@@ -12,6 +12,7 @@
 
 import { useMemo } from "react";
 import { Card, DesktopOnly, Info } from "@/components/ui";
+import { useStore } from "@/components/HouseholdProvider";
 import { YearPace } from "@/lib/pace";
 import { money, moneyCompact } from "@/lib/format";
 
@@ -24,6 +25,8 @@ const TONE_BAR: Record<string, string> = {
 };
 
 export function PaceCard({ pace, incomeNote }: { pace: YearPace; incomeNote?: string }) {
+  const { household } = useStore();
+  const isIllinois = (household.state ?? "IL") === "IL";
   const pct = Math.round(pace.yearFraction * 100);
   const monthsLeft = 12 - pace.monthsDone;
   const nextDeadlines = useMemo(() => pace.deadlines.slice(0, 3), [pace.deadlines]);
@@ -122,20 +125,27 @@ export function PaceCard({ pace, incomeNote }: { pace: YearPace; incomeNote?: st
         </div>
       )}
 
+      {/* How to actually PAY the tax — the one mechanic a new retiree has never
+          done (no employer withholding anymore). Deliberately NOT DesktopOnly:
+          it changes what the customer does, so it must exist on the phone. */}
       {pace.estTaxQuarterly > 0 && (
-        <DesktopOnly>
+        <>
           <p className="mt-2.5 text-[12px] leading-snug text-foreground/55">
             Taxes: either have your custodian <strong>withhold</strong> from each withdrawal, or pay quarterly estimates
             of about <strong>{money(Math.round(pace.estTaxQuarterly))}</strong> (IRS 1040-ES: Apr 15, Jun 15, Sep 15,
-            Jan 15), and Illinois expects its own quarterly estimates (Form IL-1040-ES) if you&apos;ll owe it more
-            than $1,000.
+            Jan 15){isIllinois ? (
+              <>
+                , and Illinois expects its own quarterly estimates (Form IL-1040-ES) if you&apos;ll owe it more
+                than $1,000
+              </>
+            ) : null}.
           </p>
           <p className="mt-2 text-[12px] leading-snug text-foreground/55">
             No-penalty shortcut: if your withholding + estimates this year total at least 100% of last year&apos;s tax
             bill (110% if your income was over $150k), the IRS charges no underpayment penalty even if you owe more
             in April — especially useful in your first year of retirement or a big conversion year.
           </p>
-        </DesktopOnly>
+        </>
       )}
 
       <Info q="How to read this pace" className="mt-2.5">

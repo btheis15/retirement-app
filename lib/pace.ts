@@ -140,7 +140,7 @@ export function buildYearPace(
   if (plan.conversion > 0.5) {
     push(
       new Date(year, 11, 31),
-      "Roth rollover deadline",
+      "Roth conversion deadline",
       "A conversion counts for the year it happens — complete it by December 31. One transfer or a few chunks both work.",
     );
   }
