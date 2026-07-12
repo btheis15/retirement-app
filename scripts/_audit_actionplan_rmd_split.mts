@@ -7,8 +7,8 @@
  * 25.5 → RMDs 39,215.69 and 15,686.27 (hand math: balance / 25.5).
  *
  * Expect: the CURRENT year's action list shows TWO rmd actions with those
- * amounts ("from their own accounts"); later years fall back to ONE pooled
- * action (the projection doesn't track per-owner balances).
+ * amounts ("from their own accounts"); later years split per person too
+ * (the projection tracks per-account balances) without the Dec-31 stamp.
  */
 import { buildActionPlan } from "../lib/actionPlan.ts";
 import { projectLifetime } from "../lib/projection.ts";
@@ -55,10 +55,13 @@ check("split ties out to the row total", Math.abs(rmdActs.reduce((s, a) => s + a
 check("names + own-accounts wording present", rmdActs.every((a) => /Sam|Pat/.test(a.text) && a.text.includes("own pre-tax accounts")));
 check("deadline in text", rmdActs.every((a) => a.text.includes("Dec 31")));
 
+// Later years: the projection tracks per-account balances, so the split is
+// exact there too (both spouses draw pro-rata → both still owe next year).
 const y1 = plan[1];
 const rmdNext = y1.actions.filter((a) => a.kind === "rmd");
-check("later years: one pooled RMD action", rmdNext.length === 1, `got ${rmdNext.length}`);
-check("later years: no stale Dec-31 stamp", !rmdNext[0]?.text.includes("Dec 31"));
+check("later years: still split per person", rmdNext.length === 2, `got ${rmdNext.length}`);
+check("later years: split ties out to that row's total", Math.abs(rmdNext.reduce((s, a) => s + a.amount, 0) - proj.rows[1].rmd) < 1);
+check("later years: no stale Dec-31 stamp", rmdNext.every((a) => !a.text.includes("Dec 31")));
 
 console.log(fails ? `\n${fails} FAILURE(S)` : "\nAll action-plan RMD-split checks passed");
 if (fails) process.exit(1);

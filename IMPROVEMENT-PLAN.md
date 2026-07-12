@@ -52,13 +52,24 @@ or are in open PRs; line numbers in the body are historical.
   confidence framing (CI behind an Info), Compare reference-spend sentence, 13px floor on
   the four decision-relevant disclosures
 
-**Still open (small, deliberate leftovers):**
-- 4.2 a year-end re-check *mode* (an Oct–Dec prompt: RMD done? conversion re-sized on
-  near-final numbers?) — PaceCard's deadlines + the printable checklist cover most of it
-- P5: broader print/export (the breakdown recap), any remaining sub-13px copy outside the
-  four audited spots
-- Per-owner balances in the lifetime projection (would make FUTURE years' RMD splits
-  per-person too; current-year splits are exact)
+**Final wave (PR #65) — the plan is now fully executed:**
+- 4.2 done: an October–December **year-end banner** on the Plan tab (RMD shortfall = 25%
+  excise tax; conversion counts only by Dec 31 and should be **trued up in December**
+  against actual year-end income — deep-link back to the conversion step)
+- Per-owner RMD splits for **every** projection year (not just the current one):
+  `ProjectionRow.rmdByOwner` exposes the per-person amounts the projection already
+  computed from its per-account balances; the action plan and "next few years" cards
+  use it directly
+- Print for the Plan tab's "Do this, in order" card (same print-area mechanism as the
+  walkthrough checklist); printed output is watermarked "EXAMPLE DATA" in demo mode
+- The `fund` step's "Set aside about $X for tax" is **all-in** again — the #58 chapter
+  reorder had moved it after the conversion confirmation, silently reintroducing the
+  spending-only understatement this plan's very first item fixed; caught and corrected
+  with the conversion's share called out as its own line
+- "(federal + Illinois)" copy on the Plan tab is now state-aware
+
+**Nothing from the original audit remains open.** Future work is new scope (e.g. modeling
+a future retirement year, more states than Illinois), not unfinished findings.
 
 **What's already strong (keep, don't touch):** gross-up math is correct — the recommended
 withdrawal is gross of tax, so a customer following it won't come up short
