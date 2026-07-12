@@ -165,11 +165,26 @@ export default function PlanPage() {
   // ---- Plain-English step list: exactly what to do, in order. ----
   const steps: { label: string; amount: number; detail: string; tone: "deferred" | "taxable" | "roth" | "tax" }[] = [];
   if (plan.rmd > 0.5) {
+    // Each person's RMD must legally come out of THEIR OWN pre-tax accounts —
+    // a combined household number is actionable in the wrong way for a couple.
+    const owed = plan.rmdDetails.filter((d) => d.amount > 0.5);
+    const perPerson =
+      owed.length > 1
+        ? owed
+            .map((d) => `${household[d.owner].label || (d.owner === "self" ? "You" : "Spouse")} ${money(d.amount)}`)
+            .join(" · ")
+        : "";
+    const firstTimer = owed.find((d) => d.age === d.startAge);
     steps.push({
       label: "Take your required withdrawal (RMD)",
       amount: plan.rmd,
       detail:
-        "The IRS forces this much out of your pre-tax accounts this year. It's taxed as ordinary income, so it always comes out first.",
+        `The IRS forces this much out of your pre-tax accounts this year — complete it by December 31. ` +
+        (perPerson ? `Each of you takes yours from your OWN accounts: ${perPerson}. ` : "") +
+        (firstTimer
+          ? `First RMD year${owed.length > 1 ? ` for ${household[firstTimer.owner].label || "one of you"}` : ""}: the IRS allows deferring it to April 1 of next year, but that stacks two RMDs into one tax year — usually a worse deal. `
+          : "") +
+        `It's taxed as ordinary income, so it always comes out first.`,
       tone: "deferred",
     });
   }

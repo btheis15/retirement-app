@@ -2502,7 +2502,21 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       // Where that savings draw comes from: required first, then the order that keeps
       // the most after lifetime tax. (Same money as "From savings" above — this is its breakdown.)
       const items: { label: string; amount: number; why: string }[] = [];
-      if (rmd > 0.5) items.push({ label: "Take your required withdrawal (RMD)", amount: rmd, why: "The IRS forces this out of pre-tax accounts first; it's taxed as ordinary income." });
+      if (rmd > 0.5) {
+        // A couple's RMDs are per person, from each person's OWN accounts — say so.
+        const owed = plan.rmdDetails.filter((d) => d.amount > 0.5);
+        const split =
+          owed.length > 1
+            ? ` ${owed
+                .map((d) => `${household[d.owner].label || (d.owner === "self" ? "You" : "Spouse")} ${money(d.amount)}`)
+                .join(" · ")} — each from your own accounts, by Dec 31.`
+            : " Complete it by December 31.";
+        items.push({
+          label: "Take your required withdrawal (RMD)",
+          amount: rmd,
+          why: `The IRS forces this out of pre-tax accounts first; it's taxed as ordinary income.${split}`,
+        });
+      }
       if (voluntaryPretax > 0.5) items.push({ label: "Withdraw from pre-tax (IRA/401k)", amount: voluntaryPretax, why: "Taxed as ordinary income — but done now, in a low bracket, so less is forced out at higher rates later." });
       if (w.taxable > 0.5) items.push({ label: "Spend from taxable accounts (cash first, then brokerage)", amount: w.taxable, why: "Cash is spent first (no tax); then brokerage, where only the gain is taxed at the lower capital-gains rate." });
       if (w.roth > 0.5) items.push({ label: "Tap your Roth (tax-free)", amount: w.roth, why: "Used last — tax-free and never forced out, so it keeps compounding the longest." });
