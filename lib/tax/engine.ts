@@ -186,7 +186,7 @@ function seniorBonusDeduction(num65Plus: number, agi: number, phaseoutStart: num
   return Math.max(0, gross - over * SENIOR_BONUS_PHASEOUT_RATE);
 }
 
-function irmaaFor(
+export function irmaaFor(
   magi: number,
   factor: number,
   tiers: { upTo: number; monthlyPerPerson: number; label: string }[],

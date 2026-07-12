@@ -18,9 +18,9 @@
  * ⚠️ Educational estimates only — not tax advice.
  */
 
-import { computeTaxes, ordinaryBracketCeiling, arbitrageCeiling, TaxResult } from "./tax/engine";
+import { computeTaxes, ordinaryBracketCeiling, arbitrageCeiling, irmaaFor, TaxResult } from "./tax/engine";
 import { StateCode } from "./tax/state";
-import { rmdStartAge, uniformLifetimeFactor, FilingStatus } from "./tax/constants";
+import { rmdStartAge, uniformLifetimeFactor, FilingStatus, FILING_CONSTANTS } from "./tax/constants";
 import {
   Account,
   Household,
@@ -285,6 +285,65 @@ export type ConversionParam =
  * Build one year's withdrawal plan. `household.annualSpending` is the desired
  * AFTER-TAX spend; the engine grosses it up to cover the resulting tax.
  */
+/**
+ * IRMAA cliff guard for RECOMMENDED conversions. Bracket ceilings don't line up
+ * with IRMAA MAGI thresholds, so a bracket-filling conversion can overshoot a
+ * Medicare tier line by a few thousand dollars — and IRMAA is a step function:
+ * $1 over the line costs the household the FULL next-tier surcharge for a year
+ * (billed two years later, to whoever is on Medicare then). When the premium
+ * jump costs more than the overshoot dollars save in rate arbitrage, trim the
+ * conversion back to sit exactly on the tier line.
+ *
+ * Approximations, both in the safe (slightly-more-trimming) direction:
+ *  - Thresholds are indexed with THIS year's inflation factor, not the billing
+ *    year's (two years later, ~5% higher) — so the guard sees cliffs a touch
+ *    lower than where they'll really be.
+ *  - MAGI is assumed to move $1 per conversion dollar. Where the SS torpedo
+ *    makes the true slope steeper, trimming by the overshoot lands BELOW the
+ *    line, never above it.
+ *
+ * Manual fill-the-bracket conversions are deliberately NOT capped — that mode
+ * is the user explicitly choosing a bracket; the IRMAA note still warns them.
+ */
+function capConversionBelowIrmaaCliff(args: {
+  preMagi: number; // MAGI with spending withdrawals but before the conversion
+  withMagi: number; // MAGI with the sized conversion
+  conversion: number;
+  futureRate: number; // effective rate the conversion avoids later (RMD era)
+  rateNow: number; // effective marginal rate on the conversion's top dollars
+  filingStatus: FilingStatus;
+  inflationFactor: number;
+  enrolleesAtBilling: number; // people 65+ two years out, when this MAGI is billed
+}): { conversion: number; trimmed: number; cliffLabel: string } | null {
+  const { preMagi, futureRate, rateNow, filingStatus, inflationFactor: f, enrolleesAtBilling } = args;
+  if (enrolleesAtBilling <= 0) return null; // nobody on Medicare when this MAGI bills
+  const tiers = FILING_CONSTANTS[filingStatus].irmaaTiers;
+  const annualAt = (magi: number) => irmaaFor(magi, f, tiers, enrolleesAtBilling).householdAnnual;
+
+  let magi = args.withMagi;
+  let conversion = args.conversion;
+  let trimmed = 0;
+  // Walk down the crossed tier lines from the top; keep an overshoot only when
+  // its one-time arbitrage saving beats the one-year premium jump it triggers.
+  for (let guard = 0; guard < tiers.length; guard++) {
+    const cliff = tiers
+      .map((t) => t.upTo * f)
+      .filter((c) => Number.isFinite(c) && c >= preMagi && c < magi)
+      .sort((a, b) => b - a)[0];
+    if (cliff == null) break;
+    const overshoot = magi - cliff;
+    if (overshoot >= conversion - 1) break; // spending alone crossed it — trimming can't help
+    const jumpCost = annualAt(magi) - annualAt(cliff);
+    const arbSaving = Math.max(0, futureRate - rateNow) * overshoot;
+    if (jumpCost <= arbSaving) break; // the overshoot earns its premium — keep it
+    conversion -= overshoot;
+    trimmed += overshoot;
+    magi = cliff;
+  }
+  if (trimmed < 1) return null;
+  return { conversion, trimmed, cliffLabel: irmaaFor(magi, f, tiers, enrolleesAtBilling).label };
+}
+
 export function planYear(household: Household, params: PlanParams): YearPlan {
   const { year, strategy, bracketTarget } = params;
   const selfAge = ageInYear(household.self.birthYear, year);
@@ -496,16 +555,50 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
       const room = pretaxRoomToTarget(ctx, draws, targetOTI, remainingPretax);
       if (room > 1) {
         conversion = room;
-        const withConv = evaluate(ctx, { ...draws, pretax: draws.pretax + conversion }, true); // committed → wants marginal
-        conversionTax = Math.max(0, withConv.tax.totalTax - finalEval.tax.totalTax);
-        taxResult = withConv.tax; // the year's tax now reflects the conversion income
-        notes.push(
-          `Roll about ${money(conversion)} from pre-tax to Roth this year, ${label}. It costs roughly ${money(
-            conversionTax,
-          )} in ${ctx.state === "IL" ? "federal" : "income"} tax now${
-            ctx.state === "IL" ? " (Illinois doesn't tax conversions, so that's the whole bill)" : ""
-          }, best paid from cash savings — but it permanently shrinks the pre-tax balance that drives future RMDs, then grows tax-free with no RMDs of its own.`,
-        );
+        let withConv = evaluate(ctx, { ...draws, pretax: draws.pretax + conversion }, true); // committed → wants marginal
+
+        // IRMAA cliff guard (recommended mode only — a manual bracket fill is
+        // the user's explicit choice). Bill lands two years out, so count the
+        // Medicare enrollees THEN, not now — this also protects a 63/64-year-old
+        // whose income this year sets their very first premium at 65.
+        if (conv.mode === "recommended") {
+          const enrolleesAtBilling =
+            ctx.filingStatus === "single"
+              ? Math.min(selfAge, spouseAge) + 2 >= 65
+                ? 1
+                : 0
+              : (selfAge + 2 >= 65 ? 1 : 0) + (spouseAge + 2 >= 65 ? 1 : 0);
+          const capped = capConversionBelowIrmaaCliff({
+            preMagi: finalEval.tax.magi,
+            withMagi: withConv.tax.magi,
+            conversion,
+            futureRate: conv.futureRate,
+            rateNow: withConv.tax.effectiveMarginalRate,
+            filingStatus: ctx.filingStatus,
+            inflationFactor: ctx.inflationFactor,
+            enrolleesAtBilling,
+          });
+          if (capped && capped.conversion < conversion - 0.5) {
+            conversion = capped.conversion > 1 ? capped.conversion : 0;
+            withConv =
+              conversion > 1 ? evaluate(ctx, { ...draws, pretax: draws.pretax + conversion }, true) : finalEval;
+            notes.push(
+              `Trimmed the conversion by ${money(capped.trimmed)} to sit on the ${capped.cliffLabel.toLowerCase()} Medicare (IRMAA) line — that last slice would have cost more in premiums two years out than it saved in tax.`,
+            );
+          }
+        }
+
+        if (conversion > 1) {
+          conversionTax = Math.max(0, withConv.tax.totalTax - finalEval.tax.totalTax);
+          taxResult = withConv.tax; // the year's tax now reflects the conversion income
+          notes.push(
+            `Roll about ${money(conversion)} from pre-tax to Roth this year, ${label}. It costs roughly ${money(
+              conversionTax,
+            )} in ${ctx.state === "IL" ? "federal" : "income"} tax now${
+              ctx.state === "IL" ? " (Illinois doesn't tax conversions, so that's the whole bill)" : ""
+            }, best paid from cash savings — but it permanently shrinks the pre-tax balance that drives future RMDs, then grows tax-free with no RMDs of its own.`,
+          );
+        }
       }
     }
     }
