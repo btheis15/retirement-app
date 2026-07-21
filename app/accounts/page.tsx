@@ -22,6 +22,7 @@ import {
 import { holdingDps, holdingDivGrowth, dividendKind, holdingDividendKind } from "@/lib/dividends";
 import { ImportHoldingsSheet } from "@/components/ImportHoldings";
 import { AdjustSheet, AdjustPrefill } from "@/components/AdjustSheet";
+import { YearField, ConfirmTapButton } from "@/components/inputs";
 import { rmdStartAge } from "@/lib/tax/constants";
 import { adjustedAnnualBenefit, fullRetirementAge } from "@/lib/socialSecurity";
 import { searchTickers, getSeries, latestPrices, assetTypeLabel, SearchResult } from "@/lib/prices";
@@ -116,25 +117,20 @@ export default function AccountsPage() {
                 onChange={(e) => updateHousehold({ [who]: { ...p, label: e.target.value } } as never)}
               />
             </Field>
-            <div className="mt-2 grid grid-cols-2 gap-3">
+            <div className="mt-2 grid grid-cols-[1fr_auto] items-end gap-3">
               <Field label="Birth year">
-                <input
-                  className={INPUT}
-                  inputMode="numeric"
+                <YearField
                   value={p.birthYear}
-                  onChange={(e) => updateHousehold({ [who]: { ...p, birthYear: num(e.target.value) } } as never)}
+                  min={thisYear - 100}
+                  max={thisYear - 18}
+                  labelFor={(y) => `${y} — age ${thisYear - y}`}
+                  ariaLabel={`${p.label || who} birth year`}
+                  onChange={(v) => updateHousehold({ [who]: { ...p, birthYear: v } } as never)}
                 />
               </Field>
-              <Field label="Current age">
-                <input
-                  className={INPUT}
-                  inputMode="numeric"
-                  value={thisYear - p.birthYear}
-                  onChange={(e) =>
-                    updateHousehold({ [who]: { ...p, birthYear: thisYear - num(e.target.value) } } as never)
-                  }
-                />
-              </Field>
+              <div className="pb-2 text-[13px] text-foreground/55">
+                age <span className="tabular font-semibold text-foreground/80">{thisYear - p.birthYear}</span>
+              </div>
             </div>
             {/* SS claim age is a coached decision (compares breakeven, survivor angle) —
                 read-only here, with a single home in the walkthrough to change it. */}
@@ -153,6 +149,12 @@ export default function AccountsPage() {
                 value={Math.round(p.socialSecurityAnnual / 12)}
                 onChange={(v) => updateHousehold({ [who]: { ...p, socialSecurityAnnual: v * 12 } } as never)}
               />
+              {p.socialSecurityAnnual / 12 > 5_500 && (
+                <p className="mt-1 rounded-lg bg-tax/10 px-2 py-1 text-[13px] leading-snug text-tax">
+                  That&apos;s above the largest possible Social Security check (~$5,200/mo in 2026) — double-check your
+                  statement. Enter the <strong>monthly</strong> amount, not yearly.
+                </p>
+              )}
               <p className="mt-1 text-[11px] text-foreground/55">
                 Enter the monthly amount at your <strong>full retirement age</strong>{" "}(~{fmtAge(fullRetirementAge(p.birthYear))}) — SSA lists
                 this on your statement. We adjust it for the claim age above:{" "}
@@ -186,11 +188,13 @@ export default function AccountsPage() {
 
       <Card className="mb-3">
         <Field label="Year you plan to start retirement">
-          <input
-            className={INPUT}
-            inputMode="numeric"
+          <YearField
             value={household.retirementYear ?? defaultRetirementYear(household.self.birthYear)}
-            onChange={(e) => updateHousehold({ retirementYear: num(e.target.value) })}
+            min={thisYear - 5}
+            max={thisYear + 40}
+            labelFor={(y) => (y === thisYear ? `${y} — now` : `${y} — age ${y - household.self.birthYear}`)}
+            ariaLabel="Year you plan to start retirement"
+            onChange={(v) => updateHousehold({ retirementYear: v })}
           />
           <p className="mt-1 text-[11px] text-foreground/55">
             You&apos;d be age {(household.retirementYear ?? defaultRetirementYear(household.self.birthYear)) - household.self.birthYear} that
@@ -292,9 +296,12 @@ export default function AccountsPage() {
       </p>
 
       {mode === "own" && household.accounts.length > 0 && (
-        <button onClick={resetOwn} className="press mt-3 w-full rounded-xl py-2 text-[12px] text-tax/80">
-          Clear all my data
-        </button>
+        <ConfirmTapButton
+          label="Clear all my data"
+          confirmLabel="Really clear everything? Tap again"
+          onConfirm={resetOwn}
+          className="mt-3 w-full rounded-xl py-2 text-[12px] text-tax/80"
+        />
       )}
 
       <DataVaultCard />
@@ -369,9 +376,7 @@ function AccountRow({
                 ⟳ CSV
               </button>
             )}
-            <button onClick={onRemove} className="press text-[11px] text-tax/80">
-              Remove
-            </button>
+            <ConfirmTapButton label="Remove" confirmLabel="Really remove? Tap again" onConfirm={onRemove} className="text-[11px] text-tax/80" />
           </div>
         </div>
       </div>

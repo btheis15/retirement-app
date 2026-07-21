@@ -10,6 +10,11 @@ import type { ReturnChoice } from "./returnOptions";
  */
 export type GoalId = "maxCapital" | "lowestTax" | "lowestRate";
 
+/** The one spending-slider ceiling, shared by every surface (the walkthrough,
+ *  Spending Power, Compare) — they used to disagree (400k vs 500k), so a
+ *  >$400k spender's walkthrough slider silently maxed out. */
+export const SPEND_MAX = 500_000;
+
 /** A blank household for "enter my own numbers" mode. */
 export function emptyHousehold(): Household {
   const thisYear = new Date().getFullYear();

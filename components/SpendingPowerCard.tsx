@@ -8,8 +8,8 @@ import { Household, sumBuckets } from "@/lib/accounts";
 import { returnModel } from "@/lib/returns";
 import { matchReturnChoice } from "@/lib/returnOptions";
 import { money, moneyCompact, percent } from "@/lib/format";
+import { SPEND_MAX } from "@/lib/defaults";
 
-const SPEND_MAX = 500_000;
 const SPEND_STEP = 5_000;
 
 interface SpendBase {

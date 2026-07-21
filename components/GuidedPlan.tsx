@@ -34,8 +34,9 @@ import { planAssumptions } from "@/lib/scenarioLab";
 import { returnModel } from "@/lib/returns";
 import { buildReturnOptions, matchReturnChoice, describeMix } from "@/lib/returnOptions";
 import { ReturnMethodInfo } from "@/components/ReturnMethodInfo";
+import { YearField } from "@/components/inputs";
 import { buildActionPlan, PlanYear, PlanAction } from "@/lib/actionPlan";
-import { GoalId, survivorFromSettings } from "@/lib/defaults";
+import { GoalId, survivorFromSettings, SPEND_MAX } from "@/lib/defaults";
 import { adjustedAnnualBenefit, fullRetirementAge, earningsTestWithholding } from "@/lib/socialSecurity";
 import { useMarketPulse } from "@/components/MarketCheck";
 import { rmdStartAge } from "@/lib/tax/constants";
@@ -43,7 +44,6 @@ import { bucketOf, ACCOUNT_KIND_META, TaxBucket, Household, Account, AccountKind
 import { money, moneyCompact, percent } from "@/lib/format";
 
 const GOALS: GoalId[] = ["maxCapital", "lowestTax", "lowestRate"];
-const SPEND_MAX = 400_000;
 
 // The walkthrough is organized into ordered "chapters" so a longer, fully-guided
 // flow still reads as a coherent journey and the client always knows where they
@@ -1052,32 +1052,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       render: () => {
         const optBtn = (on: boolean) =>
           `press flex w-full items-start gap-3 rounded-2xl border p-3.5 text-left ${on ? "border-primary bg-primary/10" : "border-border"}`;
-        const YearInput = ({
-          value,
-          onChange,
-          ariaLabel,
-          min,
-          max,
-        }: {
-          value: number;
-          onChange: (v: number) => void;
-          ariaLabel: string;
-          min: number;
-          max: number;
-        }) => (
-          <input
-            inputMode="numeric"
-            aria-label={ariaLabel}
-            defaultValue={String(value)}
-            key={value}
-            onBlur={(e) => {
-              const n = Number(e.target.value.replace(/[^0-9]/g, "")) || 0;
-              if (n >= min && n <= max) onChange(n);
-              else e.target.value = String(value); // out of range → snap back
-            }}
-            className="tabular w-20 rounded-xl border border-border bg-background/50 px-2.5 py-1.5 text-center text-[16px] font-semibold outline-none focus:border-primary"
-          />
-        );
         const BirthRow = ({ who }: { who: "self" | "spouse" }) => {
           const p = household[who];
           return (
@@ -1088,12 +1062,14 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               </div>
               <label className="flex shrink-0 items-center gap-2">
                 <span className="text-[11px] text-foreground/50">Birth year</span>
-                <YearInput
+                <YearField
                   value={p.birthYear}
                   ariaLabel={`${p.label || who} birth year`}
-                  min={1920}
-                  max={year}
+                  min={year - 100}
+                  max={year - 18}
+                  labelFor={(y) => `${y} — age ${year - y}`}
                   onChange={(v) => updateHousehold({ [who]: { ...p, birthYear: v } } as never)}
+                  className="w-40"
                 />
               </label>
             </div>
@@ -1160,12 +1136,14 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     you&apos;d be {selfAgeAtRet} that year
                   </div>
                 </div>
-                <YearInput
+                <YearField
                   value={retYear}
                   ariaLabel="Year you plan to start retirement"
                   min={year - 5}
                   max={year + 40}
+                  labelFor={(y) => (y === year ? `${y} — now` : `${y} — age ${y - household.self.birthYear}`)}
                   onChange={(v) => updateHousehold({ retirementYear: v })}
+                  className="w-40"
                 />
               </div>
               <div className="mt-3 grid grid-cols-4 gap-2">
@@ -1453,7 +1431,9 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           const ClaimPicker = ({ who }: { who: "self" | "spouse" }) => {
             const p = household[who];
             const fra = Math.round(fullRetirementAge(p.birthYear));
-            const ages = Array.from(new Set([62, fra, 70]));
+            // Every claim age 62–70 — the old three-preset picker couldn't
+            // express "claim at 65" at all. FRA keeps its ★.
+            const ages = [62, 63, 64, 65, 66, 67, 68, 69, 70];
             return (
               <div className="rounded-2xl border border-border p-3">
                 <div className="flex items-center justify-between gap-2">
@@ -1483,6 +1463,12 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 <p className="mt-1 text-[10px] leading-snug text-foreground/45">
                   Your <strong>full benefit at {fra}</strong> (from your SSA statement). The buttons below adjust it for when you claim.
                 </p>
+                {p.socialSecurityAnnual / 12 > 5_500 && (
+                  <p className="mt-1 rounded-lg bg-tax/10 px-2 py-1 text-[13px] leading-snug text-tax">
+                    That&apos;s above the largest possible Social Security check (~$5,200/mo in 2026) — double-check
+                    your statement. Enter the <strong>monthly</strong> amount, not yearly.
+                  </p>
+                )}
                 <div className="mt-2 grid grid-cols-3 gap-2">
                   {ages.map((a) => {
                     const on = p.ssClaimAge === a;
@@ -1492,7 +1478,9 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                         onClick={() => updateHousehold({ [who]: { ...p, ssClaimAge: a } } as never)}
                         className={`press rounded-xl border py-1.5 ${on ? "border-primary bg-primary/10" : "border-border"}`}
                       >
-                        <div className={`text-[13px] font-bold ${on ? "text-primary" : ""}`}>Age {a}</div>
+                        <div className={`text-[13px] font-bold ${on ? "text-primary" : ""}`}>
+                          {a}{a === fra ? " ★" : ""}
+                        </div>
                         <div className="text-[10px] text-foreground/55">{moneyCompact(adjustedAnnualBenefit(p.socialSecurityAnnual, p.birthYear, a))}/yr</div>
                       </button>
                     );
