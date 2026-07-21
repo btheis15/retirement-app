@@ -20,10 +20,11 @@ import {
   ssBenefitFactor,
   fullRetirementAge,
   breakevenAge,
+  earningsTestWithholding,
   CLAIM_MIN,
   CLAIM_MAX,
 } from "@/lib/socialSecurity";
-import { ageInYear, bucketOf, Household } from "@/lib/accounts";
+import { ageInYear, bucketOf, Household, wageForYear, monthsWorkedInYear } from "@/lib/accounts";
 import { GoalId, PlannerSettings, survivorFromSettings } from "@/lib/defaults";
 import { MonteCarloResult } from "@/lib/monteCarlo";
 import { computeMonteCarlo } from "@/lib/mcClient";
@@ -148,10 +149,16 @@ export default function PlanPage() {
   const spendInvestmentIncome = settings.dividendMode === "spend";
   const interestIncome = spendInvestmentIncome ? plan.fixed.taxableInterest + plan.fixed.taxExemptInterest : 0;
   const allDividends = spendInvestmentIncome ? plan.fixed.dividends + plan.fixed.ordinaryDividends : 0;
-  const guaranteed = ssNow + plan.fixed.pension + allDividends + interestIncome;
+  // Work income arrives NET of payroll tax (FICA/SE) — that's the cash that
+  // actually lands and can fund spending.
+  const workNet = Math.max(0, plan.fixed.wages - plan.ficaTax);
+  const otherStreams = plan.fixed.otherIncome;
+  const guaranteed = ssNow + plan.fixed.pension + workNet + otherStreams + allDividends + interestIncome;
   const fundingSegs = [
+    { value: workNet, className: "bg-gain", label: "Work income" },
     { value: ssNow, className: "bg-ss", label: "Social Security" },
     { value: plan.fixed.pension, className: "bg-primary", label: "Pension" },
+    { value: otherStreams, className: "bg-primary", label: "Other income" },
     { value: allDividends, className: "bg-gain", label: "Dividends" },
     { value: interestIncome, className: "bg-roth", label: "Interest" },
     { value: totalDraw, className: "bg-taxable", label: "Withdrawals" },
@@ -173,8 +180,10 @@ export default function PlanPage() {
   ].filter((s) => s.value > 0.5);
 
   const incomeSegments = [
+    { label: "Work income", value: workNet, color: HEX.gain },
     { label: "Social Security", value: plan.fixed.socialSecurity, color: HEX.ss },
     { label: "Pension", value: plan.fixed.pension, color: HEX.primary },
+    { label: "Other income", value: otherStreams, color: HEX.primary },
     { label: "Dividends", value: allDividends, color: HEX.gain },
     { label: "Interest", value: interestIncome, color: HEX.roth },
     { label: "Pre-tax withdrawals", value: w.pretax, color: HEX.deferred },
@@ -992,6 +1001,31 @@ function SsTiming({
             <div className="mt-1 text-right text-[12px] text-foreground/60">
               {money(benefit)}/yr · {percent(pct, 0)} of full
             </div>
+            {(() => {
+              // Earnings-test heads-up — same helper as the engine and the
+              // walkthrough warning (one number, one source).
+              const claimYear = p.birthYear + claim;
+              const wage = wageForYear(p, household, claimYear);
+              if (claim >= fra || wage <= 0) return null;
+              const et = earningsTestWithholding({
+                grossBenefit: benefit,
+                earnings: wage,
+                birthYear: p.birthYear,
+                year: claimYear,
+                monthsWorked: monthsWorkedInYear(p, household, claimYear) || 12,
+              });
+              if (et.withheld < 100) return null;
+              return (
+                <div className="mt-2 rounded-xl border border-tax/30 bg-tax/5 px-3 py-2 text-[13px] leading-snug text-foreground/75">
+                  <span aria-hidden>⚠️</span> Still working at {claim}: the <em>earnings test</em> would hold back
+                  about <strong>{money(Math.round(et.withheld))}</strong>/yr of this benefit until full retirement age
+                  (repaid afterward as a permanently larger check). The forecast prices this in.{" "}
+                  <a href={SOURCES.ssEarningsTest.url} target="_blank" rel="noreferrer" className="font-medium text-primary underline">
+                    How it works ↗
+                  </a>
+                </div>
+              );
+            })()}
 
             <div className="mt-3 grid grid-cols-3 gap-2">
               {opts.map((a) => {

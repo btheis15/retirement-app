@@ -16,6 +16,8 @@ import {
   holdingValue,
   syncAccountFromHoldings,
   defaultRetirementYear,
+  wageForYear,
+  otherIncomeForYear,
 } from "@/lib/accounts";
 import { holdingDps, holdingDivGrowth, dividendKind, holdingDividendKind } from "@/lib/dividends";
 import { rmdStartAge } from "@/lib/tax/constants";
@@ -151,6 +153,26 @@ export default function AccountsPage() {
                 Compare claim ages on the Plan tab.
               </p>
             </Field>
+            {/* Work income is a coached decision (stop dates, the SS earnings test,
+                payroll tax) — read-only here, one home in the walkthrough. */}
+            <Field label="Work income" className="mt-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-base font-medium text-foreground/80">
+                  {p.work && p.work.annualWages > 0
+                    ? `${money(wageForYear(p, household, thisYear))} in ${thisYear}`
+                    : "Not working"}
+                </span>
+                <AdjustLink step="work" />
+              </div>
+              {p.work && p.work.annualWages > 0 && (
+                <p className="mt-1 text-[11px] text-foreground/55">
+                  {money(p.work.annualWages)}/yr{p.work.selfEmployed ? " (self-employed)" : ""} through{" "}
+                  {p.work.lastWorkMonth && p.work.lastWorkMonth < 12 ? `month ${p.work.lastWorkMonth} of ` : ""}
+                  {p.work.lastWorkYear ?? household.retirementYear ?? thisYear}. Covers spending first; taxed like a
+                  paycheck (Illinois included).
+                </p>
+              )}
+            </Field>
           </Card>
         );
       })}
@@ -165,7 +187,8 @@ export default function AccountsPage() {
           />
           <p className="mt-1 text-[11px] text-foreground/55">
             You&apos;d be age {(household.retirementYear ?? defaultRetirementYear(household.self.birthYear)) - household.self.birthYear} that
-            year. Used to frame your plan; the year-by-year projection currently still begins this year.
+            year. If you&apos;re still working, your pay runs through this year unless you set an exact stop date in the
+            walkthrough&apos;s Income chapter. The year-by-year projection starts now — working years are years with a paycheck.
           </p>
         </Field>
       </Card>
@@ -186,6 +209,20 @@ export default function AccountsPage() {
         </Field>
         <Field label="Pension / annuity (annual, fully taxable)" className="mt-2">
           <MoneyInput value={household.pensionAnnual} onChange={(v) => updateHousehold({ pensionAnnual: v })} />
+        </Field>
+        {/* Rental/annuity/other streams have kind-specific tax character — edited in
+            the walkthrough's income step (their one home), summarized here. */}
+        <Field label="Rental / annuity / other income streams" className="mt-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-base font-medium text-foreground/80">
+              {(household.otherIncome?.length ?? 0) > 0
+                ? `${household.otherIncome!.length} stream${household.otherIncome!.length > 1 ? "s" : ""} · ${money(
+                    otherIncomeForYear(household.otherIncome, thisYear).total,
+                  )}/yr`
+                : "None"}
+            </span>
+            <AdjustLink step="otherincome" />
+          </div>
         </Field>
         <Field label="Dividends — qualified (annual)" className="mt-2">
           <MoneyInput value={household.brokerageDividendsAnnual} onChange={(v) => updateHousehold({ brokerageDividendsAnnual: v })} />

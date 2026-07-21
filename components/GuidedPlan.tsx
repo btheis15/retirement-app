@@ -36,10 +36,10 @@ import { buildReturnOptions, matchReturnChoice, describeMix } from "@/lib/return
 import { ReturnMethodInfo } from "@/components/ReturnMethodInfo";
 import { buildActionPlan, PlanYear, PlanAction } from "@/lib/actionPlan";
 import { GoalId, survivorFromSettings } from "@/lib/defaults";
-import { adjustedAnnualBenefit, fullRetirementAge } from "@/lib/socialSecurity";
+import { adjustedAnnualBenefit, fullRetirementAge, earningsTestWithholding } from "@/lib/socialSecurity";
 import { useMarketPulse } from "@/components/MarketCheck";
 import { rmdStartAge } from "@/lib/tax/constants";
-import { bucketOf, ACCOUNT_KIND_META, TaxBucket, Household, Account, AccountKind, defaultRetirementYear } from "@/lib/accounts";
+import { bucketOf, ACCOUNT_KIND_META, TaxBucket, Household, Account, AccountKind, defaultRetirementYear, wageForYear, monthsWorkedInYear, otherIncomeForYear, WorkIncome, OtherIncomeStream } from "@/lib/accounts";
 import { money, moneyCompact, percent } from "@/lib/format";
 
 const GOALS: GoalId[] = ["maxCapital", "lowestTax", "lowestRate"];
@@ -69,6 +69,7 @@ const STEP_CHAPTER: Record<string, ChapterId> = {
   longevity: "you",
   survivor: "you",
   accounts: "money",
+  work: "income",
   ssclaim: "income",
   otherincome: "income",
   goal: "goal",
@@ -220,6 +221,136 @@ function IncomeField({
         <span className="shrink-0 text-[11px] text-foreground/45">/yr</span>
       </label>
       {hint && <p className="mt-0.5 text-[10px] leading-snug text-foreground/45">{hint}</p>}
+    </div>
+  );
+}
+
+const STREAM_KIND_META: Record<OtherIncomeStream["kind"], { label: string; icon: string; hint: string }> = {
+  rental: { label: "Rental property", icon: "🏠", hint: "Net rent after expenses. Taxed as regular income (federal + Illinois) and counts for the 3.8% investment-income tax." },
+  annuity: { label: "Annuity", icon: "📜", hint: "Taxed like your pension — Illinois exempts it as retirement income." },
+  other: { label: "Other income", icon: "💵", hint: "Royalties, a note someone pays you, misc. — taxed as regular income (federal + Illinois)." },
+};
+
+/** Editor for the recurring other-income streams (rental / annuity / other) —
+ *  the guided home for income beyond the single pension field. Part-time WORK
+ *  belongs on the "Still working?" step, where payroll tax and the Social
+ *  Security earnings test apply. */
+function StreamsEditor({
+  streams,
+  onChange,
+  readOnly,
+  year,
+}: {
+  streams: OtherIncomeStream[];
+  onChange: (next: OtherIncomeStream[]) => void;
+  readOnly?: boolean;
+  year: number;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState<OtherIncomeStream>({ id: "", kind: "rental", annual: 0 });
+  const patch = (id: string, p: Partial<OtherIncomeStream>) => onChange(streams.map((s) => (s.id === id ? { ...s, ...p } : s)));
+  const untilOptions = [undefined, ...Array.from({ length: 30 }, (_, i) => year + 1 + i)];
+  return (
+    <div className="rounded-2xl border border-border p-3">
+      <div className="text-[13px] font-semibold">Rental, annuity, or other recurring income</div>
+      <p className="mt-1 text-[11px] leading-snug text-foreground/55">
+        Money that arrives on its own each year. <strong>Part-time work goes on the &ldquo;Still working?&rdquo;
+        step</strong> — Social Security treats a paycheck differently.
+      </p>
+      {streams.length > 0 && (
+        <div className="mt-2 space-y-2">
+          {streams.map((s) => (
+            <div key={s.id} className="rounded-xl border border-border/70 p-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0 text-[13px] font-semibold">
+                  <span aria-hidden>{STREAM_KIND_META[s.kind].icon}</span> {s.label || STREAM_KIND_META[s.kind].label}
+                  <span className="ml-2 tabular font-bold text-primary">{money(s.annual)}/yr</span>
+                </div>
+                {!readOnly && (
+                  <button onClick={() => onChange(streams.filter((x) => x.id !== s.id))} className="press shrink-0 text-[12px] font-medium text-tax">
+                    Remove
+                  </button>
+                )}
+              </div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-foreground/55">
+                {readOnly ? (
+                  <span>
+                    {s.colaAdjusted ? "grows with inflation" : "flat amount"} · {s.endYear ? `through ${s.endYear}` : "for life"}
+                  </span>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => patch(s.id, { colaAdjusted: !s.colaAdjusted || undefined })}
+                      className={`press rounded-lg border px-2 py-1 ${s.colaAdjusted ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/60"}`}
+                    >
+                      {s.colaAdjusted ? "✓ grows with inflation" : "flat (no inflation raises)"}
+                    </button>
+                    <label className="flex items-center gap-1">
+                      until
+                      <select
+                        value={s.endYear ?? ""}
+                        onChange={(e) => patch(s.id, { endYear: e.target.value ? Number(e.target.value) : undefined })}
+                        className="field-focus rounded-lg border border-border bg-background px-1.5 py-1 text-[11px]"
+                        aria-label={`${s.label || STREAM_KIND_META[s.kind].label} last year`}
+                      >
+                        {untilOptions.map((y) => (
+                          <option key={y ?? "life"} value={y ?? ""}>
+                            {y ?? "for life"}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {!readOnly &&
+        (adding ? (
+          <div className="mt-2 rounded-xl border border-primary/40 p-2.5">
+            <div className="grid grid-cols-3 gap-1.5">
+              {(Object.keys(STREAM_KIND_META) as OtherIncomeStream["kind"][]).map((k) => (
+                <button
+                  key={k}
+                  onClick={() => setDraft({ ...draft, kind: k })}
+                  className={`press rounded-xl border px-2 py-1.5 text-[12px] ${draft.kind === k ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/60"}`}
+                >
+                  {STREAM_KIND_META[k].icon} {STREAM_KIND_META[k].label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-[11px] leading-snug text-foreground/50">{STREAM_KIND_META[draft.kind].hint}</p>
+            <div className="mt-2">
+              <IncomeField
+                label="Amount per year (before tax)"
+                value={Math.round(draft.annual)}
+                onCommit={(v) => setDraft((d) => ({ ...d, annual: v }))}
+              />
+            </div>
+            <div className="mt-2 flex gap-2">
+              <button
+                onClick={() => {
+                  if (draft.annual > 0) onChange([...streams, { ...draft, id: `oi-${Date.now()}` }]);
+                  setDraft({ id: "", kind: "rental", annual: 0 });
+                  setAdding(false);
+                }}
+                disabled={draft.annual <= 0}
+                className={`press rounded-xl px-3 py-1.5 text-[12px] font-semibold ${draft.annual > 0 ? "bg-primary text-background" : "bg-foreground/10 text-foreground/40"}`}
+              >
+                Add it
+              </button>
+              <button onClick={() => setAdding(false)} className="press rounded-xl border border-border px-3 py-1.5 text-[12px] text-foreground/60">
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setAdding(true)} className="press mt-2 w-full rounded-xl border border-dashed border-border py-2 text-[12px] font-medium text-foreground/60">
+            ＋ Add rental, annuity, or other income
+          </button>
+        ))}
     </div>
   );
 }
@@ -412,12 +543,12 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   const recHousehold = useMemo(
     () => ({ ...household, annualSpending: recRefSpend }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [household.accounts, household.self, household.spouse, household.pensionAnnual, household.brokerageDividendsAnnual, household.ordinaryDividendsAnnual, household.taxableInterestAnnual, household.taxExemptInterestAnnual, household.state, recRefSpend],
+    [household.accounts, household.self, household.spouse, household.pensionAnnual, household.otherIncome, household.brokerageDividendsAnnual, household.ordinaryDividendsAnnual, household.taxableInterestAnnual, household.taxExemptInterestAnnual, household.state, recRefSpend],
   );
   const dRecHousehold = useMemo(
     () => ({ ...dHousehold, annualSpending: recRefSpend }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [dHousehold.accounts, dHousehold.self, dHousehold.spouse, dHousehold.pensionAnnual, dHousehold.brokerageDividendsAnnual, dHousehold.ordinaryDividendsAnnual, dHousehold.taxableInterestAnnual, dHousehold.taxExemptInterestAnnual, dHousehold.state, recRefSpend],
+    [dHousehold.accounts, dHousehold.self, dHousehold.spouse, dHousehold.pensionAnnual, dHousehold.otherIncome, dHousehold.brokerageDividendsAnnual, dHousehold.ordinaryDividendsAnnual, dHousehold.taxableInterestAnnual, dHousehold.taxExemptInterestAnnual, dHousehold.state, recRefSpend],
   );
   const rec = useMemo(() => recommendPlan(recHousehold, inputs, settings.goal), [recHousehold, settings.goal]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1053,8 +1184,9 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   ))}
               </div>
               <p className="mt-2 text-[13px] leading-snug text-foreground/45">
-                We use this to frame your plan. The year-by-year projection currently begins this year; tying it fully to
-                your retirement year is coming next.
+                If you&apos;re still working, your pay runs through this year in the plan — set the amount and exact
+                stop month on the <strong>Income</strong> steps. The year-by-year projection starts now; working years
+                are simply years with a paycheck.
               </p>
             </div>
           </div>
@@ -1154,6 +1286,157 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       },
     });
 
+    // STEP — work & earned income. The "I just retired mid-year", "my spouse
+    // still works", and "I consult part-time" realities: wages fund spending
+    // before withdrawals, are taxed federally AND by Illinois (unlike retirement
+    // income), raise Medicare/IRMAA and the taxable share of Social Security —
+    // and claiming SS early while earning triggers the earnings test (warned on
+    // the claim step, which is right after this one so the answer is fresh).
+    // The stop year defaults from the retirement year set in "About you", which
+    // finally makes that input drive the model.
+    {
+      const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+      const WorkCard = ({ who }: { who: "self" | "spouse" }) => {
+        const p = household[who];
+        const w = p.work;
+        const setWork = (next: WorkIncome | undefined) => updateHousehold({ [who]: { ...p, work: next } } as never);
+        const stopDefault = Math.min(year + 15, Math.max(year, household.retirementYear ?? year));
+        const stopYear = Math.min(year + 15, Math.max(year, w?.lastWorkYear ?? stopDefault));
+        const stopMonth = Math.min(12, Math.max(1, w?.lastWorkMonth ?? 12));
+        const planned = w ? wageForYear(p, household, year) : 0;
+        const working = !!w && w.annualWages >= 0;
+        return (
+          <div className="rounded-2xl border border-border p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[14px] font-semibold">{p.label || (who === "self" ? "You" : "Spouse")}</div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  { on: !working, label: "Not working" },
+                  { on: working, label: "Working" },
+                ].map((o) => (
+                  <button
+                    key={o.label}
+                    onClick={() =>
+                      o.label === "Not working"
+                        ? setWork(undefined)
+                        : !working && setWork({ annualWages: 0, lastWorkYear: stopDefault, lastWorkMonth: 12 })
+                    }
+                    className={`press rounded-xl border px-3 py-1.5 text-[12px] ${o.on ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/60"}`}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {working && w && (
+              <div className="mt-3 space-y-3">
+                <IncomeField
+                  label="Gross pay per year (before tax)"
+                  hint="Your full-year rate — we handle the stop-date math below."
+                  value={Math.round(w.annualWages || 0)}
+                  onCommit={(v) => setWork({ ...w, annualWages: v })}
+                />
+                <div>
+                  <div className="mb-1 text-[12px] font-medium text-foreground/60">Working until</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      aria-label={`${p.label || who} last month of work`}
+                      value={stopMonth}
+                      onChange={(e) => setWork({ ...w, lastWorkMonth: Number(e.target.value) })}
+                      className="field-focus rounded-xl border border-border bg-background px-2.5 py-2 text-[13px] focus:border-primary"
+                    >
+                      {MONTH_NAMES.map((m, i) => (
+                        <option key={m} value={i + 1}>
+                          end of {m}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      aria-label={`${p.label || who} last year of work`}
+                      value={stopYear}
+                      onChange={(e) => setWork({ ...w, lastWorkYear: Number(e.target.value) })}
+                      className="field-focus rounded-xl border border-border bg-background px-2.5 py-2 text-[13px] focus:border-primary"
+                    >
+                      {Array.from({ length: 16 }, (_, i) => year + i).map((y) => (
+                        <option key={y} value={y}>
+                          {y} (age {y - p.birthYear})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-snug text-foreground/50">
+                    Already retired this year? Pick the month you stopped — the plan counts the pay you{" "}
+                    <strong>already earned</strong> in {year} (it&apos;s on this year&apos;s tax return either way).
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {[
+                    { se: false, label: "W-2 job" },
+                    { se: true, label: "Self-employed" },
+                  ].map((o) => (
+                    <button
+                      key={o.label}
+                      onClick={() => setWork({ ...w, selfEmployed: o.se || undefined })}
+                      className={`press rounded-xl border px-3 py-1.5 text-[12px] ${!!w.selfEmployed === o.se ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/60"}`}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+                <Collapsible title={`Earning a different amount in ${year}? (bonus, severance, partial year)`}>
+                  <IncomeField
+                    label={`Total you'll actually earn in ${year}`}
+                    hint={`Overrides our ${year} estimate only — later years still use your annual pay.`}
+                    value={Math.round(w.thisYearWages ?? 0)}
+                    onCommit={(v) => setWork({ ...w, thisYearWages: v > 0 ? v : undefined })}
+                  />
+                </Collapsible>
+                {w.annualWages > 0 && (
+                  <p className="rounded-xl bg-primary/5 px-3 py-2 text-[13px] leading-snug text-foreground/70">
+                    In the plan: <strong>{money(planned)}</strong> of {year} pay
+                    {stopYear > year ? (
+                      <> — continuing through {MONTH_NAMES[stopMonth - 1]} {stopYear}.</>
+                    ) : (
+                      <> — stopping {MONTH_NAMES[stopMonth - 1] === "December" ? `at year-end ${year}` : `end of ${MONTH_NAMES[stopMonth - 1]} ${year}`}.</>
+                    )}{" "}
+                    It covers spending first, so you draw less from savings — and it&apos;s taxed like a paycheck
+                    (Illinois included), unlike your retirement income.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      };
+      steps.push({
+        key: "work",
+        chapter: "income",
+        eyebrow: "still working?",
+        render: () => (
+          <div>
+            <h2 className="text-xl font-bold leading-snug">Is anyone still bringing in a paycheck?</h2>
+            <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+              Count this year&apos;s working months even if you just retired, a spouse who&apos;s still working, and any
+              part-time or consulting income. A paycheck changes the plan: it covers spending first, it&apos;s taxed
+              differently than retirement income — and it interacts with claiming Social Security early (next step).
+            </p>
+            {mode === "demo" && (
+              <div className="mt-3">
+                <Callout tone="info" icon="🔒" title="Part of the example">
+                  The example household is fully retired. You can flip these to see how work income changes a plan —
+                  it stays exploratory until you enter your own accounts.
+                </Callout>
+              </div>
+            )}
+            <div className="mt-4 space-y-2">
+              <WorkCard who="self" />
+              {hasSpouse && <WorkCard who="spouse" />}
+            </div>
+          </div>
+        ),
+      });
+    }
+
     // STEP — Social Security: the benefit AMOUNT and the claim age (the highest-
     // value lever). ALWAYS asked — gating it on an existing benefit meant an
     // own-numbers user was never asked at all, finished the flow with $0 Social
@@ -1215,6 +1498,44 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     );
                   })}
                 </div>
+                {(() => {
+                  // Earnings-test heads-up: claiming before FRA while this person
+                  // still has wages in the claim year. Dollars come from the SAME
+                  // helper the engine uses (one number, one source).
+                  const fraExact = fullRetirementAge(p.birthYear);
+                  const claimYear = p.birthYear + p.ssClaimAge;
+                  const wageAtClaim = wageForYear(p, household, claimYear);
+                  if (p.ssClaimAge >= fraExact || wageAtClaim <= 0 || p.socialSecurityAnnual <= 0) return null;
+                  const et = earningsTestWithholding({
+                    grossBenefit: adjustedAnnualBenefit(p.socialSecurityAnnual, p.birthYear, p.ssClaimAge),
+                    earnings: wageAtClaim,
+                    birthYear: p.birthYear,
+                    year: claimYear,
+                    monthsWorked: monthsWorkedInYear(p, household, claimYear) || 12,
+                  });
+                  if (et.withheld < 100) return null;
+                  return (
+                    <div className="mt-2 rounded-xl border border-tax/30 bg-tax/5 p-2.5 text-[13px] leading-snug text-foreground/75">
+                      <span aria-hidden>⚠️</span> <strong>Still working at {p.ssClaimAge}?</strong> Because{" "}
+                      {p.label || (who === "self" ? "you" : "your spouse")} would earn about{" "}
+                      {moneyCompact(wageAtClaim)} that year, Social Security would hold back roughly{" "}
+                      <strong>{moneyCompact(et.withheld)}</strong> of the {moneyCompact(et.payable + et.withheld)} benefit
+                      under the <em>earnings test</em> — every year until full retirement age. It isn&apos;t lost (it
+                      comes back later as a permanently larger check), but claiming this early while working rarely
+                      pays. The projection prices all of this in.
+                      <Info q="How the earnings test works" sources={[SOURCES.ssEarningsTest]}>
+                        Claim before your full retirement age while earning a paycheck and SSA withholds{" "}
+                        <strong>$1 of benefits for every $2</strong> you earn over an annual allowance (about $24,480 in
+                        2026). In the calendar year you reach full retirement age the allowance jumps (about $65,160)
+                        and only $1 per $3 is withheld — and from your FRA month on there&apos;s no limit at all. In
+                        your first retirement year, a monthly rule protects the checks for the months after you stop.
+                        The withheld months aren&apos;t forfeited: at full retirement age SSA recalculates your benefit
+                        as if you&apos;d claimed that many months later, permanently raising the check. Only wages and
+                        self-employment earnings count — never pensions, withdrawals, or investment income.
+                      </Info>
+                    </div>
+                  );
+                })()}
               </div>
             );
           };
@@ -1296,6 +1617,12 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               value={Math.round(household.pensionAnnual || 0)}
               onCommit={(v) => updateHousehold({ pensionAnnual: v })}
               readOnly={isDemoIncome}
+            />
+            <StreamsEditor
+              streams={household.otherIncome ?? []}
+              onChange={(next) => updateHousehold({ otherIncome: next })}
+              readOnly={isDemoIncome}
+              year={year}
             />
             {showInvestFields && (
               <div className="rounded-2xl border border-border p-3">
@@ -3234,11 +3561,22 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 value: `claim at ${household.self.ssClaimAge}${hasSpouse && household.spouse.socialSecurityAnnual > 0 ? ` / ${household.spouse.ssClaimAge}` : ""}`,
                 key: "ssclaim",
               });
-            if ((household.pensionAnnual ?? 0) > 0 || taxableInvestmentIncome > 0)
+            {
+              const recapWages = wageForYear(household.self, household, year) + wageForYear(household.spouse, household, year);
+              if (recapWages > 0)
+                recap.push({
+                  label: "Work income",
+                  value: `${moneyCompact(recapWages)} in ${year}`,
+                  key: "work",
+                });
+            }
+            const recapStreams = otherIncomeForYear(household.otherIncome, year).total;
+            if ((household.pensionAnnual ?? 0) > 0 || recapStreams > 0 || taxableInvestmentIncome > 0)
               recap.push({
                 label: "Other income",
                 value: [
                   (household.pensionAnnual ?? 0) > 0 ? `pension ${moneyCompact(household.pensionAnnual)}/yr` : "",
+                  recapStreams > 0 ? `streams ${moneyCompact(recapStreams)}/yr` : "",
                   taxableInvestmentIncome > 0 ? `investments ${moneyCompact(taxableInvestmentIncome)}/yr` : "",
                 ]
                   .filter(Boolean)
