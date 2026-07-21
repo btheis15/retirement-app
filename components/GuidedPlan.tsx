@@ -146,6 +146,7 @@ function BucketInput({ value, onCommit, ariaLabel }: { value: number; onCommit: 
     if (!focused.current) setLocal(value ? String(value) : "");
   }, [value]);
   const n = Math.max(0, Number(local.replace(/[^0-9]/g, "")) || 0);
+  const display = local ? Number(local).toLocaleString("en-US") : "";
   useEffect(() => {
     if (n === value) return;
     const t = setTimeout(() => onCommit(n), 300);
@@ -157,7 +158,7 @@ function BucketInput({ value, onCommit, ariaLabel }: { value: number; onCommit: 
         <span className="text-2xl font-semibold text-foreground/40">$</span>
         <input
           inputMode="numeric"
-          value={local}
+          value={display}
           placeholder="0"
           aria-label={ariaLabel ?? "Balance"}
           onFocus={() => (focused.current = true)}
@@ -192,6 +193,7 @@ function IncomeField({
     if (!focused.current) setLocal(value ? String(value) : "");
   }, [value]);
   const n = Math.max(0, Number(local.replace(/[^0-9]/g, "")) || 0);
+  const display = local ? Number(local).toLocaleString("en-US") : "";
   useEffect(() => {
     if (readOnly || n === value) return;
     const t = setTimeout(() => onCommit(n), 300);
@@ -209,7 +211,7 @@ function IncomeField({
         ) : (
           <input
             inputMode="numeric"
-            value={local}
+            value={display}
             placeholder="0"
             aria-label={label}
             onFocus={() => (focused.current = true)}
@@ -351,6 +353,260 @@ function StreamsEditor({
             ＋ Add rental, annuity, or other income
           </button>
         ))}
+    </div>
+  );
+}
+
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/**
+ * The per-person cards below (BirthRow / WorkCard / ClaimPicker) are HOISTED to
+ * module scope on purpose. GuidedPlan re-renders constantly — Monte-Carlo workers
+ * resolving, deferred values catching up — and a component defined inside a step's
+ * render closure gets a brand-new function identity every time, so React unmounts
+ * and remounts its whole subtree. A text field inside such a subtree loses focus
+ * after a single keystroke (the "type one digit and it kicks me out" bug). Stable
+ * top-level identities fix that; the household + updater come in as props.
+ */
+
+/** Birth-year row for the "About you" step. */
+function BirthRow({ who, household, updateHousehold, year }: { who: "self" | "spouse"; household: Household; updateHousehold: (p: Partial<Household>) => void; year: number }) {
+  const p = household[who];
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border p-3">
+      <div className="min-w-0">
+        <div className="text-[14px] font-semibold">{p.label || (who === "self" ? "You" : "Spouse")}</div>
+        <div className="mt-0.5 text-[11px] text-foreground/55">Born {p.birthYear} · age {year - p.birthYear} this year</div>
+      </div>
+      <label className="flex shrink-0 items-center gap-2">
+        <span className="text-[11px] text-foreground/50">Birth year</span>
+        <YearField
+          value={p.birthYear}
+          ariaLabel={`${p.label || who} birth year`}
+          min={year - 100}
+          max={year - 18}
+          labelFor={(y) => `${y} — age ${year - y}`}
+          onChange={(v) => updateHousehold({ [who]: { ...p, birthYear: v } } as never)}
+          className="w-40"
+        />
+      </label>
+    </div>
+  );
+}
+
+/** Work & earned-income card for the "Still working?" step — covers a mid-year
+ *  retirement (stop month + this-year override), W-2 vs self-employed, and the
+ *  full-year rate used for later years. */
+function WorkCard({ who, household, updateHousehold, year }: { who: "self" | "spouse"; household: Household; updateHousehold: (p: Partial<Household>) => void; year: number }) {
+  const p = household[who];
+  const w = p.work;
+  const setWork = (next: WorkIncome | undefined) => updateHousehold({ [who]: { ...p, work: next } } as never);
+  const stopDefault = Math.min(year + 15, Math.max(year, household.retirementYear ?? year));
+  const stopYear = Math.min(year + 15, Math.max(year, w?.lastWorkYear ?? stopDefault));
+  const stopMonth = Math.min(12, Math.max(1, w?.lastWorkMonth ?? 12));
+  const planned = w ? wageForYear(p, household, year) : 0;
+  const working = !!w && w.annualWages >= 0;
+  return (
+    <div className="rounded-2xl border border-border p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[14px] font-semibold">{p.label || (who === "self" ? "You" : "Spouse")}</div>
+        <div className="grid grid-cols-2 gap-1.5">
+          {[
+            { on: !working, label: "Not working" },
+            { on: working, label: "Working" },
+          ].map((o) => (
+            <button
+              key={o.label}
+              onClick={() =>
+                o.label === "Not working"
+                  ? setWork(undefined)
+                  : !working && setWork({ annualWages: 0, lastWorkYear: stopDefault, lastWorkMonth: 12 })
+              }
+              className={`press rounded-xl border px-3 py-1.5 text-[12px] ${o.on ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/60"}`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {working && w && (
+        <div className="mt-3 space-y-3">
+          <IncomeField
+            label="Gross pay per year (before tax)"
+            hint="Your full-year rate — we handle the stop-date math below."
+            value={Math.round(w.annualWages || 0)}
+            onCommit={(v) => setWork({ ...w, annualWages: v })}
+          />
+          <div>
+            <div className="mb-1 text-[12px] font-medium text-foreground/60">Working until</div>
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                aria-label={`${p.label || who} last month of work`}
+                value={stopMonth}
+                onChange={(e) => setWork({ ...w, lastWorkMonth: Number(e.target.value) })}
+                className="field-focus rounded-xl border border-border bg-background px-2.5 py-2 text-[13px] focus:border-primary"
+              >
+                {MONTH_NAMES.map((m, i) => (
+                  <option key={m} value={i + 1}>
+                    end of {m}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label={`${p.label || who} last year of work`}
+                value={stopYear}
+                onChange={(e) => setWork({ ...w, lastWorkYear: Number(e.target.value) })}
+                className="field-focus rounded-xl border border-border bg-background px-2.5 py-2 text-[13px] focus:border-primary"
+              >
+                {Array.from({ length: 16 }, (_, i) => year + i).map((y) => (
+                  <option key={y} value={y}>
+                    {y} (age {y - p.birthYear})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="mt-1 text-[11px] leading-snug text-foreground/50">
+              Already retired this year? Pick the month you stopped — the plan counts the pay you{" "}
+              <strong>already earned</strong> in {year} (it&apos;s on this year&apos;s tax return either way).
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            {[
+              { se: false, label: "W-2 job" },
+              { se: true, label: "Self-employed" },
+            ].map((o) => (
+              <button
+                key={o.label}
+                onClick={() => setWork({ ...w, selfEmployed: o.se || undefined })}
+                className={`press rounded-xl border px-3 py-1.5 text-[12px] ${!!w.selfEmployed === o.se ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/60"}`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+          <Collapsible title={`Earning a different amount in ${year}? (bonus, severance, partial year)`}>
+            <IncomeField
+              label={`Total you'll actually earn in ${year}`}
+              hint={`Overrides our ${year} estimate only — later years still use your annual pay.`}
+              value={Math.round(w.thisYearWages ?? 0)}
+              onCommit={(v) => setWork({ ...w, thisYearWages: v > 0 ? v : undefined })}
+            />
+          </Collapsible>
+          {w.annualWages > 0 && (
+            <p className="rounded-xl bg-primary/5 px-3 py-2 text-[13px] leading-snug text-foreground/70">
+              In the plan: <strong>{money(planned)}</strong> of {year} pay
+              {stopYear > year ? (
+                <> — continuing through {MONTH_NAMES[stopMonth - 1]} {stopYear}.</>
+              ) : (
+                <> — stopping {MONTH_NAMES[stopMonth - 1] === "December" ? `at year-end ${year}` : `end of ${MONTH_NAMES[stopMonth - 1]} ${year}`}.</>
+              )}{" "}
+              It covers spending first, so you draw less from savings — and it&apos;s taxed like a paycheck
+              (Illinois included), unlike your retirement income.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Social Security claim-age + benefit-amount card for the "when to claim" step. */
+function ClaimPicker({ who, household, updateHousehold }: { who: "self" | "spouse"; household: Household; updateHousehold: (p: Partial<Household>) => void }) {
+  const p = household[who];
+  const fra = Math.round(fullRetirementAge(p.birthYear));
+  // Every claim age 62–70 — the old three-preset picker couldn't express "claim
+  // at 65" at all. FRA keeps its ★.
+  const ages = [62, 63, 64, 65, 66, 67, 68, 69, 70];
+  return (
+    <div className="rounded-2xl border border-border p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <div className="text-[14px] font-semibold">{p.label || (who === "self" ? "You" : "Spouse")}</div>
+          <div className="text-[11px] text-foreground/50">Full retirement age {fra}</div>
+        </div>
+        {/* The user's OWN benefit — we can't know it, so let them enter it. This
+            is the full (FRA) monthly amount from their SSA statement; the buttons
+            below adjust it for the claim age. */}
+        <label className="field-focus flex items-center gap-1 rounded-xl border border-border bg-background/50 px-2.5 py-1.5 focus-within:border-primary">
+          <span className="text-foreground/50">$</span>
+          <input
+            inputMode="numeric"
+            aria-label={`${p.label || who} full monthly Social Security benefit at age ${fra}`}
+            value={p.socialSecurityAnnual ? String(Math.round(p.socialSecurityAnnual / 12)) : ""}
+            placeholder="0"
+            onChange={(e) => {
+              const v = Math.max(0, Number(e.target.value.replace(/[^0-9]/g, "")) || 0);
+              updateHousehold({ [who]: { ...p, socialSecurityAnnual: v * 12 } } as never);
+            }}
+            className="tabular w-16 bg-transparent text-right text-[14px] font-semibold outline-none"
+          />
+          <span className="text-[11px] text-foreground/45">/mo</span>
+        </label>
+      </div>
+      <p className="mt-1 text-[10px] leading-snug text-foreground/45">
+        Your <strong>full benefit at {fra}</strong> (from your SSA statement). The buttons below adjust it for when you claim.
+      </p>
+      {p.socialSecurityAnnual / 12 > 5_500 && (
+        <p className="mt-1 rounded-lg bg-tax/10 px-2 py-1 text-[13px] leading-snug text-tax">
+          That&apos;s above the largest possible Social Security check (~$5,200/mo in 2026) — double-check
+          your statement. Enter the <strong>monthly</strong> amount, not yearly.
+        </p>
+      )}
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        {ages.map((a) => {
+          const on = p.ssClaimAge === a;
+          return (
+            <button
+              key={a}
+              onClick={() => updateHousehold({ [who]: { ...p, ssClaimAge: a } } as never)}
+              className={`press rounded-xl border py-1.5 ${on ? "border-primary bg-primary/10" : "border-border"}`}
+            >
+              <div className={`text-[13px] font-bold ${on ? "text-primary" : ""}`}>
+                {a}{a === fra ? " ★" : ""}
+              </div>
+              <div className="text-[10px] text-foreground/55">{moneyCompact(adjustedAnnualBenefit(p.socialSecurityAnnual, p.birthYear, a))}/yr</div>
+            </button>
+          );
+        })}
+      </div>
+      {(() => {
+        // Earnings-test heads-up: claiming before FRA while this person still has
+        // wages in the claim year. Dollars come from the SAME helper the engine
+        // uses (one number, one source).
+        const fraExact = fullRetirementAge(p.birthYear);
+        const claimYear = p.birthYear + p.ssClaimAge;
+        const wageAtClaim = wageForYear(p, household, claimYear);
+        if (p.ssClaimAge >= fraExact || wageAtClaim <= 0 || p.socialSecurityAnnual <= 0) return null;
+        const et = earningsTestWithholding({
+          grossBenefit: adjustedAnnualBenefit(p.socialSecurityAnnual, p.birthYear, p.ssClaimAge),
+          earnings: wageAtClaim,
+          birthYear: p.birthYear,
+          year: claimYear,
+          monthsWorked: monthsWorkedInYear(p, household, claimYear) || 12,
+        });
+        if (et.withheld < 100) return null;
+        return (
+          <div className="mt-2 rounded-xl border border-tax/30 bg-tax/5 p-2.5 text-[13px] leading-snug text-foreground/75">
+            <span aria-hidden>⚠️</span> <strong>Still working at {p.ssClaimAge}?</strong> Because{" "}
+            {p.label || (who === "self" ? "you" : "your spouse")} would earn about{" "}
+            {moneyCompact(wageAtClaim)} that year, Social Security would hold back roughly{" "}
+            <strong>{moneyCompact(et.withheld)}</strong> of the {moneyCompact(et.payable + et.withheld)} benefit
+            under the <em>earnings test</em> — every year until full retirement age. It isn&apos;t lost (it
+            comes back later as a permanently larger check), but claiming this early while working rarely
+            pays. The projection prices all of this in.
+            <Info q="How the earnings test works" sources={[SOURCES.ssEarningsTest]}>
+              Claim before your full retirement age while earning a paycheck and SSA withholds{" "}
+              <strong>$1 of benefits for every $2</strong> you earn over an annual allowance (about $24,480 in
+              2026). In the calendar year you reach full retirement age the allowance jumps (about $65,160)
+              and only $1 per $3 is withheld — and from your FRA month on there&apos;s no limit at all. In
+              your first retirement year, a monthly rule protects the checks for the months after you stop.
+              The withheld months aren&apos;t forfeited: at full retirement age SSA recalculates your benefit
+              as if you&apos;d claimed that many months later, permanently raising the check. Only wages and
+              self-employment earnings count — never pensions, withdrawals, or investment income.
+            </Info>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -1052,29 +1308,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       render: () => {
         const optBtn = (on: boolean) =>
           `press flex w-full items-start gap-3 rounded-2xl border p-3.5 text-left ${on ? "border-primary bg-primary/10" : "border-border"}`;
-        const BirthRow = ({ who }: { who: "self" | "spouse" }) => {
-          const p = household[who];
-          return (
-            <div className="flex items-center justify-between gap-3 rounded-2xl border border-border p-3">
-              <div className="min-w-0">
-                <div className="text-[14px] font-semibold">{p.label || (who === "self" ? "You" : "Spouse")}</div>
-                <div className="mt-0.5 text-[11px] text-foreground/55">Born {p.birthYear} · age {year - p.birthYear} this year</div>
-              </div>
-              <label className="flex shrink-0 items-center gap-2">
-                <span className="text-[11px] text-foreground/50">Birth year</span>
-                <YearField
-                  value={p.birthYear}
-                  ariaLabel={`${p.label || who} birth year`}
-                  min={year - 100}
-                  max={year - 18}
-                  labelFor={(y) => `${y} — age ${year - y}`}
-                  onChange={(v) => updateHousehold({ [who]: { ...p, birthYear: v } } as never)}
-                  className="w-40"
-                />
-              </label>
-            </div>
-          );
-        };
         const yearsAway = retYear - year;
         const selfAgeAtRet = retYear - household.self.birthYear;
         return (
@@ -1086,8 +1319,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </p>
 
             <div className="mt-4 space-y-2">
-              <BirthRow who="self" />
-              {aboutHasSpouse && <BirthRow who="spouse" />}
+              <BirthRow who="self" household={household} updateHousehold={updateHousehold} year={year} />
+              {aboutHasSpouse && <BirthRow who="spouse" household={household} updateHousehold={updateHousehold} year={year} />}
             </div>
 
             {/* Household: just me, or planning as a couple. Two explicit options rather
@@ -1273,119 +1506,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     // The stop year defaults from the retirement year set in "About you", which
     // finally makes that input drive the model.
     {
-      const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-      const WorkCard = ({ who }: { who: "self" | "spouse" }) => {
-        const p = household[who];
-        const w = p.work;
-        const setWork = (next: WorkIncome | undefined) => updateHousehold({ [who]: { ...p, work: next } } as never);
-        const stopDefault = Math.min(year + 15, Math.max(year, household.retirementYear ?? year));
-        const stopYear = Math.min(year + 15, Math.max(year, w?.lastWorkYear ?? stopDefault));
-        const stopMonth = Math.min(12, Math.max(1, w?.lastWorkMonth ?? 12));
-        const planned = w ? wageForYear(p, household, year) : 0;
-        const working = !!w && w.annualWages >= 0;
-        return (
-          <div className="rounded-2xl border border-border p-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-[14px] font-semibold">{p.label || (who === "self" ? "You" : "Spouse")}</div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {[
-                  { on: !working, label: "Not working" },
-                  { on: working, label: "Working" },
-                ].map((o) => (
-                  <button
-                    key={o.label}
-                    onClick={() =>
-                      o.label === "Not working"
-                        ? setWork(undefined)
-                        : !working && setWork({ annualWages: 0, lastWorkYear: stopDefault, lastWorkMonth: 12 })
-                    }
-                    className={`press rounded-xl border px-3 py-1.5 text-[12px] ${o.on ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/60"}`}
-                  >
-                    {o.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {working && w && (
-              <div className="mt-3 space-y-3">
-                <IncomeField
-                  label="Gross pay per year (before tax)"
-                  hint="Your full-year rate — we handle the stop-date math below."
-                  value={Math.round(w.annualWages || 0)}
-                  onCommit={(v) => setWork({ ...w, annualWages: v })}
-                />
-                <div>
-                  <div className="mb-1 text-[12px] font-medium text-foreground/60">Working until</div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <select
-                      aria-label={`${p.label || who} last month of work`}
-                      value={stopMonth}
-                      onChange={(e) => setWork({ ...w, lastWorkMonth: Number(e.target.value) })}
-                      className="field-focus rounded-xl border border-border bg-background px-2.5 py-2 text-[13px] focus:border-primary"
-                    >
-                      {MONTH_NAMES.map((m, i) => (
-                        <option key={m} value={i + 1}>
-                          end of {m}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      aria-label={`${p.label || who} last year of work`}
-                      value={stopYear}
-                      onChange={(e) => setWork({ ...w, lastWorkYear: Number(e.target.value) })}
-                      className="field-focus rounded-xl border border-border bg-background px-2.5 py-2 text-[13px] focus:border-primary"
-                    >
-                      {Array.from({ length: 16 }, (_, i) => year + i).map((y) => (
-                        <option key={y} value={y}>
-                          {y} (age {y - p.birthYear})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <p className="mt-1 text-[11px] leading-snug text-foreground/50">
-                    Already retired this year? Pick the month you stopped — the plan counts the pay you{" "}
-                    <strong>already earned</strong> in {year} (it&apos;s on this year&apos;s tax return either way).
-                  </p>
-                </div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {[
-                    { se: false, label: "W-2 job" },
-                    { se: true, label: "Self-employed" },
-                  ].map((o) => (
-                    <button
-                      key={o.label}
-                      onClick={() => setWork({ ...w, selfEmployed: o.se || undefined })}
-                      className={`press rounded-xl border px-3 py-1.5 text-[12px] ${!!w.selfEmployed === o.se ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/60"}`}
-                    >
-                      {o.label}
-                    </button>
-                  ))}
-                </div>
-                <Collapsible title={`Earning a different amount in ${year}? (bonus, severance, partial year)`}>
-                  <IncomeField
-                    label={`Total you'll actually earn in ${year}`}
-                    hint={`Overrides our ${year} estimate only — later years still use your annual pay.`}
-                    value={Math.round(w.thisYearWages ?? 0)}
-                    onCommit={(v) => setWork({ ...w, thisYearWages: v > 0 ? v : undefined })}
-                  />
-                </Collapsible>
-                {w.annualWages > 0 && (
-                  <p className="rounded-xl bg-primary/5 px-3 py-2 text-[13px] leading-snug text-foreground/70">
-                    In the plan: <strong>{money(planned)}</strong> of {year} pay
-                    {stopYear > year ? (
-                      <> — continuing through {MONTH_NAMES[stopMonth - 1]} {stopYear}.</>
-                    ) : (
-                      <> — stopping {MONTH_NAMES[stopMonth - 1] === "December" ? `at year-end ${year}` : `end of ${MONTH_NAMES[stopMonth - 1]} ${year}`}.</>
-                    )}{" "}
-                    It covers spending first, so you draw less from savings — and it&apos;s taxed like a paycheck
-                    (Illinois included), unlike your retirement income.
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      };
       steps.push({
         key: "work",
         chapter: "income",
@@ -1407,8 +1527,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               </div>
             )}
             <div className="mt-4 space-y-2">
-              <WorkCard who="self" />
-              {hasSpouse && <WorkCard who="spouse" />}
+              <WorkCard who="self" household={household} updateHousehold={updateHousehold} year={year} />
+              {hasSpouse && <WorkCard who="spouse" household={household} updateHousehold={updateHousehold} year={year} />}
             </div>
           </div>
         ),
@@ -1428,105 +1548,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         eyebrow: "when to claim Social Security",
         render: () => {
           const adv = rec.claimAdvice;
-          const ClaimPicker = ({ who }: { who: "self" | "spouse" }) => {
-            const p = household[who];
-            const fra = Math.round(fullRetirementAge(p.birthYear));
-            // Every claim age 62–70 — the old three-preset picker couldn't
-            // express "claim at 65" at all. FRA keeps its ★.
-            const ages = [62, 63, 64, 65, 66, 67, 68, 69, 70];
-            return (
-              <div className="rounded-2xl border border-border p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <div className="text-[14px] font-semibold">{p.label || (who === "self" ? "You" : "Spouse")}</div>
-                    <div className="text-[11px] text-foreground/50">Full retirement age {fra}</div>
-                  </div>
-                  {/* The user's OWN benefit — we can't know it, so let them enter it. This
-                      is the full (FRA) monthly amount from their SSA statement; the buttons
-                      below adjust it for the claim age. */}
-                  <label className="field-focus flex items-center gap-1 rounded-xl border border-border bg-background/50 px-2.5 py-1.5 focus-within:border-primary">
-                    <span className="text-foreground/50">$</span>
-                    <input
-                      inputMode="numeric"
-                      aria-label={`${p.label || who} full monthly Social Security benefit at age ${fra}`}
-                      value={p.socialSecurityAnnual ? String(Math.round(p.socialSecurityAnnual / 12)) : ""}
-                      placeholder="0"
-                      onChange={(e) => {
-                        const v = Math.max(0, Number(e.target.value.replace(/[^0-9]/g, "")) || 0);
-                        updateHousehold({ [who]: { ...p, socialSecurityAnnual: v * 12 } } as never);
-                      }}
-                      className="tabular w-16 bg-transparent text-right text-[14px] font-semibold outline-none"
-                    />
-                    <span className="text-[11px] text-foreground/45">/mo</span>
-                  </label>
-                </div>
-                <p className="mt-1 text-[10px] leading-snug text-foreground/45">
-                  Your <strong>full benefit at {fra}</strong> (from your SSA statement). The buttons below adjust it for when you claim.
-                </p>
-                {p.socialSecurityAnnual / 12 > 5_500 && (
-                  <p className="mt-1 rounded-lg bg-tax/10 px-2 py-1 text-[13px] leading-snug text-tax">
-                    That&apos;s above the largest possible Social Security check (~$5,200/mo in 2026) — double-check
-                    your statement. Enter the <strong>monthly</strong> amount, not yearly.
-                  </p>
-                )}
-                <div className="mt-2 grid grid-cols-3 gap-2">
-                  {ages.map((a) => {
-                    const on = p.ssClaimAge === a;
-                    return (
-                      <button
-                        key={a}
-                        onClick={() => updateHousehold({ [who]: { ...p, ssClaimAge: a } } as never)}
-                        className={`press rounded-xl border py-1.5 ${on ? "border-primary bg-primary/10" : "border-border"}`}
-                      >
-                        <div className={`text-[13px] font-bold ${on ? "text-primary" : ""}`}>
-                          {a}{a === fra ? " ★" : ""}
-                        </div>
-                        <div className="text-[10px] text-foreground/55">{moneyCompact(adjustedAnnualBenefit(p.socialSecurityAnnual, p.birthYear, a))}/yr</div>
-                      </button>
-                    );
-                  })}
-                </div>
-                {(() => {
-                  // Earnings-test heads-up: claiming before FRA while this person
-                  // still has wages in the claim year. Dollars come from the SAME
-                  // helper the engine uses (one number, one source).
-                  const fraExact = fullRetirementAge(p.birthYear);
-                  const claimYear = p.birthYear + p.ssClaimAge;
-                  const wageAtClaim = wageForYear(p, household, claimYear);
-                  if (p.ssClaimAge >= fraExact || wageAtClaim <= 0 || p.socialSecurityAnnual <= 0) return null;
-                  const et = earningsTestWithholding({
-                    grossBenefit: adjustedAnnualBenefit(p.socialSecurityAnnual, p.birthYear, p.ssClaimAge),
-                    earnings: wageAtClaim,
-                    birthYear: p.birthYear,
-                    year: claimYear,
-                    monthsWorked: monthsWorkedInYear(p, household, claimYear) || 12,
-                  });
-                  if (et.withheld < 100) return null;
-                  return (
-                    <div className="mt-2 rounded-xl border border-tax/30 bg-tax/5 p-2.5 text-[13px] leading-snug text-foreground/75">
-                      <span aria-hidden>⚠️</span> <strong>Still working at {p.ssClaimAge}?</strong> Because{" "}
-                      {p.label || (who === "self" ? "you" : "your spouse")} would earn about{" "}
-                      {moneyCompact(wageAtClaim)} that year, Social Security would hold back roughly{" "}
-                      <strong>{moneyCompact(et.withheld)}</strong> of the {moneyCompact(et.payable + et.withheld)} benefit
-                      under the <em>earnings test</em> — every year until full retirement age. It isn&apos;t lost (it
-                      comes back later as a permanently larger check), but claiming this early while working rarely
-                      pays. The projection prices all of this in.
-                      <Info q="How the earnings test works" sources={[SOURCES.ssEarningsTest]}>
-                        Claim before your full retirement age while earning a paycheck and SSA withholds{" "}
-                        <strong>$1 of benefits for every $2</strong> you earn over an annual allowance (about $24,480 in
-                        2026). In the calendar year you reach full retirement age the allowance jumps (about $65,160)
-                        and only $1 per $3 is withheld — and from your FRA month on there&apos;s no limit at all. In
-                        your first retirement year, a monthly rule protects the checks for the months after you stop.
-                        The withheld months aren&apos;t forfeited: at full retirement age SSA recalculates your benefit
-                        as if you&apos;d claimed that many months later, permanently raising the check. Only wages and
-                        self-employment earnings count — never pensions, withdrawals, or investment income.
-                      </Info>
-                    </div>
-                  );
-                })()}
-              </div>
-            );
-          };
           return (
             <div>
               <h2 className="text-xl font-bold leading-snug">
@@ -1556,8 +1577,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 </Callout>
               )}
               <div className="mt-4 space-y-2">
-                <ClaimPicker who="self" />
-                {hasSpouse && <ClaimPicker who="spouse" />}
+                <ClaimPicker who="self" household={household} updateHousehold={updateHousehold} />
+                {hasSpouse && <ClaimPicker who="spouse" household={household} updateHousehold={updateHousehold} />}
               </div>
             </div>
           );

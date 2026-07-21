@@ -53,6 +53,12 @@ export interface Holding {
    *  income (e.g. REITs, many bond funds), false → QUALIFIED (preferential rate).
    *  Undefined → defaulted by holding type. Only matters in taxable accounts. */
   dividendOrdinary?: boolean;
+  /** Estimated annual CAPITAL-GAINS DISTRIBUTION per share (a fund passing through
+   *  realized gains). Auto-filled from the market feed as a multi-year average —
+   *  these swing wildly year to year, so it's a smoothed estimate, NOT grown like
+   *  the income dividend. Taxed as a long-term capital gain (preferential) in
+   *  taxable accounts. ~0 for stocks and most ETFs. User-overridable. */
+  capGainDistPerShare?: number;
 }
 
 export interface Account {
@@ -183,6 +189,11 @@ export interface Household {
   /** Annual ordinary/non-qualified dividends (e.g. REITs, bond funds) — taxed as
    *  ordinary income and counted as net investment income for NIIT. */
   ordinaryDividendsAnnual?: number;
+  /** Annual CAPITAL-GAINS DISTRIBUTIONS from funds in taxable accounts — realized
+   *  gains a fund passes through each year (taxable even when reinvested). Taxed as
+   *  long-term capital gains (preferential). Derived from taxable holdings' per-share
+   *  cap-gain distributions; a smoothed multi-year average, not grown year to year. */
+  capGainDistributionsAnnual?: number;
   /** Annual taxable interest (CDs, Treasuries, savings, money-market) — ordinary
    *  income + net investment income. */
   taxableInterestAnnual?: number;

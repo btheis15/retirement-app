@@ -137,10 +137,14 @@ export async function getSeries(symbols: string[], range: PriceRange = "5y"): Pr
 }
 
 export interface DivInfo {
-  /** Trailing-12-month dividend per share. */
+  /** Trailing income dividend per share (excludes cap-gain distributions). */
   dps: number;
   /** ~5y dividend-growth CAGR (decimal), or null if not enough history. */
   growth: number | null;
+  /** Estimated annual capital-gains distribution per share — a multi-year average.
+   *  0 for anything that doesn't distribute cap gains (stocks, most ETFs). May be
+   *  absent from older cached payloads (treat as 0). */
+  capGainDps?: number;
 }
 
 interface DivCache {
