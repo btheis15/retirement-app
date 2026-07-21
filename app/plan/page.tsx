@@ -32,6 +32,7 @@ import { returnModel } from "@/lib/returns";
 import { money, moneyCompact, percent } from "@/lib/format";
 import { HEX } from "@/lib/palette";
 import { SOURCES } from "@/lib/sources";
+import { AdjustSheet } from "@/components/AdjustSheet";
 
 const GOALS: GoalId[] = ["maxCapital", "lowestTax", "lowestRate"];
 
@@ -54,6 +55,9 @@ const STRATEGY_SHORT: Record<StrategyId, string> = {
 export default function PlanPage() {
   const { ready, mode, household, settings, updateSettings, meta, markReviewed, markBalancesCurrent } = useStore();
   const [showAdvanced, setShowAdvanced] = useState(false);
+  // "Mark done" → prefilled AdjustSheet (the keep-in-sync loop): applying the
+  // real-life transaction is what marks the step done.
+  const [markingDone, setMarkingDone] = useState<{ step: "rmd" | "pretax" | "taxable" | "roth" | "conversion"; label: string; amount: number } | null>(null);
   const year = useMemo(() => new Date().getFullYear(), []);
   const taxScopeLabel = (household.state ?? "IL") === "IL" ? "federal + Illinois" : "federal";
   // "The plan ages": the calendar rolled past the last confirmation, or manually
@@ -192,7 +196,14 @@ export default function PlanPage() {
   ].filter((s) => s.value > 0.5);
 
   // ---- Plain-English step list: exactly what to do, in order. ----
-  const steps: { label: string; amount: number; detail: string; tone: "deferred" | "taxable" | "roth" | "tax" }[] = [];
+  const steps: {
+    label: string;
+    amount: number;
+    detail: string;
+    tone: "deferred" | "taxable" | "roth" | "tax";
+    /** Stable key for "Mark done" (which accounts it draws from / lands in). */
+    kind?: "rmd" | "pretax" | "taxable" | "roth" | "conversion";
+  }[] = [];
   if (plan.rmd > 0.5) {
     // Each person's RMD must legally come out of THEIR OWN pre-tax accounts —
     // a combined household number is actionable in the wrong way for a couple.
@@ -215,6 +226,7 @@ export default function PlanPage() {
           : "") +
         `It's taxed as ordinary income, so it always comes out first.`,
       tone: "deferred",
+      kind: "rmd",
     });
   }
   if (voluntaryPretax > 0.5) {
@@ -223,6 +235,7 @@ export default function PlanPage() {
       amount: voluntaryPretax,
       detail: `Pull pre-tax dollars up to the ${percent(settings.bracketTarget, 0)} tax bracket. Taking these "cheap" dollars now means smaller forced withdrawals — and a smaller tax bill — later.`,
       tone: "deferred",
+      kind: "pretax",
     });
   }
   if (w.taxable > 0.5) {
@@ -231,6 +244,7 @@ export default function PlanPage() {
       amount: w.taxable,
       detail: "Only the gain portion is taxed, usually at the lower long-term capital-gains rate (often 0–15%).",
       tone: "taxable",
+      kind: "taxable",
     });
   }
   if (w.roth > 0.5) {
@@ -239,6 +253,7 @@ export default function PlanPage() {
       amount: w.roth,
       detail: "Used last on purpose: Roth comes out tax-free and is never forced out, so every year it stays invested is tax-free growth.",
       tone: "roth",
+      kind: "roth",
     });
   }
   if (settings.useConversions && thisYearConversion > 0.5) {
@@ -251,6 +266,7 @@ export default function PlanPage() {
           : `, filling the ${percent(settings.bracketTarget, 0)} bracket`
       }. It shrinks every future RMD, then grows tax-free with no RMDs of its own${(household.state ?? "IL") === "IL" ? " — and Illinois doesn't tax the conversion" : ""}. Its tax bill is the next step.`,
       tone: "roth",
+      kind: "conversion",
     });
   }
   if (settings.useConversions && thisYearConversion > 0.5 && thisYearConversionTax > 0.5) {
@@ -545,20 +561,39 @@ export default function PlanPage() {
           </p>
         ) : (
           <ol className="space-y-3">
-            {steps.map((s, i) => (
-              <li key={i} className="flex gap-3">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-[12px] font-bold text-white">
-                  {i + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="font-semibold">{s.label}</span>
-                    <span className={`tabular shrink-0 font-bold ${STEP_TONE[s.tone]}`}>{money(s.amount)}</span>
+            {steps.map((s, i) => {
+              const doneRec = s.kind ? settings.doneActions?.[`${year}:${s.kind}`] : undefined;
+              return (
+                <li key={i} className="flex gap-3">
+                  <span
+                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[12px] font-bold text-white ${doneRec ? "bg-gain" : "bg-primary"}`}
+                  >
+                    {doneRec ? "✓" : i + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className={`font-semibold ${doneRec ? "text-foreground/50 line-through decoration-foreground/30" : ""}`}>{s.label}</span>
+                      <span className={`tabular shrink-0 font-bold ${doneRec ? "text-foreground/40" : STEP_TONE[s.tone]}`}>{money(s.amount)}</span>
+                    </div>
+                    <p className="mt-0.5 text-[12px] leading-relaxed text-foreground/65">{s.detail}</p>
+                    {mode === "own" && s.kind && (
+                      doneRec ? (
+                        <p className="mt-1 text-[11px] font-medium text-gain print:hidden">
+                          ✓ Done {new Date(doneRec.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })} — {money(doneRec.amount)} recorded in your accounts
+                        </p>
+                      ) : (
+                        <button
+                          onClick={() => setMarkingDone({ step: s.kind!, label: s.label, amount: s.amount })}
+                          className="press mt-1 rounded-lg border border-border px-2 py-1 text-[11px] font-medium text-primary print:hidden"
+                        >
+                          ✓ I did this — update my accounts
+                        </button>
+                      )
+                    )}
                   </div>
-                  <p className="mt-0.5 text-[12px] leading-relaxed text-foreground/65">{s.detail}</p>
-                </div>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ol>
         )}
 
@@ -582,6 +617,33 @@ export default function PlanPage() {
       >
         🖨️ Print this list (or save as PDF)
       </button>
+
+      {markingDone && (() => {
+        // Prefill from the step: draw from the biggest account of the step's
+        // bucket (changeable in the sheet); conversions move pre-tax → Roth.
+        const biggest = (bucket: "pretax" | "taxable" | "roth") =>
+          household.accounts.filter((a) => bucketOf(a.kind) === bucket).sort((a, b) => b.balance - a.balance)[0];
+        const fromBucket = markingDone.step === "taxable" ? "taxable" : markingDone.step === "roth" ? "roth" : "pretax";
+        const fromAcct = biggest(fromBucket);
+        const toAcct = markingDone.step === "conversion" ? biggest("roth") : undefined;
+        return (
+          <AdjustSheet
+            prefill={{
+              kind: markingDone.step === "conversion" ? "transfer" : "withdraw",
+              accountId: fromAcct?.id,
+              toAccountId: toAcct?.id ?? "__newroth__",
+              amount: markingDone.amount,
+              reason: `Marking done: ${markingDone.label}`,
+            }}
+            onClose={() => setMarkingDone(null)}
+            onApplied={({ applied }) => {
+              updateSettings({
+                doneActions: { ...settings.doneActions, [`${year}:${markingDone.step}`]: { at: Date.now(), amount: applied } },
+              });
+            }}
+          />
+        );
+      })()}
 
       {/* Why this order — defined right where the steps just used it. */}
       <Info

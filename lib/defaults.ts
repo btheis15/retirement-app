@@ -36,6 +36,11 @@ export interface PlannerSettings {
    *  actual mix as holdings/prices change. Unset → returnRate is a custom
    *  number and is never touched. Optional so pre-existing saves load as-is. */
   returnChoice?: ReturnChoice;
+  /** "Mark done" records from the Plan tab's step list: `${year}:${stepKind}` →
+   *  when it was recorded and the dollars applied. Display state only — the
+   *  real sync is that marking done adjusted the account balances themselves.
+   *  Optional so pre-existing saves load unchanged. */
+  doneActions?: Record<string, { at: number; amount: number }>;
   inflationRate: number;
   endAge: number;
   /** Whether the active plan rolls pre-tax → Roth in the low-tax window. */
