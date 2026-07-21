@@ -87,6 +87,19 @@ export function holdingDividendIncome(h: Holding): number {
   return h.shares * holdingDps(h);
 }
 
+/** This holding's estimated annual capital-gains DISTRIBUTION per share (a fund
+ *  passing through realized gains). Auto-filled as a multi-year average; ~0 for
+ *  stocks and most ETFs. Not a dividend — taxed as a long-term capital gain. */
+export function holdingCapGainDistPerShare(h: Holding): number {
+  return h.capGainDistPerShare != null && h.capGainDistPerShare > 0 ? h.capGainDistPerShare : 0;
+}
+
+/** Current-year capital-gains distribution from one holding (shares × per-share). */
+export function holdingCapGainDist(h: Holding): number {
+  if (!paysDividend(h.type)) return 0;
+  return h.shares * holdingCapGainDistPerShare(h);
+}
+
 /** The modeled dividend-growth rate applied in year τ (1-indexed) for a holding
  *  type whose recent growth is g0. Implements the blend: linear fade for stocks,
  *  constant for funds, zero for bonds. */
@@ -127,6 +140,9 @@ export interface DividendBreakdown {
   qualifiedYear0: number;
   ordinaryYear0: number;
   totalYear0: number;
+  /** Year-0 capital-gains distributions across these holdings (taxed as long-term
+   *  gains). Separate from dividends — lumpy, not grown. */
+  capGainDistYear0: number;
   /** Whether ANY holding carries real (fetched/entered) dividend data — if not,
    *  callers should fall back to entered household totals rather than this model. */
   hasData: boolean;
@@ -155,8 +171,9 @@ export function dividendBreakdown(holdings: Holding[]): DividendBreakdown {
     .sort((a, b) => b.income - a.income);
   const qualifiedYear0 = rows.filter((r) => r.kind === "qualified").reduce((s, r) => s + r.income, 0);
   const ordinaryYear0 = rows.filter((r) => r.kind === "ordinary").reduce((s, r) => s + r.income, 0);
-  const hasData = holdings.some((h) => h.dividendPerShare != null);
-  return { holdings: rows, qualifiedYear0, ordinaryYear0, totalYear0: qualifiedYear0 + ordinaryYear0, hasData };
+  const capGainDistYear0 = holdings.filter((h) => paysDividend(h.type)).reduce((s, h) => s + holdingCapGainDist(h), 0);
+  const hasData = holdings.some((h) => h.dividendPerShare != null || (h.capGainDistPerShare ?? 0) > 0);
+  return { holdings: rows, qualifiedYear0, ordinaryYear0, totalYear0: qualifiedYear0 + ordinaryYear0, capGainDistYear0, hasData };
 }
 
 /** Income-weighted cumulative DPS growth factor at year t for a tax-character
@@ -213,8 +230,13 @@ export function syncHouseholdDividends(household: Household): Household {
   if (!bd.hasData) return household;
   const q = Math.round(bd.qualifiedYear0);
   const o = Math.round(bd.ordinaryYear0);
-  if (Math.abs((household.brokerageDividendsAnnual ?? 0) - q) < 1 && Math.abs((household.ordinaryDividendsAnnual ?? 0) - o) < 1) {
+  const cg = Math.round(bd.capGainDistYear0);
+  if (
+    Math.abs((household.brokerageDividendsAnnual ?? 0) - q) < 1 &&
+    Math.abs((household.ordinaryDividendsAnnual ?? 0) - o) < 1 &&
+    Math.abs((household.capGainDistributionsAnnual ?? 0) - cg) < 1
+  ) {
     return household;
   }
-  return { ...household, brokerageDividendsAnnual: q, ordinaryDividendsAnnual: o };
+  return { ...household, brokerageDividendsAnnual: q, ordinaryDividendsAnnual: o, capGainDistributionsAnnual: cg };
 }

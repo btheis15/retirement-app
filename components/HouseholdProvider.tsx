@@ -318,7 +318,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   // leaving any holding the user has hand-edited (dividendManual) untouched. Feeds
   // the per-holding dividend-income model in the engine.
   const applyLiveDividends = useCallback(
-    (divBySymbol: Record<string, { dps: number; growth: number | null }>) => {
+    (divBySymbol: Record<string, { dps: number; growth: number | null; capGainDps?: number }>) => {
       if (mode !== "own") return; // never mutate the static demo
       setOwnHousehold((prev) => {
         let changed = false;
@@ -330,10 +330,15 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
             const d = divBySymbol[h.ticker?.toUpperCase()];
             if (!d) return h;
             const nextGrowth = d.growth ?? h.dividendGrowthRate;
-            if (Math.abs((h.dividendPerShare ?? -1) - d.dps) > 1e-6 || h.dividendGrowthRate !== nextGrowth) {
+            const nextCapGain = d.capGainDps ?? 0;
+            if (
+              Math.abs((h.dividendPerShare ?? -1) - d.dps) > 1e-6 ||
+              h.dividendGrowthRate !== nextGrowth ||
+              Math.abs((h.capGainDistPerShare ?? 0) - nextCapGain) > 1e-6
+            ) {
               accChanged = true;
               changed = true;
-              return { ...h, dividendPerShare: d.dps, dividendGrowthRate: nextGrowth };
+              return { ...h, dividendPerShare: d.dps, dividendGrowthRate: nextGrowth, capGainDistPerShare: nextCapGain };
             }
             return h;
           });

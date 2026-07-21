@@ -19,7 +19,7 @@ import {
   wageForYear,
   otherIncomeForYear,
 } from "@/lib/accounts";
-import { holdingDps, holdingDivGrowth, dividendKind, holdingDividendKind } from "@/lib/dividends";
+import { holdingDps, holdingDivGrowth, dividendKind, holdingDividendKind, holdingCapGainDistPerShare } from "@/lib/dividends";
 import { ImportHoldingsSheet } from "@/components/ImportHoldings";
 import { AdjustSheet, AdjustPrefill } from "@/components/AdjustSheet";
 import { YearField, ConfirmTapButton, useUndo, UndoSnackbar } from "@/components/inputs";
@@ -241,6 +241,14 @@ export default function AccountsPage() {
         </Field>
         <Field label="Dividends — ordinary / REIT (annual)" className="mt-2">
           <MoneyInput value={household.ordinaryDividendsAnnual ?? 0} onChange={(v) => updateHousehold({ ordinaryDividendsAnnual: v })} />
+        </Field>
+        <Field label="Capital-gains distributions — funds (annual)" className="mt-2">
+          <MoneyInput value={household.capGainDistributionsAnnual ?? 0} onChange={(v) => updateHousehold({ capGainDistributionsAnnual: v })} />
+          <p className="mt-1 text-[11px] text-foreground/55">
+            Realized gains mutual funds pass through each year (taxable even when reinvested), taxed as{" "}
+            <strong>long-term capital gains</strong>. Auto-filled from your fund holdings as a smoothed multi-year
+            average — they swing a lot year to year. ETFs and individual stocks rarely have these.
+          </p>
         </Field>
         <Field label="Taxable interest — CDs / bonds / savings (annual)" className="mt-2">
           <MoneyInput value={household.taxableInterestAnnual ?? 0} onChange={(v) => updateHousehold({ taxableInterestAnnual: v })} />
@@ -946,6 +954,39 @@ function HoldingsEditor({
                       {holdingDividendKind(h) === "qualified" ? "preferential rate" : "ordinary-income rate"}
                     </span>
                   </div>
+                  {/* Capital-gains distributions — funds pass realized gains through
+                      each year (taxable even when reinvested). Shown separately from
+                      the dividend because it's lumpy: a smoothed average, taxed as a
+                      long-term gain, and NOT grown like the dividend. */}
+                  {holdingCapGainDistPerShare(h) > 0 && (
+                    <div className="mt-2 border-t border-border/40 pt-2">
+                      <div className="mb-1 text-[10px] text-foreground/55">
+                        Capital-gains distribution · {h.dividendManual ? "your override" : "from market feed (multi-yr avg)"}
+                      </div>
+                      <div className="flex items-end gap-2">
+                        <label className="flex-1">
+                          <span className="mb-1 block text-[10px] text-foreground/55">Dist / share / yr</span>
+                          <input
+                            className={`${INPUT} py-1.5 text-sm`}
+                            inputMode="decimal"
+                            value={h.capGainDistPerShare ?? ""}
+                            onChange={(e) => update(i, { capGainDistPerShare: numFrom(e.target.value), dividendManual: true })}
+                          />
+                        </label>
+                        <div className="flex-1 text-right">
+                          <span className="mb-1 block text-[10px] text-foreground/55">Cap-gain / yr</span>
+                          <span className="tabular text-sm font-semibold">
+                            {h.shares > 0 ? money(h.shares * holdingCapGainDistPerShare(h)) : "—"}
+                          </span>
+                        </div>
+                      </div>
+                      <p className="mt-1 text-[10px] leading-snug text-foreground/45">
+                        Realized gains the fund passes through yearly — taxable even when reinvested. Taxed as a{" "}
+                        <strong>long-term capital gain</strong> (preferential). It swings year to year, so this is a
+                        smoothed average and isn&apos;t grown like the dividend.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

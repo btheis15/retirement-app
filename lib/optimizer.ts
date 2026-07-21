@@ -112,6 +112,9 @@ interface YearContext {
   socialSecurity: number;
   dividends: number; // qualified
   ordinaryDividends: number;
+  /** Capital-gains distributions from funds this year — forced taxable income even
+   *  when reinvested; taxed as long-term gains (preferential). Taxable accounts only. */
+  capGainDistributions: number;
   taxableInterest: number;
   taxExemptInterest: number;
   /** When false/undefined (the default) dividends & interest are REINVESTED: they're
@@ -145,8 +148,9 @@ function evaluate(
   wantMarginal = false,
 ): { tax: TaxResult; grossInflow: number; netCash: number } {
   // Cash-first: the first ctx.cashTaxable dollars realize no gain; only the excess
-  // sells brokerage and realizes long-term gain.
-  const longTermGains = Math.max(0, draws.taxable - ctx.cashTaxable) * ctx.brokerageGainFraction;
+  // sells brokerage and realizes long-term gain. Fund cap-gain distributions are
+  // long-term gains too (forced on you each year, taxable even when reinvested).
+  const longTermGains = Math.max(0, draws.taxable - ctx.cashTaxable) * ctx.brokerageGainFraction + ctx.capGainDistributions;
   const tax = computeTaxes({
     otherOrdinaryIncome: ctx.pension,
     wages: ctx.wages,
@@ -171,7 +175,7 @@ function evaluate(
   // computeTaxes). Whether they ALSO cover spending is the household's choice: by
   // default they're reinvested (compound in the account, don't reduce withdrawals);
   // only when the user opts to spend them do they count as cash in hand here.
-  const investmentIncome = ctx.dividends + ctx.ordinaryDividends + ctx.taxableInterest + ctx.taxExemptInterest;
+  const investmentIncome = ctx.dividends + ctx.ordinaryDividends + ctx.capGainDistributions + ctx.taxableInterest + ctx.taxExemptInterest;
   // Wages and the other income streams are cash in hand like SS/pension — they
   // fund spending before any withdrawal does.
   const fixedIncome =
@@ -471,6 +475,7 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
     socialSecurity: socialSecurityPayable,
     dividends: household.brokerageDividendsAnnual,
     ordinaryDividends: household.ordinaryDividendsAnnual ?? 0,
+    capGainDistributions: household.capGainDistributionsAnnual ?? 0,
     taxableInterest: household.taxableInterestAnnual ?? 0,
     taxExemptInterest: household.taxExemptInterestAnnual ?? 0,
     num65Plus,
