@@ -138,6 +138,24 @@ export const HISTORICAL_ANNUAL: HistRow[] = [
   { year: 2024, stock: 0.24879, bond: -0.01637, bill: 0.0518, infl: 0.02888 },
 ];
 
+/**
+ * The long-run COMPOUND (geometric) nominal return this stock/bond/cash mix
+ * actually earned over 1928–2024, rebalanced annually (stocks → S&P 500 total
+ * return, bonds → 10-yr Treasury, cash → 3-mo T-bills). This is the honest
+ * "what history averaged" counterpart to the forward-looking CMAs — for an
+ * all-stock mix it lands near the famous ~10%/yr. Rounded to 0.1% so it can be
+ * matched/displayed exactly like the CMA-derived rates.
+ */
+export function historicalGeometric(weights: { equityPct: number; bondPct: number; cashPct: number }): number {
+  let logSum = 0;
+  for (const r of HISTORICAL_ANNUAL) {
+    const blended = weights.equityPct * r.stock + weights.bondPct * r.bond + weights.cashPct * r.bill;
+    logSum += Math.log(1 + blended);
+  }
+  const geo = Math.exp(logSum / HISTORICAL_ANNUAL.length) - 1;
+  return Math.round(geo * 1000) / 1000;
+}
+
 function pctl(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
   const idx = (sorted.length - 1) * p;

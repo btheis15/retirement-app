@@ -157,17 +157,10 @@ export default function ProjectionPage() {
     [household, computeKey],
   );
 
-  // Return scenarios derived from the actual holdings (the SpendingPowerCard
-  // normalizes settings.returnRate to one of these on mount).
+  // The household's actual mix — shown in the assumptions read-out below. The
+  // return RATE itself has one home (the walkthrough's markets step) and one
+  // reconciler (HouseholdProvider); nothing here writes it.
   const rm = useMemo(() => returnModel(household.accounts), [JSON.stringify(household.accounts)]);
-  const scenarios = useMemo(
-    () => [
-      { id: "cons", label: "Conservative", rate: rm.conservative },
-      { id: "mod", label: "Moderate", rate: rm.expectedGeometric },
-      { id: "opt", label: "Optimistic", rate: rm.optimistic },
-    ],
-    [rm],
-  );
 
   if (!ready) return <PageSkeleton />;
 

@@ -32,6 +32,8 @@ import { computeMonteCarlo, computeMostMoney } from "@/lib/mcClient";
 import { MostMoneyStat, MostMoneyMetric, argmaxByMetric } from "@/lib/recommendMonteCarlo";
 import { planAssumptions } from "@/lib/scenarioLab";
 import { returnModel } from "@/lib/returns";
+import { buildReturnOptions, matchReturnChoice, describeMix } from "@/lib/returnOptions";
+import { ReturnMethodInfo } from "@/components/ReturnMethodInfo";
 import { buildActionPlan, PlanYear, PlanAction } from "@/lib/actionPlan";
 import { GoalId, survivorFromSettings } from "@/lib/defaults";
 import { adjustedAnnualBenefit, fullRetirementAge } from "@/lib/socialSecurity";
@@ -401,6 +403,9 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     const total = household.accounts.reduce((s, a) => s + a.balance, 0);
     return total > 0 ? Math.min(SPEND_MAX, Math.round(0.04 * total)) : household.annualSpending;
   }, [household.accounts, household.annualSpending]);
+  // The household's stock/bond/cash mix + the return cards derived from it —
+  // the markets step renders these instead of hardcoded rates.
+  const rmLive = useMemo(() => returnModel(household.accounts), [household.accounts]);
   // Pinned-spending households for the recommender, keyed on the household's
   // STRUCTURAL facts (accounts, people, fixed income) so a spend change neither
   // changes the recommendation nor re-runs the search.
@@ -2204,30 +2209,54 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       const btn = (on: boolean) =>
         `press rounded-xl border py-2 text-center ${on ? "border-primary bg-primary/10 text-primary font-semibold" : "border-border text-foreground/70"}`;
       const near = (a: number, b: number) => Math.abs(a - b) < 1e-9;
+      const opts = buildReturnOptions(rmLive);
+      const activeChoice = settings.returnChoice ?? matchReturnChoice(rmLive, settings.returnRate);
+      const activeOpt = opts.find((o) => o.choice === activeChoice) ?? null;
+      const heavySide = rmLive.bondPct + rmLive.cashPct;
+      const mixReason =
+        rmLive.equityPct >= 0.85
+          ? "Nearly all stocks — so “History repeated” sits near the famous ~10%/yr long-run stock average."
+          : heavySide >= 0.15
+            ? `Your ${Math.round(heavySide * 100)}% in bonds & cash is why these sit below the ~10%/yr all-stock average you may have heard.`
+            : "";
       return (
         <div>
           <h2 className="text-xl font-bold leading-snug">What should we assume about markets?</h2>
           <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
-            These set the middle of every projection. We default to cautious, professional long-run numbers — nudge them
-            if you like. (The forecast then stress-tests hundreds of market paths around this.)
+            These set the middle of every projection. The numbers below are figured from <strong>your actual mix</strong> —{" "}
+            {describeMix(rmLive)}. {mixReason}
+            {rmLive.basis !== "holdings" && " (Accounts without itemized holdings are assumed to hold a 70/25/5 stock/bond/cash mix.)"}
           </p>
           <div className="mt-4">
-            <div className="mb-1 text-[12px] font-medium text-foreground/60">Average yearly return, after fees</div>
-            <div className="grid grid-cols-3 gap-2">
-              {[{ r: 0.04, l: "Cautious" }, { r: 0.05, l: "Moderate" }, { r: 0.06, l: "Optimistic" }].map((o) => (
-                <button key={o.r} onClick={() => updateSettings({ returnRate: o.r })} className={btn(near(settings.returnRate, o.r))}>
-                  <div className="text-lg font-bold leading-none">{percent(o.r, 0)}</div>
-                  <div className="mt-0.5 text-[10px]">{o.l}{o.r === 0.05 ? " ★" : ""}</div>
+            <div className="mb-1 text-[12px] font-medium text-foreground/60">Average yearly return, after fees (before inflation)</div>
+            <div className="grid grid-cols-2 gap-2">
+              {opts.map((o) => (
+                <button
+                  key={o.choice}
+                  onClick={() => updateSettings({ returnChoice: o.choice, returnRate: o.rate })}
+                  className={btn(activeChoice === o.choice)}
+                >
+                  <div className="text-lg font-bold leading-none">{percent(o.rate, 1)}</div>
+                  <div className="mt-0.5 text-[10px]">{o.label}{o.suggested ? " ★" : ""}</div>
                 </button>
               ))}
             </div>
-            <p className="mt-1.5 text-[11px] leading-snug text-foreground/55">
-              {near(settings.returnRate, 0.04)
-                ? "Cautious — a conservative long-run estimate; your plan looks safer if markets disappoint."
-                : near(settings.returnRate, 0.06)
-                  ? "Optimistic — closer to the historical stock average; assumes a strong, stock-heavy run."
-                  : "Moderate — a professional middle estimate for a balanced mix. ★ Suggested unless you have a reason to differ."}
+            {activeChoice === null && (
+              <button className={`${btn(true)} mt-2 w-full`} aria-pressed>
+                <div className="text-lg font-bold leading-none">{percent(settings.returnRate, 1)}</div>
+                <div className="mt-0.5 text-[10px]">Custom — your saved assumption; tap a card to switch</div>
+              </button>
+            )}
+            <p className="mt-1.5 min-h-[2.5em] text-[13px] leading-snug text-foreground/55">
+              {activeOpt
+                ? activeOpt.blurb
+                : "A number you set yourself. The cards are figured from your holdings — tap one anytime and it will keep tracking your mix."}
             </p>
+            <p className="mt-1 text-[11px] leading-snug text-foreground/45">
+              Whichever you pick sets the steady middle path; the forecast still stress-tests hundreds of good and bad market
+              sequences around it.
+            </p>
+            <ReturnMethodInfo rm={rmLive} />
           </div>
           <div className="mt-4">
             <div className="mb-1 text-[12px] font-medium text-foreground/60">Inflation</div>
