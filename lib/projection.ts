@@ -81,6 +81,8 @@ export interface ProjectionRow {
   /** Household gross wages this year (a still-working spouse, part-time work,
    *  or the final working months of a mid-year retirement). 0 once retired. */
   wages: number;
+  /** Other income streams this year (annuity + rental + other, nominal). */
+  otherIncome: number;
   /** MAGI this year — kept so a later year's IRMAA can look back 2 years. */
   magi: number;
   /** Cumulative price level at this year (realized-inflation product). Lets a
@@ -500,6 +502,9 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
       // spurious ±few-% claim adjustment on the kept benefit for life.
       h[survivorWho] = { ...sv, socialSecurityAnnual: keptBenefit, ssClaimAge: fullRetirementAge(sv.birthYear) };
       // The deceased's wages stop with them (the survivor's own work continues).
+      // Household-level other-income streams (rental, annuity…) pass to the
+      // survivor UNCHANGED — a stated simplification: real annuities/pensions
+      // often step down at death, so this errs toward overstating survivor income.
       h[olderWho] = { ...h[olderWho], socialSecurityAnnual: 0, work: undefined };
       for (const a of h.accounts) if (a.owner === olderWho) a.owner = survivorWho;
       h.annualSpending *= survivor.spendingFactor;
@@ -635,6 +640,7 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
       marginalRate: plan.tax.marginalOrdinaryRate,
       effMarginalRate: plan.tax.effectiveMarginalRate,
       wages: plan.fixed.wages,
+      otherIncome: plan.fixed.otherIncome,
       magi: plan.tax.magi,
       inflationFactor,
       irmaa: plan.tax.irmaa.householdAnnual,

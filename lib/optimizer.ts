@@ -28,6 +28,7 @@ import {
   bucketOf,
   ageInYear,
   wageForYear,
+  otherIncomeForYear,
 } from "./accounts";
 import { adjustedAnnualBenefit } from "./socialSecurity";
 import { money } from "./format";
@@ -95,7 +96,12 @@ export function computeRmd(household: Household, year: number): { total: number;
 
 interface YearContext {
   year: number;
+  /** Pension PLUS annuity streams — ordinary income that Illinois exempts. */
   pension: number;
+  /** Net rental income this year — ordinary + IL-taxable + NIIT. */
+  rentalIncome: number;
+  /** Other non-retirement ordinary income (royalties, misc.) — ordinary + IL. */
+  otherTaxableIncome: number;
   /** Household gross wages this year (both spouses, already prorated/COLA'd).
    *  Ordinary income federally AND in Illinois; cash that funds spending first. */
   wages: number;
@@ -143,6 +149,8 @@ function evaluate(
   const tax = computeTaxes({
     otherOrdinaryIncome: ctx.pension,
     wages: ctx.wages,
+    rentalIncome: ctx.rentalIncome,
+    otherTaxableIncome: ctx.otherTaxableIncome,
     preTaxWithdrawals: draws.pretax,
     socialSecurity: ctx.socialSecurity,
     qualifiedDividends: ctx.dividends,
@@ -163,9 +171,10 @@ function evaluate(
   // default they're reinvested (compound in the account, don't reduce withdrawals);
   // only when the user opts to spend them do they count as cash in hand here.
   const investmentIncome = ctx.dividends + ctx.ordinaryDividends + ctx.taxableInterest + ctx.taxExemptInterest;
-  // Wages are cash in hand like SS/pension — they fund spending before any
-  // withdrawal does (that's the whole point of modeling a working household).
-  const fixedIncome = ctx.socialSecurity + ctx.pension + ctx.wages + (ctx.spendDividends ? investmentIncome : 0);
+  // Wages and the other income streams are cash in hand like SS/pension — they
+  // fund spending before any withdrawal does.
+  const fixedIncome =
+    ctx.socialSecurity + ctx.pension + ctx.wages + ctx.rentalIncome + ctx.otherTaxableIncome + (ctx.spendDividends ? investmentIncome : 0);
   const grossInflow = fixedIncome + draws.pretax + draws.taxable + draws.roth;
   // Payroll tax (FICA/SE) comes off cash in hand but stays out of tax.totalTax —
   // the set-aside/withholding guidance is about INCOME tax, and payroll tax is
@@ -233,6 +242,8 @@ export interface YearPlan {
     pension: number;
     /** Household gross wages this year (0 once everyone has stopped working). */
     wages: number;
+    /** Other income streams this year (annuity + rental + other, nominal). */
+    otherIncome: number;
     dividends: number;
     ordinaryDividends: number;
     taxableInterest: number;
@@ -400,6 +411,11 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
   const wages = wagesSelf + wagesSpouse;
   const ficaTax = payrollOn(household.self, wagesSelf) + payrollOn(household.spouse, wagesSpouse);
 
+  // Unearned income streams beyond the pension. Annuities share the pension's
+  // tax treatment (ordinary, IL-exempt) so they ride in ctx.pension; rental and
+  // "other" carry their own characters (see YearContext).
+  const streams = otherIncomeForYear(household.otherIncome, year, inflF);
+
   const balances = {
     pretax: household.accounts.filter((a) => bucketOf(a.kind) === "pretax").reduce((s, a) => s + a.balance, 0),
     roth: household.accounts.filter((a) => bucketOf(a.kind) === "roth").reduce((s, a) => s + a.balance, 0),
@@ -417,7 +433,9 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
 
   const ctx: YearContext = {
     year,
-    pension: household.pensionAnnual,
+    pension: household.pensionAnnual + streams.annuity,
+    rentalIncome: streams.rental,
+    otherTaxableIncome: streams.other,
     wages,
     ficaTax,
     socialSecurity,
@@ -457,7 +475,8 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
     const incomeWords = [
       wages > 0 ? "work income" : "",
       "Social Security",
-      household.pensionAnnual > 0 ? "pension" : "",
+      household.pensionAnnual + streams.annuity > 0 ? "pension" : "",
+      streams.rental + streams.other > 0 ? "other income" : "",
       ctx.spendDividends ? "dividends" : "",
     ]
       .filter(Boolean)
@@ -674,6 +693,7 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
       socialSecurity,
       pension: household.pensionAnnual,
       wages,
+      otherIncome: streams.total,
       dividends: household.brokerageDividendsAnnual,
       ordinaryDividends: household.ordinaryDividendsAnnual ?? 0,
       taxableInterest: household.taxableInterestAnnual ?? 0,
