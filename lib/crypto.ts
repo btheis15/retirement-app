@@ -1,7 +1,9 @@
 /**
- * On-device encryption via the Web Crypto API. Used for (a) the optional
- * passcode that encrypts your data at rest in this browser, and (b) the
- * downloadable backup file.
+ * On-device encryption via the Web Crypto API. Used for the downloadable
+ * backup file (Data Vault) ONLY. Note honestly: the working copy of your data
+ * in this browser's localStorage is plain JSON on your device — it never
+ * leaves the device, but it is not encrypted at rest. The encrypted artifact
+ * is the .retire backup you export.
  *
  * A passphrase is stretched with PBKDF2-SHA256 (250k iterations) into a 256-bit
  * AES-GCM key. The key is NEVER stored or transmitted — it only exists in

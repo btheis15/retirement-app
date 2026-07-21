@@ -3,7 +3,7 @@
 A mobile-first **PWA** that helps a couple approaching retirement figure out
 **which accounts to withdraw from, in what order, to pay as little federal tax
 as possible** — across rollover 401(k)s, Traditional IRAs, Roth IRAs, a taxable
-brokerage, cash, and Social Security, filing **jointly**.
+brokerage, cash, and Social Security — filing jointly or single (the survivor model files single), with work income for still-working households.
 
 It models the real, interacting tax rules retirees face: ordinary brackets,
 the taxability of Social Security, long-term capital-gains rates, Required
@@ -11,7 +11,7 @@ Minimum Distributions (RMDs), the Medicare IRMAA surcharge cliffs, and the Net
 Investment Income Tax — using **2026** figures.
 
 > ⚠️ **Educational estimates only — not tax, legal, or investment advice.**
-> Federal tax only (no state tax). Verify with a qualified professional.
+> Federal + Illinois state tax (IL exempts retirement income; wages and investment income are taxed). Verify with a qualified professional.
 
 ## What it does
 
