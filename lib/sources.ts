@@ -55,4 +55,8 @@ export const SOURCES = {
     label: "Vanguard Capital Markets Model — forward-looking return, volatility & correlation forecasts",
     url: "https://corporate.vanguard.com/content/corporatesite/us/en/corp/vemo/vemo-return-forecasts.html",
   },
+  histReturns: {
+    label: "Damodaran (NYU Stern) — historical returns on stocks, bonds & bills, 1928–present",
+    url: "https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/histretSP.html",
+  },
 } as const;

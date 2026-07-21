@@ -6,6 +6,7 @@ import { Card, SectionTitle, Explainer, Info, Pill, Callout } from "@/components
 import { projectLifetime } from "@/lib/projection";
 import { Household, sumBuckets } from "@/lib/accounts";
 import { returnModel } from "@/lib/returns";
+import { matchReturnChoice } from "@/lib/returnOptions";
 import { money, moneyCompact, percent } from "@/lib/format";
 
 const SPEND_MAX = 500_000;
@@ -131,23 +132,16 @@ function SpendScale({
  * self-sustaining spending level. Self-contained; drop it on any page.
  */
 export function SpendingPowerCard() {
-  const { ready, household, settings, updateSettings } = useStore();
+  const { ready, household, settings } = useStore();
   // What-if ONLY: this slider explores spending levels WITHOUT overwriting the
   // real annualSpending (the Plan tab owns that). Seeded from it, re-synced when it
   // changes, but never written back — so it can't silently disagree with the plan.
   const [whatIf, setWhatIf] = useState(household.annualSpending);
   useEffect(() => setWhatIf(household.annualSpending), [household.annualSpending]);
 
+  // (The return assumption is reconciled in ONE place — HouseholdProvider. A
+  // chosen card tracks the mix there; a custom rate is never touched here.)
   const rm = useMemo(() => returnModel(household.accounts), [JSON.stringify(household.accounts)]);
-
-  // Keep the return assumption holdings-appropriate even if the user hasn't
-  // visited the Forecast/Compare toggles yet.
-  useEffect(() => {
-    if (!ready) return;
-    const cards = [rm.conservative, rm.expectedGeometric, rm.optimistic];
-    if (!cards.some((c) => Math.abs(c - settings.returnRate) < 0.0025)) updateSettings({ returnRate: rm.expectedGeometric });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, rm.expectedGeometric, rm.conservative, rm.optimistic]);
 
   const base: SpendBase = {
     strategy: settings.strategy,
@@ -180,12 +174,20 @@ export function SpendingPowerCard() {
 
   if (!ready) return null;
 
-  const returnLabel =
-    Math.abs(settings.returnRate - rm.conservative) < 0.0025
-      ? "conservative"
-      : Math.abs(settings.returnRate - rm.optimistic) < 0.0025
-        ? "optimistic"
-        : "moderate";
+  const returnLabel = (() => {
+    switch (matchReturnChoice(rm, settings.returnRate)) {
+      case "cautious":
+        return "cautious";
+      case "strong":
+        return "strong";
+      case "historical":
+        return "history-repeated";
+      case "expected":
+        return "expected";
+      default:
+        return "custom";
+    }
+  })();
   const endsRicher = chosen.endingEstate > startTotal * 1.001;
   const current = whatIf;
   const sustainMessage =
@@ -200,7 +202,7 @@ export function SpendingPowerCard() {
       <SectionTitle>Could you spend more?</SectionTitle>
       <Explainer>
         Drag your spending and the whole forecast reacts. If you tend to under-spend, this shows the real room
-        you have at a {returnLabel} {percent(settings.returnRate, 1)} return.
+        you have at your {percent(settings.returnRate, 1)}/yr return assumption ({returnLabel}).
       </Explainer>
       <Card>
         <div className="flex items-baseline justify-between">

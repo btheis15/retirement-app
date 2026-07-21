@@ -11,6 +11,8 @@ import { Account, Household, syncAccountFromHoldings } from "@/lib/accounts";
 import { demoHousehold } from "@/lib/demo";
 import { syncHouseholdDividends } from "@/lib/dividends";
 import { emptyHousehold, DEFAULT_SETTINGS, PlannerSettings } from "@/lib/defaults";
+import { returnModel } from "@/lib/returns";
+import { matchReturnChoice, resolveReturnRate } from "@/lib/returnOptions";
 
 type Mode = "demo" | "own";
 
@@ -254,6 +256,28 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const resetOwn = useCallback(() => {
     persistOwn(emptyHousehold());
   }, [persistOwn]);
+
+  // ── Return-assumption reconciler — the ONE place the rate follows the mix. ──
+  // A chosen card (settings.returnChoice) is a standing choice like "Expected for
+  // MY mix", so when holdings/prices change the numeric rate is re-derived here
+  // and nowhere else. Saves that predate returnChoice adopt the card their rate
+  // already matches; the untouched 5% factory default adopts the suggested
+  // Expected card. Any other unmatched rate is a deliberate custom number and is
+  // NEVER moved (it renders as a "Custom" chip on the markets step).
+  useEffect(() => {
+    if (!ready) return;
+    const rm = returnModel(household.accounts);
+    const choice =
+      settings.returnChoice ??
+      matchReturnChoice(rm, settings.returnRate) ??
+      (settings.returnRate === DEFAULT_SETTINGS.returnRate ? "expected" : null);
+    if (!choice) return;
+    const rate = resolveReturnRate(rm, choice);
+    if (settings.returnChoice !== choice || Math.abs(rate - settings.returnRate) > 0.0005) {
+      updateSettings({ returnChoice: choice, returnRate: rate });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, household.accounts, settings.returnChoice, settings.returnRate, updateSettings]);
 
   const applyLivePrices = useCallback(
     (prices: Record<string, number>) => {

@@ -1,6 +1,7 @@
 import { Household, defaultRetirementYear } from "./accounts";
 import { BracketTarget, StrategyId } from "./optimizer";
 import type { Sex } from "./mortality";
+import type { ReturnChoice } from "./returnOptions";
 
 /**
  * What the user is optimizing FOR. The robo-advisor turns a goal into a concrete
@@ -30,6 +31,11 @@ export interface PlannerSettings {
   strategy: StrategyId;
   bracketTarget: BracketTarget;
   returnRate: number;
+  /** Which mix-derived return card the rate came from (lib/returnOptions.ts).
+   *  When set, HouseholdProvider keeps returnRate tracking the household's
+   *  actual mix as holdings/prices change. Unset → returnRate is a custom
+   *  number and is never touched. Optional so pre-existing saves load as-is. */
+  returnChoice?: ReturnChoice;
   inflationRate: number;
   endAge: number;
   /** Whether the active plan rolls pre-tax → Roth in the low-tax window. */
