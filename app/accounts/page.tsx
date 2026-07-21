@@ -22,7 +22,8 @@ import {
 import { holdingDps, holdingDivGrowth, dividendKind, holdingDividendKind } from "@/lib/dividends";
 import { ImportHoldingsSheet } from "@/components/ImportHoldings";
 import { AdjustSheet, AdjustPrefill } from "@/components/AdjustSheet";
-import { YearField, ConfirmTapButton } from "@/components/inputs";
+import { YearField, ConfirmTapButton, useUndo, UndoSnackbar } from "@/components/inputs";
+import { parseTickerSharesList } from "@/lib/importHoldings";
 import { rmdStartAge } from "@/lib/tax/constants";
 import { adjustedAnnualBenefit, fullRetirementAge } from "@/lib/socialSecurity";
 import { searchTickers, getSeries, latestPrices, assetTypeLabel, SearchResult } from "@/lib/prices";
@@ -580,7 +581,19 @@ function HoldingsEditor({
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [adding, setAdding] = useState<string | null>(null);
+  // Tapping a result expands it to ask for shares FIRST (no more silent "1
+  // share" defaults), and the search stays open so a whole portfolio can be
+  // entered in one sitting — the session's adds stack up under the box.
+  const [picked, setPicked] = useState<SearchResult | null>(null);
+  const [pickedShares, setPickedShares] = useState("");
+  const [addedThisSession, setAddedThisSession] = useState<{ ticker: string; shares: number }[]>([]);
+  const [dupNote, setDupNote] = useState<string | null>(null);
+  const [pasteMode, setPasteMode] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [pasteNotes, setPasteNotes] = useState<string[]>([]);
+  const { pending: undoPending, offer: offerUndo, act: actUndo } = useUndo();
   const inputRef = useRef<HTMLInputElement>(null);
+  const sharesRef = useRef<HTMLInputElement>(null);
 
   // Debounced live search.
   useEffect(() => {
@@ -610,85 +623,217 @@ function HoldingsEditor({
   const openSearch = () => {
     setQuery("");
     setResults([]);
+    setPicked(null);
+    setDupNote(null);
+    setAddedThisSession([]);
     setOpen(true);
   };
   const closeSearch = () => {
     setOpen(false);
     setQuery("");
     setResults([]);
+    setPicked(null);
+    setPasteMode(false);
   };
 
-  const add = async (r: SearchResult) => {
+  const pick = (r: SearchResult) => {
+    setDupNote(null);
     if (holdings.some((h) => h.ticker === r.symbol)) {
-      closeSearch();
+      // No silent close: say why nothing happened.
+      setDupNote(`${r.symbol} is already in this account — edit its shares below instead.`);
       return;
     }
+    setPicked(r);
+    setPickedShares("");
+    setTimeout(() => sharesRef.current?.focus(), 30);
+  };
+
+  const add = async (r: SearchResult, shares: number) => {
     setAdding(r.symbol);
     let price = 0;
     try {
       const series = await getSeries([r.symbol], "1mo");
       price = latestPrices(series)[r.symbol] ?? 0;
     } catch {
-      /* leave price 0; user can still set shares */
+      /* leave price 0; user can still edit later */
     }
     const holding: Holding = {
       ticker: r.symbol,
       name: r.name,
       type: YAHOO_TO_HOLDING[r.type.toUpperCase()] ?? "stock",
-      shares: 1,
+      shares,
       price,
       ...(isTaxable ? { costPerShare: price } : {}),
     };
     onChange([...holdings, holding]);
     setAdding(null);
-    closeSearch();
+    setAddedThisSession((xs) => [...xs, { ticker: r.symbol, shares }]);
+    // Stay open for the next one — clear the query and refocus the search box.
+    setPicked(null);
+    setQuery("");
+    setResults([]);
+    inputRef.current?.focus();
+  };
+
+  // "Paste a list instead": AAPL 100-style lines → batch-priced adds.
+  const addPasted = async () => {
+    const { rows: pastedRows, rejected } = parseTickerSharesList(pasteText);
+    const fresh = pastedRows.filter((r) => !holdings.some((h) => h.ticker === r.symbol));
+    const dups = pastedRows.length - fresh.length;
+    const notes: string[] = rejected.map((r) => `"${r.line}" — ${r.reason}`);
+    if (dups > 0) notes.push(`${dups} already in this account — skipped.`);
+    let priced: Record<string, number> = {};
+    try {
+      priced = latestPrices(await getSeries(fresh.map((r) => r.symbol), "1mo"));
+    } catch {
+      /* prices fall back to 0 */
+    }
+    const found = fresh.filter((r) => priced[r.symbol] != null && priced[r.symbol] > 0);
+    const missing = fresh.filter((r) => !(priced[r.symbol] != null && priced[r.symbol] > 0));
+    for (const m of missing) notes.push(`Couldn't find ${m.symbol} — check the symbol and add it by search.`);
+    if (found.length > 0) {
+      onChange([
+        ...holdings,
+        ...found.map((r) => ({
+          ticker: r.symbol,
+          name: r.symbol,
+          type: "stock" as const,
+          shares: r.shares,
+          price: priced[r.symbol],
+          ...(isTaxable ? { costPerShare: priced[r.symbol] } : {}),
+        })),
+      ]);
+      setAddedThisSession((xs) => [...xs, ...found.map((r) => ({ ticker: r.symbol, shares: r.shares }))]);
+      setPasteText("");
+      setPasteMode(false);
+    }
+    setPasteNotes(notes);
   };
 
   const update = (i: number, patch: Partial<Holding>) =>
     onChange(holdings.map((h, j) => (j === i ? { ...h, ...patch } : h)));
-  const remove = (i: number) => onChange(holdings.filter((_, j) => j !== i));
+  const remove = (i: number) => {
+    const prev = holdings;
+    const gone = holdings[i];
+    onChange(holdings.filter((_, j) => j !== i));
+    offerUndo(`Removed ${gone.ticker || gone.name}`, () => onChange(prev));
+  };
   const numFrom = (s: string) => Math.max(0, Number(s.replace(/[^0-9.]/g, "")) || 0);
 
-  // ---- Search screen: tap "+ Add holding" to get here, pick an asset. ----
+  // ---- Search screen: tap "+ Add holding" to get here. It STAYS open after
+  //      each add (a real portfolio goes in, in one sitting); tapping a result
+  //      asks for the share count right there — never a silent "1 share". ----
   if (open) {
     const q = query.trim();
     return (
       <div className="mt-2">
         <div className="mb-2 flex items-center justify-between">
-          <span className="text-[13px] font-semibold">Add a holding</span>
+          <span className="text-[13px] font-semibold">Add holdings</span>
           <button onClick={closeSearch} className="press text-[12px] font-medium text-foreground/60">
-            Cancel
+            {addedThisSession.length > 0 ? "Done" : "Cancel"}
           </button>
         </div>
-        <input
-          ref={inputRef}
-          className={INPUT}
-          value={query}
-          placeholder="Search a stock or fund — e.g. Apple, VTI, Vanguard…"
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <div className="mt-1 overflow-hidden rounded-xl border border-border bg-card">
-          {!q && <div className="px-3 py-3 text-[12px] text-foreground/50">Type a company name or ticker symbol to search.</div>}
-          {q && loading && results.length === 0 && <div className="px-3 py-3 text-[12px] text-foreground/50">Searching…</div>}
-          {q && !loading && results.length === 0 && (
-            <div className="px-3 py-3 text-[12px] text-foreground/50">No matches — try a ticker like VTI or a full company name.</div>
-          )}
-          {results.map((r) => (
-            <button
-              key={r.symbol}
-              onClick={() => add(r)}
-              disabled={adding === r.symbol}
-              className="press flex w-full items-center justify-between gap-2 border-b border-border/50 px-3 py-2.5 text-left last:border-0"
-            >
-              <span className="min-w-0">
-                <span className="font-semibold">{r.symbol}</span>
-                <span className="ml-1.5 text-[10px] uppercase text-foreground/40">{assetTypeLabel(r.type)}</span>
-                <span className="block truncate text-[11px] text-foreground/55">{r.name}</span>
-              </span>
-              <span className="shrink-0 text-[12px] font-medium text-primary">{adding === r.symbol ? "Adding…" : "Add +"}</span>
+        {pasteMode ? (
+          <div>
+            <textarea
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              rows={4}
+              placeholder={"One per line — symbol then shares:\nAAPL 100\nVTI 250.5"}
+              className={`${INPUT} font-mono text-[12px]`}
+            />
+            <div className="mt-2 flex gap-2">
+              <button onClick={addPasted} disabled={!pasteText.trim()} className={`press flex-1 rounded-xl py-2 text-[12px] font-semibold ${pasteText.trim() ? "bg-primary text-background" : "bg-foreground/10 text-foreground/40"}`}>
+                Add these
+              </button>
+              <button onClick={() => setPasteMode(false)} className="press rounded-xl border border-border px-3 text-[12px] text-foreground/60">
+                Back to search
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <input
+              ref={inputRef}
+              className={INPUT}
+              value={query}
+              placeholder="Search a stock or fund — e.g. Apple, VTI, Vanguard…"
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <button onClick={() => { setPasteMode(true); setPasteNotes([]); }} className="press mt-1 text-[11px] font-medium text-primary">
+              Or paste a list (AAPL 100, one per line)
             </button>
-          ))}
-        </div>
+          </>
+        )}
+        {dupNote && <div className="mt-1 rounded-lg bg-tax/10 px-2 py-1 text-[13px] text-tax">{dupNote}</div>}
+        {pasteNotes.map((n, i) => (
+          <div key={i} className="mt-1 rounded-lg bg-tax/10 px-2 py-1 text-[13px] leading-snug text-tax">{n}</div>
+        ))}
+        {!pasteMode && (
+          <div className="mt-1 overflow-hidden rounded-xl border border-border bg-card">
+            {!q && <div className="px-3 py-3 text-[12px] text-foreground/50">Type a company name or ticker symbol to search.</div>}
+            {q && loading && results.length === 0 && <div className="px-3 py-3 text-[12px] text-foreground/50">Searching…</div>}
+            {q && !loading && results.length === 0 && (
+              <div className="px-3 py-3 text-[12px] text-foreground/50">No matches — try a ticker like VTI or a full company name.</div>
+            )}
+            {results.map((r) =>
+              picked?.symbol === r.symbol ? (
+                <div key={r.symbol} className="border-b border-primary/40 bg-primary/5 px-3 py-2.5 last:border-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="min-w-0">
+                      <span className="font-semibold">{r.symbol}</span>
+                      <span className="block truncate text-[11px] text-foreground/55">{r.name}</span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      <input
+                        ref={sharesRef}
+                        inputMode="decimal"
+                        value={pickedShares}
+                        onChange={(e) => setPickedShares(e.target.value.replace(/[^0-9.]/g, ""))}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && numFrom(pickedShares) > 0) add(r, numFrom(pickedShares));
+                        }}
+                        placeholder="shares"
+                        aria-label={`${r.symbol} share count`}
+                        className="tabular w-20 rounded-lg border border-border bg-background px-2 py-1.5 text-right text-[13px] font-semibold outline-none focus:border-primary"
+                      />
+                      <button
+                        onClick={() => add(r, numFrom(pickedShares))}
+                        disabled={numFrom(pickedShares) <= 0 || adding === r.symbol}
+                        className={`press rounded-lg px-2.5 py-1.5 text-[12px] font-semibold ${numFrom(pickedShares) > 0 ? "bg-primary text-background" : "bg-foreground/10 text-foreground/40"}`}
+                      >
+                        {adding === r.symbol ? "…" : "Add"}
+                      </button>
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  key={r.symbol}
+                  onClick={() => pick(r)}
+                  className="press flex w-full items-center justify-between gap-2 border-b border-border/50 px-3 py-2.5 text-left last:border-0"
+                >
+                  <span className="min-w-0">
+                    <span className="font-semibold">{r.symbol}</span>
+                    <span className="ml-1.5 text-[10px] uppercase text-foreground/40">{assetTypeLabel(r.type)}</span>
+                    <span className="block truncate text-[11px] text-foreground/55">{r.name}</span>
+                  </span>
+                  <span className="shrink-0 text-[12px] font-medium text-primary">Add +</span>
+                </button>
+              ),
+            )}
+          </div>
+        )}
+        {addedThisSession.length > 0 && (
+          <div className="mt-2 rounded-xl border border-gain/30 bg-gain/5 px-3 py-2">
+            {addedThisSession.map((a, i) => (
+              <div key={i} className="text-[12px] text-foreground/70">
+                <span className="text-gain">✓</span> Added {a.ticker} · {a.shares} sh
+              </div>
+            ))}
+            <div className="mt-1 text-[11px] text-foreground/50">Keep searching to add more, or tap Done.</div>
+          </div>
+        )}
       </div>
     );
   }
@@ -696,6 +841,7 @@ function HoldingsEditor({
   // ---- List of holdings + the "+ Add holding" button. ----
   return (
     <div className="mt-2">
+      <UndoSnackbar pending={undoPending} onUndo={actUndo} />
       {holdings.length > 0 && (
         <div className="mb-2 space-y-2">
           {holdings.map((h, i) => (
