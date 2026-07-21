@@ -54,6 +54,16 @@ export const SENIOR_BONUS_PHASEOUT_START_MFJ = 150_000;
 export const SS_BASE_MFJ = 32_000;
 export const SS_SECOND_MFJ = 44_000;
 
+/** Employee share of FICA on W-2 wages: 6.2% OASDI + 1.45% Medicare. Payroll
+ *  tax, not income tax — the planner subtracts it from a worker's cash in hand
+ *  but keeps it out of totalTax (set-aside/withholding guidance stays honest).
+ *  Simplified: no SS wage-base cap, no 0.9% additional-Medicare surtax — both
+ *  overstate the bite slightly for very high earners (errs conservative). */
+export const FICA_RATE = 0.0765;
+/** Self-employment tax (both halves): 12.4% OASDI + 2.9% Medicare. Same stated
+ *  simplifications as FICA_RATE (plus no 92.35% factor / half-SE deduction). */
+export const SE_TAX_RATE = 0.153;
+
 /** Net Investment Income Tax (statutory, not indexed). */
 export const NIIT_RATE = 0.038;
 export const NIIT_THRESHOLD_MFJ = 250_000;

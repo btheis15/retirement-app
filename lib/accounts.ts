@@ -102,6 +102,34 @@ export function syncAccountFromHoldings(a: Account): Account {
 
 import type { StateCode } from "./tax/state";
 
+/** Earned income (a job, self-employment, part-time/consulting work) for one
+ *  person — the thing a just-retired or still-working household needs modeled:
+ *  it funds spending before withdrawals do, it's taxed (federal AND Illinois,
+ *  unlike retirement income), it raises MAGI/IRMAA and the taxable share of
+ *  Social Security, and claiming SS before full retirement age while earning
+ *  triggers the earnings test. All fields optional → old saves load unchanged. */
+export interface WorkIncome {
+  /** Gross annual wages at the full-year rate, in today's dollars. Assumed to
+   *  grow with inflation (raises track prices — a stated simplification). */
+  annualWages: number;
+  /** Last calendar year with earnings (inclusive). Unset → falls back to the
+   *  household's retirementYear, else earnings stop after the current year. */
+  lastWorkYear?: number;
+  /** Last month worked in lastWorkYear, 1–12 (inclusive). Unset → December.
+   *  The stop year's wages are prorated by this month. */
+  lastWorkMonth?: number;
+  /** Override for the CURRENT calendar year only: what this person will actually
+   *  earn this year in total (already-received pay + the rest of the year —
+   *  bonuses, severance, a mid-year raise). Ignored in every other year, so it
+   *  can never go stale when the calendar rolls. */
+  thisYearWages?: number;
+  /** True → self-employment: the full 15.3% SE tax is modeled instead of the
+   *  7.65% employee share of FICA. (Simplified: no SS wage-base cap, no 92.35%
+   *  net-earnings factor, no half-SE-tax deduction — slightly overstates the
+   *  bite, i.e. errs conservative.) */
+  selfEmployed?: boolean;
+}
+
 export interface Person {
   label: string;
   birthYear: number;
@@ -109,6 +137,8 @@ export interface Person {
   socialSecurityAnnual: number;
   /** Age Social Security starts (benefit assumed 0 before this age). */
   ssClaimAge: number;
+  /** Earned income while (still) working. Unset → not working. */
+  work?: WorkIncome;
 }
 
 export interface Household {
@@ -137,9 +167,12 @@ export interface Household {
    *  brand-new retiree's actual first bill comes from their old paycheck, not
    *  their retirement income. Optional — unset falls back to same-year MAGI. */
   priorMagi?: { twoYearsAgo?: number; lastYear?: number };
-  /** Calendar year the household plans to start retirement. Captured up front so
-   *  the plan can be framed around it; the projection currently still begins at the
-   *  present year (see lib/projection.ts), so this is an informational input for now. */
+  /** Calendar year the household plans to start retirement. Drives the model:
+   *  it's the default last year of wages for anyone with work income who hasn't
+   *  set their own stop date (WorkIncome.lastWorkYear). The projection itself
+   *  still begins at the present year — working years are modeled as retirement
+   *  years WITH wages, which is also what makes a mid-year retirement honest
+   *  (this calendar year's tax return really does include the January–June pay). */
   retirementYear?: number;
   accounts: Account[];
 }
@@ -150,6 +183,43 @@ export interface Household {
 export function defaultRetirementYear(birthYear: number): number {
   const thisYear = new Date().getFullYear();
   return Math.max(thisYear, birthYear + 65);
+}
+
+/**
+ * This person's gross earned income for a calendar year, in that year's nominal
+ * dollars. The one wage formula every consumer (tax engine, withdrawal solver,
+ * earnings-test warnings, UI read-outs) must share:
+ *  - 0 when they don't work, or after their last work year;
+ *  - prorated by lastWorkMonth in the stop year (retired end of June → half);
+ *  - thisYearWages override honored in the CURRENT calendar year only;
+ *  - otherwise annualWages (today's dollars) × inflationFactor — wages are
+ *    assumed to keep pace with inflation, like spending and the brackets.
+ * `currentYear` is injectable for tests; callers use the default.
+ */
+export function wageForYear(
+  person: Person,
+  household: Household,
+  year: number,
+  inflationFactor = 1,
+  currentYear = new Date().getFullYear(),
+): number {
+  const w = person.work;
+  if (!w || w.annualWages <= 0) return 0;
+  const lastYear = w.lastWorkYear ?? household.retirementYear ?? currentYear;
+  if (year > lastYear) return 0;
+  if (year === currentYear && w.thisYearWages != null) return Math.max(0, w.thisYearWages);
+  const monthsWorked = year === lastYear ? Math.min(12, Math.max(1, w.lastWorkMonth ?? 12)) : 12;
+  return Math.max(0, w.annualWages) * inflationFactor * (monthsWorked / 12);
+}
+
+/** Months this person works in `year` (12 before the stop year, lastWorkMonth in
+ *  it, 0 after) — the earnings test's grace-year rule needs this. */
+export function monthsWorkedInYear(person: Person, household: Household, year: number, currentYear = new Date().getFullYear()): number {
+  const w = person.work;
+  if (!w || w.annualWages <= 0) return 0;
+  const lastYear = w.lastWorkYear ?? household.retirementYear ?? currentYear;
+  if (year > lastYear) return 0;
+  return year === lastYear ? Math.min(12, Math.max(1, w.lastWorkMonth ?? 12)) : 12;
 }
 
 export const ACCOUNT_KIND_META: Record<

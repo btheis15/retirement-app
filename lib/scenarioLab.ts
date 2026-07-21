@@ -153,7 +153,7 @@ export function perYearCSV(scenarios: Scenario[]): string {
   const header = [
     "scenario", "year", "self_age", "spouse_age", "rmd",
     "from_pretax", "from_brokerage_cash", "from_roth", "converted_to_roth",
-    "magi", "taxable_social_security", "marginal_rate", "true_marginal_rate",
+    "wages", "magi", "taxable_social_security", "marginal_rate", "true_marginal_rate",
     "total_tax", "irmaa", "net_cash", "spending_target",
     "start_pretax", "start_roth", "start_taxable", "end_total", "shortfall",
   ];
@@ -163,7 +163,7 @@ export function perYearCSV(scenarios: Scenario[]): string {
       rows.push(csvRow([
         s.label, r.year, r.selfAge, r.spouseAge, Math.round(r.rmd),
         Math.round(r.fromPretax), Math.round(r.fromTaxable), Math.round(r.fromRoth), Math.round(r.conversion),
-        Math.round(r.magi), Math.round(r.taxableSS), r.marginalRate, Number(r.effMarginalRate.toFixed(4)),
+        Math.round(r.wages), Math.round(r.magi), Math.round(r.taxableSS), r.marginalRate, Number(r.effMarginalRate.toFixed(4)),
         Math.round(r.tax), Math.round(r.irmaa), Math.round(r.netCash), Math.round(r.spendingTarget),
         Math.round(r.startBalances.pretax), Math.round(r.startBalances.roth), Math.round(r.startBalances.taxable),
         Math.round(r.endTotal), r.shortfall,
