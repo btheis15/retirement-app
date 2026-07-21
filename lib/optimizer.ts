@@ -28,9 +28,10 @@ import {
   bucketOf,
   ageInYear,
   wageForYear,
+  monthsWorkedInYear,
   otherIncomeForYear,
 } from "./accounts";
-import { adjustedAnnualBenefit } from "./socialSecurity";
+import { adjustedAnnualBenefit, earningsTestWithholding } from "./socialSecurity";
 import { money } from "./format";
 
 export type StrategyId = "smart" | "conventional" | "proportional";
@@ -238,6 +239,8 @@ export interface YearPlan {
   rmd: number;
   rmdDetails: RmdDetail[];
   fixed: {
+    /** PAYABLE Social Security this year — after any earnings-test withholding
+     *  (the checks that actually arrive; also the only taxable part). */
     socialSecurity: number;
     pension: number;
     /** Household gross wages this year (0 once everyone has stopped working). */
@@ -252,6 +255,11 @@ export interface YearPlan {
   /** Payroll tax (FICA/SE) on this year's wages — a cash cost shown separately;
    *  NOT inside `tax.totalTax` (income tax only). */
   ficaTax: number;
+  /** Benefits the earnings test held back this year (claiming before FRA while
+   *  earning). Not received, not taxed; credited back at FRA via ARF. */
+  ssWithheld: number;
+  /** Per-person earnings-test detail (only people with withholding). */
+  earningsTest: { who: "self" | "spouse"; withheld: number; monthsWithheldEquivalent: number }[];
   withdrawals: Draws; // pretax INCLUDES the RMD
   spendingTarget: number;
   grossInflow: number;
@@ -399,8 +407,6 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
     spouseAge >= household.spouse.ssClaimAge
       ? adjustedAnnualBenefit(household.spouse.socialSecurityAnnual, household.spouse.birthYear, household.spouse.ssClaimAge)
       : 0;
-  const socialSecurity = ssSelf + ssSpouse;
-
   // Earned income (a still-working spouse, part-time work, or the final months of
   // the year someone retires) — per person, prorated in the stop year, growing
   // with inflation. Payroll tax is priced per person by W-2 vs self-employed.
@@ -415,6 +421,30 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
   // tax treatment (ordinary, IL-exempt) so they ride in ctx.pension; rental and
   // "other" carry their own characters (see YearContext).
   const streams = otherIncomeForYear(household.otherIncome, year, inflF);
+
+  // Retirement earnings test: claiming before FRA while still earning withholds
+  // benefits ($1 per $2/$3 over the exempt amounts) — per person, against their
+  // OWN wages only. The stop year's monthsWorked triggers the grace-year cap (a
+  // mid-year retiree keeps every non-working month's check). Only the PAYABLE
+  // benefit reaches taxes/cash — withheld checks were never received, so they
+  // are rightly untaxed here; the projection credits them back at FRA via ARF.
+  const testFor = (who: "self" | "spouse", gross: number, wage: number) =>
+    earningsTestWithholding({
+      grossBenefit: gross,
+      earnings: wage,
+      birthYear: household[who].birthYear,
+      year,
+      inflationFactor: inflF,
+      monthsWorked: monthsWorkedInYear(household[who], household, year) || 12,
+    });
+  const etSelf = testFor("self", ssSelf, wagesSelf);
+  const etSpouse = testFor("spouse", ssSpouse, wagesSpouse);
+  const ssWithheld = etSelf.withheld + etSpouse.withheld;
+  const socialSecurityPayable = etSelf.payable + etSpouse.payable;
+  const earningsTest = [
+    { who: "self" as const, withheld: etSelf.withheld, monthsWithheldEquivalent: etSelf.monthsWithheldEquivalent },
+    { who: "spouse" as const, withheld: etSpouse.withheld, monthsWithheldEquivalent: etSpouse.monthsWithheldEquivalent },
+  ].filter((e) => e.withheld > 0);
 
   const balances = {
     pretax: household.accounts.filter((a) => bucketOf(a.kind) === "pretax").reduce((s, a) => s + a.balance, 0),
@@ -438,7 +468,7 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
     otherTaxableIncome: streams.other,
     wages,
     ficaTax,
-    socialSecurity,
+    socialSecurity: socialSecurityPayable,
     dividends: household.brokerageDividendsAnnual,
     ordinaryDividends: household.ordinaryDividendsAnnual ?? 0,
     taxableInterest: household.taxableInterestAnnual ?? 0,
@@ -456,6 +486,12 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
 
   const { total: rmd, details: rmdDetails } = computeRmd(household, year);
   const notes: string[] = [];
+
+  if (ssWithheld > 1) {
+    notes.push(
+      `Working while claiming early: Social Security holds back ${money(ssWithheld)} of this year's benefit under the earnings test — it isn't lost, it comes back after full retirement age as a permanently larger check.`,
+    );
+  }
 
   // 1) Mandatory: take the RMD out of pre-tax first.
   const draws: Draws = { pretax: Math.min(rmd, balances.pretax), taxable: 0, roth: 0 };
@@ -690,7 +726,7 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
     rmd,
     rmdDetails,
     fixed: {
-      socialSecurity,
+      socialSecurity: socialSecurityPayable,
       pension: household.pensionAnnual,
       wages,
       otherIncome: streams.total,
@@ -700,6 +736,8 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
       taxExemptInterest: household.taxExemptInterestAnnual ?? 0,
     },
     ficaTax,
+    ssWithheld,
+    earningsTest,
     withdrawals: draws,
     spendingTarget: target,
     grossInflow: finalEval.grossInflow,

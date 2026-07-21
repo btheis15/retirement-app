@@ -54,6 +54,21 @@ export const SENIOR_BONUS_PHASEOUT_START_MFJ = 150_000;
 export const SS_BASE_MFJ = 32_000;
 export const SS_SECOND_MFJ = 44_000;
 
+/**
+ * Social Security retirement earnings test — 2026 exempt amounts (SSA 2026 COLA
+ * fact sheet / ssa.gov/oact/cola/rtea.html). Claim before FRA while earning and
+ * $1 of benefits is withheld per $2 over the annual amount; in the calendar
+ * year FRA is reached the (much higher) FRA-year amount applies at $1 per $3,
+ * counting only pre-FRA months. Statutorily these index with the national
+ * Average Wage Index — approximated here by the plan's price level.
+ */
+export const SS_EARNINGS_TEST_2026 = {
+  annualExemptUnderFra: 24_480,
+  annualExemptFraYear: 65_160,
+  withholdRatioUnderFra: 1 / 2,
+  withholdRatioFraYear: 1 / 3,
+} as const;
+
 /** Employee share of FICA on W-2 wages: 6.2% OASDI + 1.45% Medicare. Payroll
  *  tax, not income tax — the planner subtracts it from a worker's cash in hand
  *  but keeps it out of totalTax (set-aside/withholding guidance stays honest).
