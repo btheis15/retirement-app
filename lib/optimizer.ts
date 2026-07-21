@@ -20,12 +20,14 @@
 
 import { computeTaxes, ordinaryBracketCeiling, arbitrageCeiling, irmaaFor, TaxResult } from "./tax/engine";
 import { StateCode } from "./tax/state";
-import { rmdStartAge, uniformLifetimeFactor, FilingStatus, FILING_CONSTANTS } from "./tax/constants";
+import { rmdStartAge, uniformLifetimeFactor, FilingStatus, FILING_CONSTANTS, FICA_RATE, SE_TAX_RATE } from "./tax/constants";
 import {
   Account,
   Household,
+  Person,
   bucketOf,
   ageInYear,
+  wageForYear,
 } from "./accounts";
 import { adjustedAnnualBenefit } from "./socialSecurity";
 import { money } from "./format";
@@ -94,6 +96,12 @@ export function computeRmd(household: Household, year: number): { total: number;
 interface YearContext {
   year: number;
   pension: number;
+  /** Household gross wages this year (both spouses, already prorated/COLA'd).
+   *  Ordinary income federally AND in Illinois; cash that funds spending first. */
+  wages: number;
+  /** Payroll tax on those wages (FICA or SE by person) — a cash cost off
+   *  netCash, deliberately NOT part of income tax (tax.totalTax). */
+  ficaTax: number;
   socialSecurity: number;
   dividends: number; // qualified
   ordinaryDividends: number;
@@ -134,6 +142,7 @@ function evaluate(
   const longTermGains = Math.max(0, draws.taxable - ctx.cashTaxable) * ctx.brokerageGainFraction;
   const tax = computeTaxes({
     otherOrdinaryIncome: ctx.pension,
+    wages: ctx.wages,
     preTaxWithdrawals: draws.pretax,
     socialSecurity: ctx.socialSecurity,
     qualifiedDividends: ctx.dividends,
@@ -154,9 +163,14 @@ function evaluate(
   // default they're reinvested (compound in the account, don't reduce withdrawals);
   // only when the user opts to spend them do they count as cash in hand here.
   const investmentIncome = ctx.dividends + ctx.ordinaryDividends + ctx.taxableInterest + ctx.taxExemptInterest;
-  const fixedIncome = ctx.socialSecurity + ctx.pension + (ctx.spendDividends ? investmentIncome : 0);
+  // Wages are cash in hand like SS/pension — they fund spending before any
+  // withdrawal does (that's the whole point of modeling a working household).
+  const fixedIncome = ctx.socialSecurity + ctx.pension + ctx.wages + (ctx.spendDividends ? investmentIncome : 0);
   const grossInflow = fixedIncome + draws.pretax + draws.taxable + draws.roth;
-  return { tax, grossInflow, netCash: grossInflow - tax.totalTax };
+  // Payroll tax (FICA/SE) comes off cash in hand but stays out of tax.totalTax —
+  // the set-aside/withholding guidance is about INCOME tax, and payroll tax is
+  // already gone from a paycheck before it arrives.
+  return { tax, grossInflow, netCash: grossInflow - tax.totalTax - ctx.ficaTax };
 }
 
 /**
@@ -217,11 +231,16 @@ export interface YearPlan {
   fixed: {
     socialSecurity: number;
     pension: number;
+    /** Household gross wages this year (0 once everyone has stopped working). */
+    wages: number;
     dividends: number;
     ordinaryDividends: number;
     taxableInterest: number;
     taxExemptInterest: number;
   };
+  /** Payroll tax (FICA/SE) on this year's wages — a cash cost shown separately;
+   *  NOT inside `tax.totalTax` (income tax only). */
+  ficaTax: number;
   withdrawals: Draws; // pretax INCLUDES the RMD
   spendingTarget: number;
   grossInflow: number;
@@ -371,6 +390,16 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
       : 0;
   const socialSecurity = ssSelf + ssSpouse;
 
+  // Earned income (a still-working spouse, part-time work, or the final months of
+  // the year someone retires) — per person, prorated in the stop year, growing
+  // with inflation. Payroll tax is priced per person by W-2 vs self-employed.
+  const payrollOn = (p: Person, w: number) => w * (p.work?.selfEmployed ? SE_TAX_RATE : FICA_RATE);
+  const inflF = params.inflationFactor ?? 1;
+  const wagesSelf = wageForYear(household.self, household, year, inflF);
+  const wagesSpouse = wageForYear(household.spouse, household, year, inflF);
+  const wages = wagesSelf + wagesSpouse;
+  const ficaTax = payrollOn(household.self, wagesSelf) + payrollOn(household.spouse, wagesSpouse);
+
   const balances = {
     pretax: household.accounts.filter((a) => bucketOf(a.kind) === "pretax").reduce((s, a) => s + a.balance, 0),
     roth: household.accounts.filter((a) => bucketOf(a.kind) === "roth").reduce((s, a) => s + a.balance, 0),
@@ -389,6 +418,8 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
   const ctx: YearContext = {
     year,
     pension: household.pensionAnnual,
+    wages,
+    ficaTax,
     socialSecurity,
     dividends: household.brokerageDividendsAnnual,
     ordinaryDividends: household.ordinaryDividendsAnnual ?? 0,
@@ -423,14 +454,19 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
   let net = evaluate(ctx, draws).netCash;
 
   if (net >= target) {
+    const incomeWords = [
+      wages > 0 ? "work income" : "",
+      "Social Security",
+      household.pensionAnnual > 0 ? "pension" : "",
+      ctx.spendDividends ? "dividends" : "",
+    ]
+      .filter(Boolean)
+      .join(", ")
+      .replace(/, ([^,]*)$/, " and $1");
     notes.push(
-      ctx.spendDividends
-        ? rmd > 0
-          ? "Social Security, pension, dividends and the required RMD already cover your spending — no extra withdrawals needed (any surplus can be reinvested in your brokerage)."
-          : "Social Security, pension and dividends already cover your spending — no withdrawals needed yet."
-        : rmd > 0
-          ? "Social Security, pension and the required RMD already cover your spending — no extra withdrawals needed."
-          : "Social Security and pension already cover your spending — no withdrawals needed yet.",
+      rmd > 0
+        ? `${incomeWords} plus the required RMD already cover your spending — no extra withdrawals needed (any surplus is reinvested in your brokerage).`
+        : `${incomeWords} already cover your spending — no withdrawals needed yet${wages > 0 ? " (any surplus is reinvested in your brokerage)" : ""}.`,
     );
   } else {
     // 2) Fill the gap by strategy.
@@ -637,11 +673,13 @@ export function planYear(household: Household, params: PlanParams): YearPlan {
     fixed: {
       socialSecurity,
       pension: household.pensionAnnual,
+      wages,
       dividends: household.brokerageDividendsAnnual,
       ordinaryDividends: household.ordinaryDividendsAnnual ?? 0,
       taxableInterest: household.taxableInterestAnnual ?? 0,
       taxExemptInterest: household.taxExemptInterestAnnual ?? 0,
     },
+    ficaTax,
     withdrawals: draws,
     spendingTarget: target,
     grossInflow: finalEval.grossInflow,

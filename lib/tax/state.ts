@@ -34,6 +34,9 @@ export interface StateTaxInput {
   ordinaryDividends: number;
   qualifiedDividends: number;
   longTermGains: number; // IL has no preferential cap-gains rate
+  /** W-2 / self-employment earned income — fully IL-taxable (retirement income
+   *  is exempt; a paycheck is not). */
+  wages?: number;
   /** Spouses age 65+ (0–2) — each adds a $1,000 IL exemption. */
   num65Plus: number;
   /** Inflation index for the year (scales the IL exemption; default 1). */
@@ -77,8 +80,9 @@ export const STATE_TAX: Record<StateCode, StateConfig> = {
     name: "Illinois",
     rate: 0.0495,
     // Retirement income (SS, pensions, IRA/401k distributions, Roth conversions)
-    // is subtracted in Illinois, so only investment income is taxed.
-    taxableBase: (i) => i.taxableInterest + i.ordinaryDividends + i.qualifiedDividends + i.longTermGains,
+    // is subtracted in Illinois, so only investment income — and any WAGES, which
+    // are not retirement income — is taxed.
+    taxableBase: (i) => i.taxableInterest + i.ordinaryDividends + i.qualifiedDividends + i.longTermGains + (i.wages ?? 0),
     exemption: (i) => {
       const single = i.filingStatus === "single";
       // $250k(single)/$500k(MFJ) phaseout is statutory; the exemption amounts are indexed.
@@ -90,7 +94,7 @@ export const STATE_TAX: Record<StateCode, StateConfig> = {
       // exemption is a fixed statutory amount.
       return personalCount * IL_PERSONAL_EXEMPTION * f + IL_SENIOR_EXEMPTION * i.num65Plus;
     },
-    note: "Illinois doesn't tax retirement income — IRA/401(k) withdrawals, RMDs, Roth conversions, pensions, and Social Security are all exempt. Only investment income (interest, dividends, capital gains) is taxed at the flat 4.95%.",
+    note: "Illinois doesn't tax retirement income — IRA/401(k) withdrawals, RMDs, Roth conversions, pensions, and Social Security are all exempt. Only investment income (interest, dividends, capital gains) — plus any wages while you're still working — is taxed at the flat 4.95%.",
   },
   none: {
     name: "No state tax",

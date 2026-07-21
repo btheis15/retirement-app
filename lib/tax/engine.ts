@@ -19,9 +19,16 @@ import {
 import { computeStateTax, StateCode, StateTaxResult } from "./state";
 
 export interface TaxInput {
-  /** Fully-taxable ordinary income that is NOT a pre-tax retirement withdrawal:
-   *  pensions, annuities, wages, taxable interest. */
+  /** Fully-taxable ordinary RETIREMENT income that is NOT a pre-tax withdrawal:
+   *  pensions and annuities. (Wages go in `wages` — Illinois exempts this field
+   *  but taxes wages, so the two must stay separate.) */
   otherOrdinaryIncome: number;
+  /** W-2 / self-employment EARNED income. Federal ordinary income (raises the
+   *  taxable share of Social Security, MAGI/IRMAA, and the senior-bonus
+   *  phaseout like any other ordinary dollar) AND state-taxable in Illinois —
+   *  unlike every retirement field here. FICA/SE payroll tax is handled by the
+   *  caller (it isn't an income tax). */
+  wages?: number;
   /** Pre-tax retirement withdrawals (Traditional IRA / 401k / rollover), incl.
    *  RMDs. Taxed as ordinary income. */
   preTaxWithdrawals: number;
@@ -227,8 +234,9 @@ export function computeTaxes(input: TaxInput): TaxResult {
   const c = FILING_CONSTANTS[input.filingStatus ?? "mfj"];
   const ordBrackets = indexedBrackets(c.ordinary, f);
   const ltcgBrackets = indexedBrackets(c.ltcg, f);
-  // Taxable interest and ordinary/REIT dividends are ordinary-rate income.
-  const ordinaryGross = input.otherOrdinaryIncome + input.preTaxWithdrawals + input.taxableInterest + ordinaryDividends;
+  // Taxable interest, ordinary/REIT dividends, and wages are ordinary-rate income.
+  const wages = input.wages ?? 0;
+  const ordinaryGross = input.otherOrdinaryIncome + input.preTaxWithdrawals + input.taxableInterest + ordinaryDividends + wages;
   // Net capital LOSSES are out of scope: the planner only ever realizes gains
   // (sales use blended positive basis), so a negative sum is clamped rather than
   // modeling the §1211 $3,000 ordinary offset / carryforward.
@@ -278,8 +286,9 @@ export function computeTaxes(input: TaxInput): TaxResult {
   const federalTax = ordinaryTax + capitalGainsTax + niit;
 
   // State income tax. Illinois exempts all retirement income (SS, pensions,
-  // IRA/401k withdrawals, RMDs, Roth conversions), so its base is only the
-  // investment income below — conversions and RMDs add $0 of IL tax.
+  // IRA/401k withdrawals, RMDs, Roth conversions), so its base is the investment
+  // income below PLUS wages — earned income is fully IL-taxable, which is exactly
+  // why wages must not ride in otherOrdinaryIncome.
   const state = computeStateTax(
     {
       agi,
@@ -287,6 +296,7 @@ export function computeTaxes(input: TaxInput): TaxResult {
       ordinaryDividends,
       qualifiedDividends: input.qualifiedDividends,
       longTermGains: input.longTermGains,
+      wages,
       num65Plus: input.num65Plus,
       inflationFactor: f,
       filingStatus: input.filingStatus ?? "mfj",
