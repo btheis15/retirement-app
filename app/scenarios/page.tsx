@@ -9,13 +9,12 @@ import { ScenarioLab } from "@/components/ScenarioLab";
 import { recommendPlan, GOAL_META } from "@/lib/goals";
 import { buildScenarios, LabAssumptions, PlanConfig } from "@/lib/scenarioLab";
 import { returnModel } from "@/lib/returns";
-import { survivorFromSettings, GoalId } from "@/lib/defaults";
+import { survivorFromSettings, GoalId, SPEND_MAX } from "@/lib/defaults";
 import { ReturnMethodInfo } from "@/components/ReturnMethodInfo";
 import { money, moneyCompact, percent } from "@/lib/format";
 import { HEX } from "@/lib/palette";
 import { SOURCES } from "@/lib/sources";
 
-const SPEND_MAX = 500_000;
 const sigOf = (c: PlanConfig) => `${c.strategy}|${c.bracketTarget}|${c.useConversions ? c.convertMode : "none"}`;
 
 export default function ScenariosPage() {

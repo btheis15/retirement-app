@@ -1045,7 +1045,9 @@ function SsTiming({
         const benefit = adjustedAnnualBenefit(p.socialSecurityAnnual, p.birthYear, claim);
         const pct = ssBenefitFactor(p.birthYear, claim);
         const fraInt = Math.round(fra);
-        const opts = Array.from(new Set([62, fraInt, 70])).sort((a, b) => a - b);
+        // All nine claim ages — the old 62/FRA/70 trio had no active tile at
+        // all when the chosen age was 63–66 or 68–69.
+        const opts = [62, 63, 64, 65, 66, 67, 68, 69, 70];
 
         return (
           <Card key={who} className="mb-2">
