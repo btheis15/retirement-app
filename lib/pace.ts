@@ -111,9 +111,11 @@ export function buildYearPace(
   // includes the Roth conversion's tax so the pace never understates the bill.
   if (yearTax > 0.5) items.push(item("Set aside for income tax", yearTax, "tax"));
 
-  // Steady checks only (SS + pension). Dividend/interest cash-outs are lumpy and
-  // already counted inside the plan's funding math, so they aren't paced here.
-  const guaranteedMonthly = (plan.fixed.socialSecurity + plan.fixed.pension) / 12;
+  // Steady checks only (SS + pension + other streams + take-home pay while
+  // working). Dividend/interest cash-outs are lumpy and already counted inside
+  // the plan's funding math, so they aren't paced here.
+  const guaranteedMonthly =
+    (plan.fixed.socialSecurity + plan.fixed.pension + plan.fixed.otherIncome + Math.max(0, plan.fixed.wages - plan.ficaTax)) / 12;
 
   // Real calendar anchors, soonest first. Only future dates within ~14 months.
   const deadlines: PaceDeadline[] = [];
