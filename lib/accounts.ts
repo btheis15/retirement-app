@@ -141,6 +141,36 @@ export interface Person {
   work?: WorkIncome;
 }
 
+export type OtherIncomeKind = "rental" | "annuity" | "other";
+
+/** A recurring UNEARNED income stream beyond the single pension field — rental
+ *  property, an annuity, royalties… (Part-time work or consulting is EARNED
+ *  income and belongs in Person.work, where payroll tax and the Social Security
+ *  earnings test apply.) Tax character by kind:
+ *   - rental  : federal ordinary income, Illinois-taxable, AND net investment
+ *               income for the 3.8% NIIT;
+ *   - annuity : ordinary income treated like the pension — Illinois-exempt
+ *               retirement income, not NIIT;
+ *   - other   : federal ordinary income and Illinois-taxable, not NIIT.
+ *  Streams pass to a survivor unchanged — a stated simplification (real
+ *  annuities/pensions often step down; this errs toward overstating survivor
+ *  income). */
+export interface OtherIncomeStream {
+  id: string;
+  kind: OtherIncomeKind;
+  /** Short user label, e.g. "Duplex on Main St". */
+  label?: string;
+  /** Gross annual amount in today's dollars. */
+  annual: number;
+  /** True → grows with inflation each year; false/unset → flat nominal for life
+   *  (like the pension field — most private annuities have no COLA). */
+  colaAdjusted?: boolean;
+  /** First calendar year it pays (inclusive). Unset → already paying. */
+  startYear?: number;
+  /** Last calendar year it pays (inclusive). Unset → for life. */
+  endYear?: number;
+}
+
 export interface Household {
   self: Person;
   spouse: Person;
@@ -174,6 +204,9 @@ export interface Household {
    *  years WITH wages, which is also what makes a mid-year retirement honest
    *  (this calendar year's tax return really does include the January–June pay). */
   retirementYear?: number;
+  /** Recurring unearned income streams beyond the pension (rental, annuity, …).
+   *  Optional — old saves load unchanged. */
+  otherIncome?: OtherIncomeStream[];
   accounts: Account[];
 }
 
@@ -210,6 +243,27 @@ export function wageForYear(
   if (year === currentYear && w.thisYearWages != null) return Math.max(0, w.thisYearWages);
   const monthsWorked = year === lastYear ? Math.min(12, Math.max(1, w.lastWorkMonth ?? 12)) : 12;
   return Math.max(0, w.annualWages) * inflationFactor * (monthsWorked / 12);
+}
+
+/** Sum the active other-income streams for a calendar year, split by tax
+ *  character (see OtherIncomeStream). COLA'd streams scale with the price
+ *  level; the rest stay flat nominal. One formula for engine and UI alike. */
+export function otherIncomeForYear(
+  streams: OtherIncomeStream[] | undefined,
+  year: number,
+  inflationFactor = 1,
+): { annuity: number; rental: number; other: number; total: number } {
+  const out = { annuity: 0, rental: 0, other: 0, total: 0 };
+  if (!streams) return out;
+  for (const s of streams) {
+    if (s.annual <= 0) continue;
+    if (s.startYear != null && year < s.startYear) continue;
+    if (s.endYear != null && year > s.endYear) continue;
+    const amt = s.annual * (s.colaAdjusted ? inflationFactor : 1);
+    out[s.kind] += amt;
+    out.total += amt;
+  }
+  return out;
 }
 
 /** Months this person works in `year` (12 before the stop year, lastWorkMonth in

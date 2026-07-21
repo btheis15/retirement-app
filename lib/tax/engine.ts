@@ -29,6 +29,12 @@ export interface TaxInput {
    *  unlike every retirement field here. FICA/SE payroll tax is handled by the
    *  caller (it isn't an income tax). */
   wages?: number;
+  /** Net rental income: federal ordinary + Illinois-taxable + NET INVESTMENT
+   *  INCOME for the 3.8% NIIT (unlike wages). */
+  rentalIncome?: number;
+  /** Other non-retirement ordinary income (royalties, misc.): federal ordinary +
+   *  Illinois-taxable, NOT investment income for NIIT. */
+  otherTaxableIncome?: number;
   /** Pre-tax retirement withdrawals (Traditional IRA / 401k / rollover), incl.
    *  RMDs. Taxed as ordinary income. */
   preTaxWithdrawals: number;
@@ -234,9 +240,13 @@ export function computeTaxes(input: TaxInput): TaxResult {
   const c = FILING_CONSTANTS[input.filingStatus ?? "mfj"];
   const ordBrackets = indexedBrackets(c.ordinary, f);
   const ltcgBrackets = indexedBrackets(c.ltcg, f);
-  // Taxable interest, ordinary/REIT dividends, and wages are ordinary-rate income.
+  // Taxable interest, ordinary/REIT dividends, wages, rental and other
+  // non-retirement income are all ordinary-rate income.
   const wages = input.wages ?? 0;
-  const ordinaryGross = input.otherOrdinaryIncome + input.preTaxWithdrawals + input.taxableInterest + ordinaryDividends + wages;
+  const rentalIncome = input.rentalIncome ?? 0;
+  const otherTaxableIncome = input.otherTaxableIncome ?? 0;
+  const ordinaryGross =
+    input.otherOrdinaryIncome + input.preTaxWithdrawals + input.taxableInterest + ordinaryDividends + wages + rentalIncome + otherTaxableIncome;
   // Net capital LOSSES are out of scope: the planner only ever realizes gains
   // (sales use blended positive basis), so a negative sum is clamped rather than
   // modeling the §1211 $3,000 ordinary offset / carryforward.
@@ -279,8 +289,10 @@ export function computeTaxes(input: TaxInput): TaxResult {
 
   // NIIT: 3.8% on the lesser of net investment income or MAGI over $250k. The
   // $250k threshold is statutory and NOT inflation-indexed (intentionally fixed).
+  // Rental income is net investment income under §1411 (wages and other earned
+  // income are not).
   const netInvestmentIncome =
-    input.qualifiedDividends + input.longTermGains + input.taxableInterest + ordinaryDividends;
+    input.qualifiedDividends + input.longTermGains + input.taxableInterest + ordinaryDividends + rentalIncome;
   const niit = NIIT_RATE * Math.max(0, Math.min(netInvestmentIncome, agi - c.niitThreshold));
 
   const federalTax = ordinaryTax + capitalGainsTax + niit;
@@ -297,6 +309,8 @@ export function computeTaxes(input: TaxInput): TaxResult {
       qualifiedDividends: input.qualifiedDividends,
       longTermGains: input.longTermGains,
       wages,
+      rentalIncome,
+      otherTaxableIncome,
       num65Plus: input.num65Plus,
       inflationFactor: f,
       filingStatus: input.filingStatus ?? "mfj",

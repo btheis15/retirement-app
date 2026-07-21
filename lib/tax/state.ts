@@ -37,6 +37,10 @@ export interface StateTaxInput {
   /** W-2 / self-employment earned income — fully IL-taxable (retirement income
    *  is exempt; a paycheck is not). */
   wages?: number;
+  /** Net rental income — IL-taxable (not retirement income). */
+  rentalIncome?: number;
+  /** Other non-retirement ordinary income — IL-taxable. */
+  otherTaxableIncome?: number;
   /** Spouses age 65+ (0–2) — each adds a $1,000 IL exemption. */
   num65Plus: number;
   /** Inflation index for the year (scales the IL exemption; default 1). */
@@ -82,7 +86,8 @@ export const STATE_TAX: Record<StateCode, StateConfig> = {
     // Retirement income (SS, pensions, IRA/401k distributions, Roth conversions)
     // is subtracted in Illinois, so only investment income — and any WAGES, which
     // are not retirement income — is taxed.
-    taxableBase: (i) => i.taxableInterest + i.ordinaryDividends + i.qualifiedDividends + i.longTermGains + (i.wages ?? 0),
+    taxableBase: (i) =>
+      i.taxableInterest + i.ordinaryDividends + i.qualifiedDividends + i.longTermGains + (i.wages ?? 0) + (i.rentalIncome ?? 0) + (i.otherTaxableIncome ?? 0),
     exemption: (i) => {
       const single = i.filingStatus === "single";
       // $250k(single)/$500k(MFJ) phaseout is statutory; the exemption amounts are indexed.
