@@ -21,6 +21,7 @@ import {
 } from "@/lib/accounts";
 import { holdingDps, holdingDivGrowth, dividendKind, holdingDividendKind } from "@/lib/dividends";
 import { ImportHoldingsSheet } from "@/components/ImportHoldings";
+import { AdjustSheet, AdjustPrefill } from "@/components/AdjustSheet";
 import { rmdStartAge } from "@/lib/tax/constants";
 import { adjustedAnnualBenefit, fullRetirementAge } from "@/lib/socialSecurity";
 import { searchTickers, getSeries, latestPrices, assetTypeLabel, SearchResult } from "@/lib/prices";
@@ -58,6 +59,8 @@ export default function AccountsPage() {
   // Which import flow is open: "__new__" = the multi-account file flow, an
   // account id = "update this account from a fresh CSV".
   const [importing, setImporting] = useState<string | null>(null);
+  // "± Adjust" — record a real withdrawal/deposit/move so balances track reality.
+  const [adjusting, setAdjusting] = useState<AdjustPrefill | null>(null);
 
   if (!ready) return <div className="h-screen" />;
 
@@ -258,7 +261,14 @@ export default function AccountsPage() {
       <SectionTitle hint={money(buckets.total)}>Accounts</SectionTitle>
       <div className="space-y-2">
         {household.accounts.map((a) => (
-          <AccountRow key={a.id} account={a} onEdit={() => setEditing(a)} onRemove={() => removeAccount(a.id)} onUpdateCsv={() => setImporting(a.id)} />
+          <AccountRow
+            key={a.id}
+            account={a}
+            onEdit={() => setEditing(a)}
+            onRemove={() => removeAccount(a.id)}
+            onUpdateCsv={() => setImporting(a.id)}
+            onAdjust={() => setAdjusting({ kind: "withdraw", accountId: a.id })}
+          />
         ))}
       </div>
 
@@ -303,6 +313,7 @@ export default function AccountsPage() {
           }}
         />
       )}
+      {adjusting && <AdjustSheet prefill={adjusting} onClose={() => setAdjusting(null)} />}
       {importing && (
         <ImportHoldingsSheet
           targetAccount={importing === "__new__" ? null : household.accounts.find((a) => a.id === importing) ?? null}
@@ -318,11 +329,13 @@ function AccountRow({
   onEdit,
   onRemove,
   onUpdateCsv,
+  onAdjust,
 }: {
   account: Account;
   onEdit: () => void;
   onRemove: () => void;
   onUpdateCsv: () => void;
+  onAdjust: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const meta = ACCOUNT_KIND_META[a.kind];
@@ -348,6 +361,9 @@ function AccountRow({
         <div className="ml-3 text-right">
           <div className="tabular font-semibold">{moneyCompact(a.balance)}</div>
           <div className="flex items-center justify-end gap-2">
+            <button onClick={onAdjust} className="press text-[11px] font-medium text-primary" title="Record a real withdrawal, deposit, or move — balances update without re-typing anything">
+              ± Adjust
+            </button>
             {(a.holdings?.length ?? 0) > 0 && (
               <button onClick={onUpdateCsv} className="press text-[11px] font-medium text-primary" title="Re-import a fresh positions file — matching holdings update, your tweaks are kept">
                 ⟳ CSV
