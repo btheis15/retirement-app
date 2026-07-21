@@ -12,7 +12,7 @@
 
 import { Account, Household, bucketOf } from "./accounts";
 import { planYear, StrategyId, BracketTarget, YearPlan } from "./optimizer";
-import { adjustedAnnualBenefit, fullRetirementAge } from "./socialSecurity";
+import { adjustedAnnualBenefit, fullRetirementAge, earningsTestEndYear, arfAdjustedClaimAge } from "./socialSecurity";
 import { dividendBreakdown, bucketGrowthFactor } from "./dividends";
 
 export interface ProjectionAssumptions {
@@ -83,6 +83,11 @@ export interface ProjectionRow {
   wages: number;
   /** Other income streams this year (annuity + rental + other, nominal). */
   otherIncome: number;
+  /** PAYABLE Social Security this year (after earnings-test withholding). */
+  socialSecurity: number;
+  /** Benefit dollars the earnings test held back this year (0 once past FRA or
+   *  not working). Credited back from FRA via the ARF claim-age bump. */
+  ssWithheld: number;
   /** MAGI this year — kept so a later year's IRMAA can look back 2 years. */
   magi: number;
   /** Cumulative price level at this year (realized-inflation product). Lets a
@@ -368,6 +373,13 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
   if (household.priorMagi?.lastYear != null && household.priorMagi.lastYear > 0)
     magiByYear.set(startYear - 1, household.priorMagi.lastYear);
 
+  // Earnings-test bookkeeping for ARF: months of benefit withheld accumulate per
+  // person while they work before FRA; the first test-free year, SSA recomputes
+  // the reduction as if they'd claimed that many months later — a permanently
+  // larger check. (Withheld ≠ lost — this is the paying-it-back half.)
+  const monthsWithheld = { self: 0, spouse: 0 };
+  const arfApplied = { self: false, spouse: false };
+
   // For recommended-mode conversions, derive the marginal rate this household
   // would face in its worst future RMD year if it did NOTHING extra. We use a
   // CONVENTIONAL, no-conversion baseline (forced RMDs, minimal voluntary pre-tax
@@ -512,6 +524,19 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
     }
     const filingStatus = isSingle || isSurvivorYear ? ("single" as const) : ("mfj" as const);
 
+    // ARF: the first year a person is past the earnings test, credit back their
+    // withheld months as a permanently higher claim age (never past FRA). Done
+    // BEFORE planYear so this year's benefit already reflects the bump. (Edge:
+    // a survivor whose benefit was swapped to the deceased's larger check at a
+    // neutral FRA factor keeps that check — their own pending ARF credit is
+    // moot by then, a stated simplification.)
+    for (const who of ["self", "spouse"] as const) {
+      if (!arfApplied[who] && monthsWithheld[who] > 0 && year >= earningsTestEndYear(h[who].birthYear)) {
+        arfApplied[who] = true;
+        h[who] = { ...h[who], ssClaimAge: arfAdjustedClaimAge(h[who].ssClaimAge, monthsWithheld[who], h[who].birthYear) };
+      }
+    }
+
     const convertThisYear = convert != null && selfAge <= convert.untilAge;
     const conversionParam = !convertThisYear
       ? null
@@ -529,6 +554,7 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
       dividendMode: assumptions.dividendMode,
     });
     magiByYear.set(year, plan.tax.magi);
+    for (const e of plan.earningsTest) monthsWithheld[e.who] += e.monthsWithheldEquivalent;
 
     // Apply withdrawals. pretax draw includes the RMD.
     drawFromBucket(h.accounts, "pretax", plan.withdrawals.pretax);
@@ -641,6 +667,8 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
       effMarginalRate: plan.tax.effectiveMarginalRate,
       wages: plan.fixed.wages,
       otherIncome: plan.fixed.otherIncome,
+      socialSecurity: plan.fixed.socialSecurity,
+      ssWithheld: plan.ssWithheld,
       magi: plan.tax.magi,
       inflationFactor,
       irmaa: plan.tax.irmaa.householdAnnual,
