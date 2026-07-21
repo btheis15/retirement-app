@@ -84,6 +84,16 @@ function writeCache(range: PriceRange, cache: ChartCache) {
   }
 }
 
+/** The API routes cap each request at 40 symbols — a bigger household (or a
+ *  CSV import) must be fetched in chunks or symbols past #40 silently never
+ *  price. Exported for the probe. */
+export const SYMBOL_CHUNK = 40;
+export function chunkSymbols(symbols: string[], size = SYMBOL_CHUNK): string[][] {
+  const out: string[][] = [];
+  for (let i = 0; i < symbols.length; i += size) out.push(symbols.slice(i, i + size));
+  return out;
+}
+
 /** Fetch price series for symbols at a range, reusing today's cache when it
  *  already covers every requested symbol. Refetches at most once per calendar
  *  day (per the "daily refresh is fine" requirement). */
@@ -102,10 +112,17 @@ export async function getSeries(symbols: string[], range: PriceRange = "5y"): Pr
   }
 
   try {
-    const res = await fetch(`/api/ticker/chart?symbols=${encodeURIComponent(missing.join(","))}&range=${range}`);
-    if (res.ok) {
-      const data = (await res.json()) as { series?: Record<string, SymbolSeries> };
-      const merged = { ...fresh, ...(data.series ?? {}) };
+    // Chunked: the route slices at 40 symbols per request.
+    const results = await Promise.all(
+      chunkSymbols(missing).map(async (chunk) => {
+        const res = await fetch(`/api/ticker/chart?symbols=${encodeURIComponent(chunk.join(","))}&range=${range}`);
+        if (!res.ok) return {};
+        const data = (await res.json()) as { series?: Record<string, SymbolSeries> };
+        return data.series ?? {};
+      }),
+    );
+    const merged = Object.assign({ ...fresh }, ...results) as Record<string, SymbolSeries>;
+    if (Object.keys(merged).length > Object.keys(fresh).length) {
       writeCache(range, { fetchedOn: todayKey(), series: merged });
       const out: Record<string, SymbolSeries> = {};
       for (const s of wanted) if (merged[s]) out[s] = merged[s];
@@ -152,10 +169,16 @@ export async function getDividends(symbols: string[]): Promise<Record<string, Di
     return out;
   }
   try {
-    const res = await fetch(`/api/ticker/dividends?symbols=${encodeURIComponent(missing.join(","))}`);
-    if (res.ok) {
-      const data = (await res.json()) as { dividends?: Record<string, DivInfo> };
-      const merged = { ...fresh, ...(data.dividends ?? {}) };
+    const results = await Promise.all(
+      chunkSymbols(missing).map(async (chunk) => {
+        const res = await fetch(`/api/ticker/dividends?symbols=${encodeURIComponent(chunk.join(","))}`);
+        if (!res.ok) return {};
+        const data = (await res.json()) as { dividends?: Record<string, DivInfo> };
+        return data.dividends ?? {};
+      }),
+    );
+    {
+      const merged = Object.assign({ ...fresh }, ...results) as Record<string, DivInfo>;
       try {
         localStorage.setItem(DIV_KEY, JSON.stringify({ fetchedOn: todayKey(), dividends: merged }));
       } catch {
