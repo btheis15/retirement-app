@@ -288,6 +288,9 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
           if (!a.holdings || a.holdings.length === 0) return a;
           let accChanged = false;
           const holdings = a.holdings.map((h) => {
+            // Cash/fixed-dollar lines (imported money markets, bonds, CDs) are
+            // pegged at $1 — never let a same-named real fund re-price them.
+            if (h.type === "cash" || !h.ticker) return h;
             const p = prices[h.ticker?.toUpperCase()];
             if (p != null && p > 0 && Math.abs((h.price ?? 0) - p) > 1e-6) {
               accChanged = true;

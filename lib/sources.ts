@@ -63,4 +63,16 @@ export const SOURCES = {
     label: "Damodaran (NYU Stern) — historical returns on stocks, bonds & bills, 1928–present",
     url: "https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/histretSP.html",
   },
+  fidelityPositions: {
+    label: "Fidelity — exporting your account/positions information",
+    url: "https://www.fidelity.com/customer-service/faqs-exporting-account-information",
+  },
+  schwabPositions: {
+    label: "Schwab — Positions page (the Export link lives at the top right)",
+    url: "https://client.schwab.com/app/accounts/positions",
+  },
+  vanguardDownload: {
+    label: "Vanguard — Download center (spreadsheet-compatible CSV)",
+    url: "https://personal.vanguard.com/us/DownloadCenter",
+  },
 } as const;

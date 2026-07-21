@@ -20,6 +20,7 @@ import {
   otherIncomeForYear,
 } from "@/lib/accounts";
 import { holdingDps, holdingDivGrowth, dividendKind, holdingDividendKind } from "@/lib/dividends";
+import { ImportHoldingsSheet } from "@/components/ImportHoldings";
 import { rmdStartAge } from "@/lib/tax/constants";
 import { adjustedAnnualBenefit, fullRetirementAge } from "@/lib/socialSecurity";
 import { searchTickers, getSeries, latestPrices, assetTypeLabel, SearchResult } from "@/lib/prices";
@@ -54,6 +55,9 @@ function fmtAge(years: number): string {
 export default function AccountsPage() {
   const { ready, mode, household, updateHousehold, upsertAccount, removeAccount, setMode, newExample, resetOwn } = useStore();
   const [editing, setEditing] = useState<Account | null>(null);
+  // Which import flow is open: "__new__" = the multi-account file flow, an
+  // account id = "update this account from a fresh CSV".
+  const [importing, setImporting] = useState<string | null>(null);
 
   if (!ready) return <div className="h-screen" />;
 
@@ -254,7 +258,7 @@ export default function AccountsPage() {
       <SectionTitle hint={money(buckets.total)}>Accounts</SectionTitle>
       <div className="space-y-2">
         {household.accounts.map((a) => (
-          <AccountRow key={a.id} account={a} onEdit={() => setEditing(a)} onRemove={() => removeAccount(a.id)} />
+          <AccountRow key={a.id} account={a} onEdit={() => setEditing(a)} onRemove={() => removeAccount(a.id)} onUpdateCsv={() => setImporting(a.id)} />
         ))}
       </div>
 
@@ -266,6 +270,16 @@ export default function AccountsPage() {
       >
         + Add an account
       </button>
+
+      <button
+        onClick={() => setImporting("__new__")}
+        className="press mt-2 w-full rounded-2xl border-2 border-dashed border-border py-3 text-sm font-medium text-primary"
+      >
+        ⬇️ Import from your brokerage (CSV)
+      </button>
+      <p className="mt-1 text-center text-[11px] text-foreground/45">
+        Every broker lets you download a positions file — import it instead of typing holdings in.
+      </p>
 
       {mode === "own" && household.accounts.length > 0 && (
         <button onClick={resetOwn} className="press mt-3 w-full rounded-xl py-2 text-[12px] text-tax/80">
@@ -289,11 +303,27 @@ export default function AccountsPage() {
           }}
         />
       )}
+      {importing && (
+        <ImportHoldingsSheet
+          targetAccount={importing === "__new__" ? null : household.accounts.find((a) => a.id === importing) ?? null}
+          onClose={() => setImporting(null)}
+        />
+      )}
     </div>
   );
 }
 
-function AccountRow({ account: a, onEdit, onRemove }: { account: Account; onEdit: () => void; onRemove: () => void }) {
+function AccountRow({
+  account: a,
+  onEdit,
+  onRemove,
+  onUpdateCsv,
+}: {
+  account: Account;
+  onEdit: () => void;
+  onRemove: () => void;
+  onUpdateCsv: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const meta = ACCOUNT_KIND_META[a.kind];
   const isTaxable = bucketOf(a.kind) === "taxable";
@@ -317,9 +347,16 @@ function AccountRow({ account: a, onEdit, onRemove }: { account: Account; onEdit
         </button>
         <div className="ml-3 text-right">
           <div className="tabular font-semibold">{moneyCompact(a.balance)}</div>
-          <button onClick={onRemove} className="press text-[11px] text-tax/80">
-            Remove
-          </button>
+          <div className="flex items-center justify-end gap-2">
+            {(a.holdings?.length ?? 0) > 0 && (
+              <button onClick={onUpdateCsv} className="press text-[11px] font-medium text-primary" title="Re-import a fresh positions file — matching holdings update, your tweaks are kept">
+                ⟳ CSV
+              </button>
+            )}
+            <button onClick={onRemove} className="press text-[11px] text-tax/80">
+              Remove
+            </button>
+          </div>
         </div>
       </div>
 
@@ -353,11 +390,11 @@ function AccountRow({ account: a, onEdit, onRemove }: { account: Account; onEdit
                     return (
                       <tr key={i} className="border-t border-border/40">
                         <td className="py-1 text-left">
-                          <span className="font-semibold">{h.ticker}</span>
+                          <span className="font-semibold">{h.ticker || h.name}</span>
                           <span className="ml-1 text-[10px] uppercase text-foreground/40">
-                            {HOLDING_TYPE_LABEL[h.type]}
+                            {h.ticker ? HOLDING_TYPE_LABEL[h.type] : "fixed $"}
                           </span>
-                          <div className="text-[10px] text-foreground/45">{h.name}</div>
+                          {h.ticker && <div className="text-[10px] text-foreground/45">{h.name}</div>}
                         </td>
                         <td className="py-1">{h.shares.toLocaleString()}</td>
                         <td className="py-1">{money(h.price, { cents: true })}</td>
@@ -644,9 +681,9 @@ function HoldingsEditor({
             <div key={`${h.ticker}-${i}`} className="rounded-xl border border-border bg-background/60 p-2.5">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <span className="font-semibold">{h.ticker}</span>
-                  <span className="ml-1.5 text-[10px] uppercase text-foreground/40">{HOLDING_TYPE_LABEL[h.type]}</span>
-                  <div className="truncate text-[11px] text-foreground/55">{h.name}</div>
+                  <span className="font-semibold">{h.ticker || h.name}</span>
+                  <span className="ml-1.5 text-[10px] uppercase text-foreground/40">{h.ticker ? HOLDING_TYPE_LABEL[h.type] : "fixed $"}</span>
+                  {h.ticker && <div className="truncate text-[11px] text-foreground/55">{h.name}</div>}
                 </div>
                 <button onClick={() => remove(i)} className="press shrink-0 text-[11px] text-tax/80">
                   Remove
