@@ -19,7 +19,7 @@ import {
   wageForYear,
   otherIncomeForYear,
 } from "@/lib/accounts";
-import { holdingDps, holdingDivGrowth, dividendKind, holdingDividendKind, holdingCapGainDistPerShare } from "@/lib/dividends";
+import { holdingDps, holdingDivGrowth, dividendKind, holdingDividendKind, holdingLtCapGainDistPerShare, holdingStCapGainDistPerShare } from "@/lib/dividends";
 import { ImportHoldingsSheet } from "@/components/ImportHoldings";
 import { AdjustSheet, AdjustPrefill } from "@/components/AdjustSheet";
 import { YearField, ConfirmTapButton, useUndo, UndoSnackbar } from "@/components/inputs";
@@ -242,12 +242,21 @@ export default function AccountsPage() {
         <Field label="Dividends — ordinary / REIT (annual)" className="mt-2">
           <MoneyInput value={household.ordinaryDividendsAnnual ?? 0} onChange={(v) => updateHousehold({ ordinaryDividendsAnnual: v })} />
         </Field>
-        <Field label="Capital-gains distributions — funds (annual)" className="mt-2">
-          <MoneyInput value={household.capGainDistributionsAnnual ?? 0} onChange={(v) => updateHousehold({ capGainDistributionsAnnual: v })} />
+        <Field label="Capital-gains distributions — funds, long-term (annual)" className="mt-2">
+          <MoneyInput value={household.ltCapGainDistributionsAnnual ?? 0} onChange={(v) => updateHousehold({ ltCapGainDistributionsAnnual: v })} />
           <p className="mt-1 text-[11px] text-foreground/55">
-            Realized gains mutual funds pass through each year (taxable even when reinvested), taxed as{" "}
-            <strong>long-term capital gains</strong>. Auto-filled from your fund holdings as a smoothed multi-year
-            average — they swing a lot year to year. ETFs and individual stocks rarely have these.
+            Realized <strong>long-term</strong> gains mutual funds pass through each year (taxable even when reinvested),
+            taxed at the <strong>preferential capital-gains rate</strong>. <strong>Not dividends</strong> — this is the
+            bulk of a fund&apos;s big year-end payout. Auto-filled from your fund holdings as a smoothed multi-year average
+            (they swing a lot). ETFs and individual stocks rarely have these.
+          </p>
+        </Field>
+        <Field label="Capital-gains distributions — funds, short-term (annual)" className="mt-2">
+          <MoneyInput value={household.stCapGainDistributionsAnnual ?? 0} onChange={(v) => updateHousehold({ stCapGainDistributionsAnnual: v })} />
+          <p className="mt-1 text-[11px] text-foreground/55">
+            A fund&apos;s <strong>short-term</strong> gain distributions — taxed as <strong>ordinary income</strong>, not
+            capital gains. The market feed can&apos;t separate these out, so enter them per holding from your fund&apos;s
+            distribution page if they&apos;re material (they&apos;re usually the smaller slice).
           </p>
         </Field>
         <Field label="Taxable interest — CDs / bonds / savings (annual)" className="mt-2">
@@ -954,36 +963,62 @@ function HoldingsEditor({
                       {holdingDividendKind(h) === "qualified" ? "preferential rate" : "ordinary-income rate"}
                     </span>
                   </div>
-                  {/* Capital-gains distributions — funds pass realized gains through
-                      each year (taxable even when reinvested). Shown separately from
-                      the dividend because it's lumpy: a smoothed average, taxed as a
-                      long-term gain, and NOT grown like the dividend. */}
-                  {holdingCapGainDistPerShare(h) > 0 && (
+                  {/* Capital-gains DISTRIBUTIONS — a fund passes realized gains through
+                      each year (taxable even when reinvested). Broken out separately
+                      from the dividend, and split long-term vs short-term, because
+                      each is taxed differently and most of a fund's big year-end payout
+                      is usually the LONG-TERM distribution, NOT a dividend. Shown when
+                      the fund distributes cap gains (auto) or the user has entered any. */}
+                  {(holdingLtCapGainDistPerShare(h) > 0 || holdingStCapGainDistPerShare(h) > 0 || h.type === "mutual_fund") && (
                     <div className="mt-2 border-t border-border/40 pt-2">
-                      <div className="mb-1 text-[10px] text-foreground/55">
-                        Capital-gains distribution · {h.dividendManual ? "your override" : "from market feed (multi-yr avg)"}
+                      <div className="mb-1 text-[10px] font-medium text-foreground/60">
+                        Capital-gains distributions {h.dividendManual ? "· your override" : "· from market feed (multi-yr avg)"}
                       </div>
+                      <p className="mb-1.5 text-[10px] leading-snug text-foreground/45">
+                        Realized gains the fund hands out yearly — <strong>not dividends</strong>, but taxable even when
+                        reinvested. They swing a lot year to year, so these are smoothed averages and aren&apos;t grown.
+                      </p>
                       <div className="flex items-end gap-2">
                         <label className="flex-1">
-                          <span className="mb-1 block text-[10px] text-foreground/55">Dist / share / yr</span>
+                          <span className="mb-1 block text-[10px] text-foreground/55">Long-term / share</span>
                           <input
                             className={`${INPUT} py-1.5 text-sm`}
                             inputMode="decimal"
-                            value={h.capGainDistPerShare ?? ""}
-                            onChange={(e) => update(i, { capGainDistPerShare: numFrom(e.target.value), dividendManual: true })}
+                            value={h.ltCapGainDistPerShare ?? ""}
+                            onChange={(e) => update(i, { ltCapGainDistPerShare: numFrom(e.target.value), dividendManual: true })}
                           />
                         </label>
-                        <div className="flex-1 text-right">
-                          <span className="mb-1 block text-[10px] text-foreground/55">Cap-gain / yr</span>
-                          <span className="tabular text-sm font-semibold">
-                            {h.shares > 0 ? money(h.shares * holdingCapGainDistPerShare(h)) : "—"}
-                          </span>
-                        </div>
+                        <label className="flex-1">
+                          <span className="mb-1 block text-[10px] text-foreground/55">Short-term / share</span>
+                          <input
+                            className={`${INPUT} py-1.5 text-sm`}
+                            inputMode="decimal"
+                            value={h.stCapGainDistPerShare ?? ""}
+                            onChange={(e) => update(i, { stCapGainDistPerShare: numFrom(e.target.value), dividendManual: true })}
+                          />
+                        </label>
+                      </div>
+                      <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] text-foreground/55">
+                        <span>
+                          Long-term / yr:{" "}
+                          <span className="tabular font-semibold text-foreground/75">
+                            {h.shares > 0 && holdingLtCapGainDistPerShare(h) > 0 ? money(h.shares * holdingLtCapGainDistPerShare(h)) : "—"}
+                          </span>{" "}
+                          <span className="text-foreground/40">preferential rate</span>
+                        </span>
+                        <span>
+                          Short-term / yr:{" "}
+                          <span className="tabular font-semibold text-foreground/75">
+                            {h.shares > 0 && holdingStCapGainDistPerShare(h) > 0 ? money(h.shares * holdingStCapGainDistPerShare(h)) : "—"}
+                          </span>{" "}
+                          <span className="text-foreground/40">ordinary rate</span>
+                        </span>
                       </div>
                       <p className="mt-1 text-[10px] leading-snug text-foreground/45">
-                        Realized gains the fund passes through yearly — taxable even when reinvested. Taxed as a{" "}
-                        <strong>long-term capital gain</strong> (preferential). It swings year to year, so this is a
-                        smoothed average and isn&apos;t grown like the dividend.
+                        The market feed can&apos;t tell short-term from long-term, so the auto estimate goes to{" "}
+                        <strong>long-term</strong> (preferential rate) — the usual case. If your fund&apos;s distribution
+                        page lists a short-term amount, put its per-share figure in the short-term box (taxed as ordinary
+                        income).
                       </p>
                     </div>
                   )}

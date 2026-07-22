@@ -87,17 +87,29 @@ export function holdingDividendIncome(h: Holding): number {
   return h.shares * holdingDps(h);
 }
 
-/** This holding's estimated annual capital-gains DISTRIBUTION per share (a fund
- *  passing through realized gains). Auto-filled as a multi-year average; ~0 for
- *  stocks and most ETFs. Not a dividend — taxed as a long-term capital gain. */
-export function holdingCapGainDistPerShare(h: Holding): number {
-  return h.capGainDistPerShare != null && h.capGainDistPerShare > 0 ? h.capGainDistPerShare : 0;
+/** This holding's estimated annual LONG-TERM capital-gains distribution per share
+ *  (a fund passing through realized long-term gains). Auto-filled as a multi-year
+ *  average; ~0 for stocks and most ETFs. Taxed as a long-term capital gain. */
+export function holdingLtCapGainDistPerShare(h: Holding): number {
+  return h.ltCapGainDistPerShare != null && h.ltCapGainDistPerShare > 0 ? h.ltCapGainDistPerShare : 0;
 }
 
-/** Current-year capital-gains distribution from one holding (shares × per-share). */
-export function holdingCapGainDist(h: Holding): number {
+/** This holding's estimated annual SHORT-TERM capital-gains distribution per share.
+ *  Taxed as ORDINARY income. Not auto-derivable — user-entered from the fund's page. */
+export function holdingStCapGainDistPerShare(h: Holding): number {
+  return h.stCapGainDistPerShare != null && h.stCapGainDistPerShare > 0 ? h.stCapGainDistPerShare : 0;
+}
+
+/** Current-year long-term capital-gains distribution from one holding. */
+export function holdingLtCapGainDist(h: Holding): number {
   if (!paysDividend(h.type)) return 0;
-  return h.shares * holdingCapGainDistPerShare(h);
+  return h.shares * holdingLtCapGainDistPerShare(h);
+}
+
+/** Current-year short-term capital-gains distribution from one holding. */
+export function holdingStCapGainDist(h: Holding): number {
+  if (!paysDividend(h.type)) return 0;
+  return h.shares * holdingStCapGainDistPerShare(h);
 }
 
 /** The modeled dividend-growth rate applied in year τ (1-indexed) for a holding
@@ -140,9 +152,11 @@ export interface DividendBreakdown {
   qualifiedYear0: number;
   ordinaryYear0: number;
   totalYear0: number;
-  /** Year-0 capital-gains distributions across these holdings (taxed as long-term
-   *  gains). Separate from dividends — lumpy, not grown. */
-  capGainDistYear0: number;
+  /** Year-0 LONG-TERM capital-gains distributions across these holdings (preferential
+   *  rate). Separate from dividends — lumpy, not grown. */
+  ltCapGainDistYear0: number;
+  /** Year-0 SHORT-TERM capital-gains distributions (taxed as ordinary income). */
+  stCapGainDistYear0: number;
   /** Whether ANY holding carries real (fetched/entered) dividend data — if not,
    *  callers should fall back to entered household totals rather than this model. */
   hasData: boolean;
@@ -171,9 +185,21 @@ export function dividendBreakdown(holdings: Holding[]): DividendBreakdown {
     .sort((a, b) => b.income - a.income);
   const qualifiedYear0 = rows.filter((r) => r.kind === "qualified").reduce((s, r) => s + r.income, 0);
   const ordinaryYear0 = rows.filter((r) => r.kind === "ordinary").reduce((s, r) => s + r.income, 0);
-  const capGainDistYear0 = holdings.filter((h) => paysDividend(h.type)).reduce((s, h) => s + holdingCapGainDist(h), 0);
-  const hasData = holdings.some((h) => h.dividendPerShare != null || (h.capGainDistPerShare ?? 0) > 0);
-  return { holdings: rows, qualifiedYear0, ordinaryYear0, totalYear0: qualifiedYear0 + ordinaryYear0, capGainDistYear0, hasData };
+  const payers = holdings.filter((h) => paysDividend(h.type));
+  const ltCapGainDistYear0 = payers.reduce((s, h) => s + holdingLtCapGainDist(h), 0);
+  const stCapGainDistYear0 = payers.reduce((s, h) => s + holdingStCapGainDist(h), 0);
+  const hasData = holdings.some(
+    (h) => h.dividendPerShare != null || (h.ltCapGainDistPerShare ?? 0) > 0 || (h.stCapGainDistPerShare ?? 0) > 0,
+  );
+  return {
+    holdings: rows,
+    qualifiedYear0,
+    ordinaryYear0,
+    totalYear0: qualifiedYear0 + ordinaryYear0,
+    ltCapGainDistYear0,
+    stCapGainDistYear0,
+    hasData,
+  };
 }
 
 /** Income-weighted cumulative DPS growth factor at year t for a tax-character
@@ -230,13 +256,21 @@ export function syncHouseholdDividends(household: Household): Household {
   if (!bd.hasData) return household;
   const q = Math.round(bd.qualifiedYear0);
   const o = Math.round(bd.ordinaryYear0);
-  const cg = Math.round(bd.capGainDistYear0);
+  const lt = Math.round(bd.ltCapGainDistYear0);
+  const st = Math.round(bd.stCapGainDistYear0);
   if (
     Math.abs((household.brokerageDividendsAnnual ?? 0) - q) < 1 &&
     Math.abs((household.ordinaryDividendsAnnual ?? 0) - o) < 1 &&
-    Math.abs((household.capGainDistributionsAnnual ?? 0) - cg) < 1
+    Math.abs((household.ltCapGainDistributionsAnnual ?? 0) - lt) < 1 &&
+    Math.abs((household.stCapGainDistributionsAnnual ?? 0) - st) < 1
   ) {
     return household;
   }
-  return { ...household, brokerageDividendsAnnual: q, ordinaryDividendsAnnual: o, capGainDistributionsAnnual: cg };
+  return {
+    ...household,
+    brokerageDividendsAnnual: q,
+    ordinaryDividendsAnnual: o,
+    ltCapGainDistributionsAnnual: lt,
+    stCapGainDistributionsAnnual: st,
+  };
 }
