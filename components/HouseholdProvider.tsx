@@ -330,15 +330,18 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
             const d = divBySymbol[h.ticker?.toUpperCase()];
             if (!d) return h;
             const nextGrowth = d.growth ?? h.dividendGrowthRate;
-            const nextCapGain = d.capGainDps ?? 0;
+            // The feed can't split ST from LT, so the whole auto cap-gain estimate
+            // seeds the LONG-TERM line (the typical case); the user can shift a
+            // short-term portion over from their fund's distribution page.
+            const nextLtCapGain = d.capGainDps ?? 0;
             if (
               Math.abs((h.dividendPerShare ?? -1) - d.dps) > 1e-6 ||
               h.dividendGrowthRate !== nextGrowth ||
-              Math.abs((h.capGainDistPerShare ?? 0) - nextCapGain) > 1e-6
+              Math.abs((h.ltCapGainDistPerShare ?? 0) - nextLtCapGain) > 1e-6
             ) {
               accChanged = true;
               changed = true;
-              return { ...h, dividendPerShare: d.dps, dividendGrowthRate: nextGrowth, capGainDistPerShare: nextCapGain };
+              return { ...h, dividendPerShare: d.dps, dividendGrowthRate: nextGrowth, ltCapGainDistPerShare: nextLtCapGain };
             }
             return h;
           });

@@ -442,8 +442,10 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
   const baseDivO = useDivModel ? divModel.ordinaryYear0 : (household.ordinaryDividendsAnnual ?? 0);
   // Fund capital-gains distributions: held FLAT per share (they swing too much year
   // to year to justify a growth path), scaled only by how much of the position is
-  // still held. Taxed as long-term gains — forced taxable income even if reinvested.
-  const baseCapGain = useDivModel ? divModel.capGainDistYear0 : (household.capGainDistributionsAnnual ?? 0);
+  // still held. LT is taxed as long-term gains, ST as ordinary income — both forced
+  // taxable income even if reinvested.
+  const baseLtCapGain = useDivModel ? divModel.ltCapGainDistYear0 : (household.ltCapGainDistributionsAnnual ?? 0);
+  const baseStCapGain = useDivModel ? divModel.stCapGainDistYear0 : (household.stCapGainDistributionsAnnual ?? 0);
   const baseInt = household.taxableInterestAnnual ?? 0;
   const baseMuni = household.taxExemptInterestAnnual ?? 0;
   const initBrokerage = h.accounts.filter(isBrokerage).reduce((s, a) => s + a.balance, 0);
@@ -495,11 +497,13 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
       h.brokerageDividendsAnnual = baseDivQ * (qualFactor[t] ?? qualFactor[qualFactor.length - 1] ?? 1) * shareFraction;
       h.ordinaryDividendsAnnual = baseDivO * (ordFactor[t] ?? ordFactor[ordFactor.length - 1] ?? 1) * shareFraction;
       // Cap-gain distributions ride shareFraction only — flat per share, no growth.
-      h.capGainDistributionsAnnual = baseCapGain * shareFraction;
+      h.ltCapGainDistributionsAnnual = baseLtCapGain * shareFraction;
+      h.stCapGainDistributionsAnnual = baseStCapGain * shareFraction;
     } else {
       h.brokerageDividendsAnnual = baseDivQ * divFactor;
       h.ordinaryDividendsAnnual = baseDivO * divFactor;
-      h.capGainDistributionsAnnual = baseCapGain * divFactor;
+      h.ltCapGainDistributionsAnnual = baseLtCapGain * divFactor;
+      h.stCapGainDistributionsAnnual = baseStCapGain * divFactor;
     }
     h.taxExemptInterestAnnual = baseMuni * divFactor;
     h.taxableInterestAnnual = baseInt * intFactor;
@@ -621,7 +625,11 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
     if (assumptions.dividendMode === "spend") {
       distributeFromBrokerage(
         h.accounts,
-        (h.brokerageDividendsAnnual ?? 0) + (h.ordinaryDividendsAnnual ?? 0) + (h.capGainDistributionsAnnual ?? 0) + (h.taxExemptInterestAnnual ?? 0),
+        (h.brokerageDividendsAnnual ?? 0) +
+          (h.ordinaryDividendsAnnual ?? 0) +
+          (h.ltCapGainDistributionsAnnual ?? 0) +
+          (h.stCapGainDistributionsAnnual ?? 0) +
+          (h.taxExemptInterestAnnual ?? 0),
       );
     } else {
       // Reinvest mode. Two credits keep the books honest:
@@ -644,7 +652,12 @@ export function projectLifetime(household: Household, assumptions: ProjectionRes
       //     reinvested distribution), so it raises cost basis. Without this, every
       //     retained dividend is later taxed AGAIN as unrealized gain on sale and
       //     overstates the gain the robust-estate yardstick prices in.
-      const retained = (h.brokerageDividendsAnnual ?? 0) + (h.ordinaryDividendsAnnual ?? 0) + (h.capGainDistributionsAnnual ?? 0) + (h.taxExemptInterestAnnual ?? 0);
+      const retained =
+        (h.brokerageDividendsAnnual ?? 0) +
+        (h.ordinaryDividendsAnnual ?? 0) +
+        (h.ltCapGainDistributionsAnnual ?? 0) +
+        (h.stCapGainDistributionsAnnual ?? 0) +
+        (h.taxExemptInterestAnnual ?? 0);
       if (retained > 0) {
         const brk = h.accounts.filter((a) => a.kind !== "cash" && bucketOf(a.kind) === "taxable");
         const brkTotal = brk.reduce((s, a) => s + a.balance, 0);
