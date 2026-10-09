@@ -57,7 +57,7 @@ const CHAPTERS: { id: ChapterId; label: string; icon: string; blurb: string }[] 
   { id: "goal", label: "Your goal", icon: "🎯", blurb: "What you want this money to do. We build the whole plan around it." },
   { id: "markets", label: "Markets & taxes", icon: "📈", blurb: "The return and inflation assumptions behind the forecast." },
   { id: "spending", label: "Spending", icon: "💵", blurb: "How much you want to spend, and how it changes over the years." },
-  { id: "conversion", label: "Your conversion & taxes", icon: "🔁", blurb: "The one big tax move to confirm — and how this year's spending and tax get paid." },
+  { id: "conversion", label: "Conversion & taxes", icon: "🔁", blurb: "The one big tax move to confirm — and how this year's spending and tax get paid." },
   { id: "review", label: "Review", icon: "✅", blurb: "Your plan at a glance — and how solid it looks." },
 ];
 
@@ -3626,11 +3626,11 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           {curChapter && (
             <div className="mb-3">
               <div className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-primary">
+                <span className="flex min-w-0 items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-primary">
                   <span aria-hidden className="text-sm">{curChapter.icon}</span>
-                  {curChapter.label}
+                  <span className="truncate">{curChapter.label}</span>
                 </span>
-                <span className="flex items-center gap-2">
+                <span className="flex shrink-0 items-center gap-2 whitespace-nowrap">
                   {mode === "demo" && <Pill>📊 Example</Pill>}
                   <span className="text-[11px] text-foreground/45 lg:hidden">
                     {curChapterIdx + 1} of {visibleChapters.length}
