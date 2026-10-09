@@ -15,7 +15,13 @@ Investment Income Tax — using **2026** figures.
 
 ## What it does
 
-- **This year's plan** (`/plan`) — given your spending target, it picks the
+- **Setup** (`/`) — a short, one-question-at-a-time walkthrough that builds the
+  plan, ending on your first three moves. Returning users land on the Plan tab;
+  the Setup tab then lists every answer, each one tap from where it's changed.
+- **This year's plan** (`/plan`) — action-first: **what to do** (which named
+  account each dollar comes from, deadlines, "I did this"), **what's coming up**
+  (tax dates, Social Security, Medicare, RMDs), **why** (one short card per
+  decision), then the detail collapsed. Given your spending target, it picks the
   withdrawal mix (pre-tax → brokerage → Roth) that minimizes tax, always taking
   required RMDs first. Shows a source donut, the full income/tax breakdown,
   effective & marginal rates, SS taxability, capital-gains rate, NIIT, and the

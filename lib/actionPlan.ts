@@ -93,7 +93,7 @@ function actionsForRow(household: Household, row: ProjectionRow, isCurrentYear: 
     });
   }
   if (row.fromTaxable > 0.5) {
-    actions.push({ kind: "taxable", amount: row.fromTaxable, text: `Sell ${money(row.fromTaxable)} from your brokerage` });
+    actions.push({ kind: "taxable", amount: row.fromTaxable, text: `Draw ${money(row.fromTaxable)} from taxable savings (cash first, then brokerage)` });
   }
   if (row.fromRoth > 0.5) {
     actions.push({ kind: "roth", amount: row.fromRoth, text: `Tap ${money(row.fromRoth)} from Roth (tax-free)` });

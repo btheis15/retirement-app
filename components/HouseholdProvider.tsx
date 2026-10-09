@@ -95,7 +95,20 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       const own = localStorage.getItem(KEY_OWN);
       if (own) setOwnHousehold(JSON.parse(own));
       const s = localStorage.getItem(KEY_SETTINGS);
-      if (s) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(s) });
+      if (s) {
+        const loaded: PlannerSettings = { ...DEFAULT_SETTINGS, ...JSON.parse(s) };
+        // Saves from before walkthroughDone existed: someone with their own
+        // accounts already set up has been through the walkthrough — open them
+        // on their plan, not on "How do you want to start?".
+        if (!loaded.walkthroughDone && own) {
+          try {
+            if ((JSON.parse(own) as Household).accounts?.length) loaded.walkthroughDone = { own: Date.now() };
+          } catch {
+            /* ignore */
+          }
+        }
+        setSettings(loaded);
+      }
       const seed = localStorage.getItem(KEY_DEMO_SEED);
       if (seed != null) {
         const n = Number(seed);

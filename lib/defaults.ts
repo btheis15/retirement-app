@@ -89,6 +89,10 @@ export interface PlannerSettings {
    *  re-confirm or "apply" a plan after answering the goal question. Re-picking a
    *  goal resets this to false. */
   planCustomized: boolean;
+  /** When the walkthrough was finished, per data mode. Once set for the active
+   *  mode, the app opens on the Plan tab and the Setup tab shows a summary of
+   *  answers instead of restarting the questions. Optional so old saves load. */
+  walkthroughDone?: Partial<Record<"demo" | "own", number>>;
 }
 
 /** Survivor spends this fraction of the couple's spending (fixed internal default). */

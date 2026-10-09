@@ -22,7 +22,6 @@ import { dividendBreakdown, dividendIncomeTrajectory } from "@/lib/dividends";
 import { AnimatedNumber, FanChart } from "@/components/charts";
 import { planYear, STRATEGY_META } from "@/lib/optimizer";
 import { buildChecklist } from "@/lib/checklist";
-import { buildIrmaaStatus } from "@/lib/irmaaStatus";
 import { ltcgZeroCeiling } from "@/lib/tax/engine";
 import { FILING_CONSTANTS, FilingStatus } from "@/lib/tax/constants";
 import { projectLifetime, ProjectionAssumptions } from "@/lib/projection";
@@ -35,7 +34,6 @@ import { returnModel } from "@/lib/returns";
 import { buildReturnOptions, matchReturnChoice, describeMix } from "@/lib/returnOptions";
 import { ReturnMethodInfo } from "@/components/ReturnMethodInfo";
 import { YearField } from "@/components/inputs";
-import { buildActionPlan, PlanYear, PlanAction } from "@/lib/actionPlan";
 import { GoalId, survivorFromSettings, SPEND_MAX } from "@/lib/defaults";
 import { adjustedAnnualBenefit, fullRetirementAge, earningsTestWithholding } from "@/lib/socialSecurity";
 import { useMarketPulse } from "@/components/MarketCheck";
@@ -59,7 +57,7 @@ const CHAPTERS: { id: ChapterId; label: string; icon: string; blurb: string }[] 
   { id: "goal", label: "Your goal", icon: "🎯", blurb: "What you want this money to do. We build the whole plan around it." },
   { id: "markets", label: "Markets & taxes", icon: "📈", blurb: "The return and inflation assumptions behind the forecast." },
   { id: "spending", label: "Spending", icon: "💵", blurb: "How much you want to spend, and how it changes over the years." },
-  { id: "conversion", label: "Your conversion & taxes", icon: "🔁", blurb: "The one big tax move to confirm — and how this year's spending and tax get paid." },
+  { id: "conversion", label: "Conversion & taxes", icon: "🔁", blurb: "The one big tax move to confirm — and how this year's spending and tax get paid." },
   { id: "review", label: "Review", icon: "✅", blurb: "Your plan at a glance — and how solid it looks." },
 ];
 
@@ -616,9 +614,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   const year = useMemo(() => new Date().getFullYear(), []);
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState<"fwd" | "back">("fwd");
-  // Set when the user jumps out of the review recap to change an answer, so the
-  // target step offers a one-tap "back to your summary" instead of six Nexts.
-  const [returnToReview, setReturnToReview] = useState(false);
   const [, startTransition] = useTransition();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -744,7 +739,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           }),
     [settings.useConversions, plan, household, settings.strategy, settings.bracketTarget, settings.convertMode, futureRateStable, year, filingStatus],
   );
-  const lookAhead = useMemo(() => buildActionPlan(household, proj, 5), [household, proj]);
   // The two heaviest computations (a 150-sim Monte Carlo and the 7-config plan
   // grid) run off DEFERRED inputs at low priority, so they catch up a beat after
   // a drag/goal change without ever blocking the slider, buttons, or animations.
@@ -806,7 +800,23 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [dHousehold.accounts, dHousehold.self, dHousehold.spouse, dHousehold.pensionAnnual, dHousehold.otherIncome, dHousehold.brokerageDividendsAnnual, dHousehold.ordinaryDividendsAnnual, dHousehold.taxableInterestAnnual, dHousehold.taxExemptInterestAnnual, dHousehold.state, recRefSpend],
   );
-  const rec = useMemo(() => recommendPlan(recHousehold, inputs, settings.goal), [recHousehold, settings.goal]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Re-run when any ASSUMPTION the recommender scores with changes (return,
+  // inflation, horizon, survivor, heir rate, dividends) — not just the household.
+  // Keyed on the household alone, the plan was picked at whatever return rate was
+  // live when the walkthrough first mounted (the 5% default, before the mix-based
+  // reconciler moved it) and never re-picked when the Markets step changed it.
+  // convertUntilAge is deliberately NOT a key: the recommender searches the window
+  // and writes it back, so keying on it would re-trigger itself.
+  const assumptionKey = [
+    settings.returnRate,
+    settings.inflationRate,
+    settings.endAge,
+    settings.survivorModel,
+    settings.firstDeathAge,
+    settings.heirTaxRate,
+    settings.dividendMode,
+  ].join("|");
+  const rec = useMemo(() => recommendPlan(recHousehold, inputs, settings.goal), [recHousehold, settings.goal, assumptionKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── "Most money" by PROBABILITY across simulated markets ──────────────────
   // For the maxCapital goal, "best" isn't the single-path winner — it's the plan
@@ -886,7 +896,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       lowestTax: recommendPlan(dRecHousehold, inputs, "lowestTax", LIGHT).best.config,
       lowestRate: recommendPlan(dRecHousehold, inputs, "lowestRate", LIGHT).best.config,
     }),
-    [dRecHousehold], // eslint-disable-line react-hooks/exhaustive-deps
+    [dRecHousehold, assumptionKey], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const goalsAgree =
     configMatches(recAll.maxCapital, recAll.lowestTax) && configMatches(recAll.maxCapital, recAll.lowestRate);
@@ -1079,7 +1089,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   ]);
 
   // ---- Steps ----
-  type Step = { key: string; chapter: ChapterId; eyebrow: string; render: () => ReactNode };
+  type Step = { key: string; chapter: ChapterId; render: () => ReactNode };
   const steps: Step[] = [];
   const total = household.accounts.reduce((s, a) => s + a.balance, 0);
   // Truly empty only when the user is on their OWN data with nothing entered yet.
@@ -1102,7 +1112,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   steps.push({
     key: "start",
     chapter: "opening",
-    eyebrow: "let's begin",
     render: () => (
       <div>
         <h2 className="text-xl font-bold leading-snug">How do you want to start?</h2>
@@ -1166,7 +1175,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       steps.push({
         key: b.key,
         chapter: "money",
-        eyebrow: bi === 0 ? "your savings — just the totals" : "your savings",
         render: () => {
           const acct = household.accounts.find((a) => a.id === b.id);
           const itemized = !!acct?.holdings && acct.holdings.length > 0;
@@ -1234,7 +1242,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   steps.push({
     key: "accounts",
     chapter: "money",
-    eyebrow: "start with your money",
     render: () => {
       if (needsOwnSetup) {
         return (
@@ -1304,7 +1311,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     steps.push({
       key: "aboutyou",
       chapter: "you",
-      eyebrow: "a little about you",
       render: () => {
         const optBtn = (on: boolean) =>
           `press flex w-full items-start gap-3 rounded-2xl border p-3.5 text-left ${on ? "border-primary bg-primary/10" : "border-border"}`;
@@ -1415,7 +1421,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     steps.push({
       key: "longevity",
       chapter: "you",
-      eyebrow: "how long should the plan cover?",
       render: () => {
         const btn = (on: boolean) =>
           `press rounded-xl border py-2 text-center ${on ? "border-primary bg-primary/10 text-primary font-semibold" : "border-border text-foreground/70"}`;
@@ -1509,7 +1514,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       steps.push({
         key: "work",
         chapter: "income",
-        eyebrow: "still working?",
         render: () => (
           <div>
             <h2 className="text-xl font-bold leading-snug">Is anyone still bringing in a paycheck?</h2>
@@ -1545,7 +1549,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       steps.push({
         key: "ssclaim",
         chapter: "income",
-        eyebrow: "when to claim Social Security",
         render: () => {
           const adv = rec.claimAdvice;
           return (
@@ -1603,7 +1606,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     steps.push({
       key: "otherincome",
       chapter: "income",
-      eyebrow: "any other income",
       render: () => (
         <div>
           <h2 className="text-xl font-bold leading-snug">Any other income coming in?</h2>
@@ -1745,7 +1747,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     steps.push({
       key: "dividends",
       chapter: "income",
-      eyebrow: "your investment income",
       render: () => {
         const spend = settings.dividendMode === "spend";
         const opt = (on: boolean) =>
@@ -1794,7 +1795,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   steps.push({
     key: "goal",
     chapter: "goal",
-    eyebrow: "what matters most",
     render: () => (
       <div>
         <h2 className="text-xl font-bold leading-snug">What&apos;s your #1 goal for this money?</h2>
@@ -1887,6 +1887,11 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </div>
           )}
         </Info>
+        {showMostMoney && (
+          <Collapsible title="Advanced: compare the top plans across markets" defaultOpenDesktop={false} className="mt-2">
+            {mostMoneyPanel()}
+          </Collapsible>
+        )}
       </div>
     ),
   });
@@ -1894,12 +1899,11 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   // STEP — "most money" method (only for maxCapital, when there are distinct plans to
   // weigh). Ranks the finalists by how they do across the SAME simulated markets, by
   // the metric the user picks. The winner is auto-applied as the active plan.
-  if (settings.goal === "maxCapital" && finalists.length >= 2) {
-    steps.push({
-      key: "mostmoney",
-      chapter: "goal",
-      eyebrow: "the most-money method",
-      render: () => {
+  // Folded into the goal step as an optional "Advanced" panel: the winner is
+  // auto-applied either way, so a first-time customer never has to weigh win-rate
+  // vs median before seeing their plan.
+  const showMostMoney = settings.goal === "maxCapital" && finalists.length >= 2;
+  const mostMoneyPanel = () => {
         const metric = settings.mostMoneyMetric;
         const METRIC_BTN: Record<MostMoneyMetric, string> = {
           winRate: "Wins most often",
@@ -1912,12 +1916,12 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           : finalists.map((f) => ({ f, s: null as MostMoneyStat | null }));
         return (
           <div>
-            <h2 className="text-xl font-bold leading-snug">Which plan most likely leaves you the most?</h2>
-            <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+            <p className="text-[13px] leading-relaxed text-foreground/60">
               &ldquo;Most money&rdquo; depends on the markets you get. So we run your top {finalists.length} plans through the{" "}
-              <strong>same</strong>{" "}hundreds of simulated markets and rank them.
+              <strong>same</strong>{" "}hundreds of simulated markets and rank them. The winner is already your plan.
             </p>
-            <Collapsible title={<>Advanced: how we score &ldquo;most money&rdquo;</>} className="mt-3">
+            <div className="mt-3">
+              <div className="mb-1.5 text-[12px] font-semibold text-foreground/70">Score plans by</div>
               <div className="grid grid-cols-3 gap-2">
                 {(["winRate", "median", "mean"] as const).map((k) => (
                   <button
@@ -1936,7 +1940,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     ? "Highest typical (middle) ending estate — the steadiest, most-likely outcome."
                     : "Highest average ending estate — rewards upside, can favor a riskier plan."}
               </p>
-            </Collapsible>
+            </div>
 
             {!mmFresh ? (
               <div className="mt-4 rounded-2xl border border-border p-5 text-center text-[13px] text-foreground/55">
@@ -1994,14 +1998,11 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </p>
           </div>
         );
-      },
-    });
-  }
+  };
 
   steps.push({
     key: "spend",
     chapter: "spending",
-    eyebrow: "how much you can spend",
     render: () => {
       const cur = sweep.at(localSpend);
       const compPct = Math.max(0, Math.min(100, (sweep.comfortableMax / sweep.max) * 100));
@@ -2540,7 +2541,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   steps.push({
     key: "markets",
     chapter: "markets",
-    eyebrow: "market assumptions",
     render: () => {
       const btn = (on: boolean) =>
         `press rounded-xl border py-2 text-center ${on ? "border-primary bg-primary/10 text-primary font-semibold" : "border-border text-foreground/70"}`;
@@ -2620,7 +2620,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     steps.push({
       key: "rollconfirm",
       chapter: "conversion",
-      eyebrow: "confirm your conversion",
       render: () => {
         const on = settings.useConversions;
         const tiers = FILING_CONSTANTS[plan.filingStatus].irmaaTiers;
@@ -2901,6 +2900,10 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               </div>
             </Info>
 
+            <Collapsible title="Why this amount? See it compared" summary="Doing nothing vs. smoothing vs. converting aggressively" defaultOpenDesktop={false} className="mt-3">
+              {rollDetailPanel()}
+            </Collapsible>
+
             <Info q="Is there a waiting period on converted money?">
               Each conversion starts a 5-year clock before that converted amount can be withdrawn penalty-free if
               you&apos;re under 59½. After 59½ the clock only matters for earnings in a brand-new Roth. It never blocks
@@ -2915,7 +2918,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   steps.push({
     key: "fund",
     chapter: "conversion",
-    eyebrow: "what pays for it — and from where",
     render: () => {
       const pct = Math.round(coverageRatio * 100);
       const heading = coveredByIncome
@@ -3049,46 +3051,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </>
           )}
 
-          {/* Social Security claim-age guidance — the single highest-value lever, so
-              we surface it (not silently apply it: when to claim is a personal call). */}
-          {rec.claimAdvice && (
-            <Callout tone="good" icon="📈" title="A bigger lever: when to claim Social Security" className="mt-3">
-              {(() => {
-                const ca = rec.claimAdvice;
-                const who =
-                  ca.delayWho === "self"
-                    ? household.self.label
-                    : ca.delayWho === "spouse"
-                      ? household.spouse.label
-                      : ca.delayWho === "both"
-                        ? "both of you"
-                        : "you";
-                return (
-                  <>
-                    On your numbers, having <strong>{who}</strong> claim Social Security at{" "}
-                    <strong>{ca.delayWho === "spouse" ? ca.spouse : ca.self}</strong>
-                    {ca.delayWho === "both" ? ` / ${ca.spouse}` : ""} instead of {ca.currentSelf}
-                    {ca.delayWho === "both" ? ` / ${ca.currentSpouse}` : ""} is projected to leave about{" "}
-                    <strong>{money(ca.lift)}</strong>{" "}more over your lifetime — partly because delaying the higher earner
-                    also locks in a larger benefit for whoever lives longer. It&apos;s a personal decision (health, cash
-                    needs) — claim ages live on the Social Security step, so there&apos;s one place to set them.
-                    <div className="mt-2">
-                      <button
-                        onClick={() => {
-                          const i = steps.findIndex((s) => s.key === "ssclaim");
-                          if (i >= 0) go(i);
-                        }}
-                        className="press rounded-lg border border-gain/40 bg-card/60 px-2.5 py-1 text-[11px] font-semibold text-primary"
-                      >
-                        ← Adjust claim ages (Social Security step)
-                      </button>
-                    </div>
-                  </>
-                );
-              })()}
-            </Callout>
-          )}
-
           {/* Where that savings draw comes from — the withdrawal order, on the same money. */}
           {!coveredByIncome && items.length > 0 && (
             <div className="mt-5 border-t border-border pt-4">
@@ -3123,7 +3085,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               {conversion > 0.5 && (
                 <p className="mt-2 rounded-xl bg-roth/[0.08] px-3 py-2 text-[12px] leading-relaxed text-foreground/75">
                   🔄 Separately, you&apos;ll move about <strong>{money(conversion)}</strong>{" "}from pre-tax into your Roth
-                  (the next step). That&apos;s <em>not</em> spending — it lands in your Roth and grows tax-free; its tax is best paid
+                  (the conversion you just confirmed). That&apos;s <em>not</em> spending — it lands in your Roth and grows tax-free; its tax is best paid
                   from cash.
                 </p>
               )}
@@ -3275,12 +3237,10 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     },
   });
 
-  if (pretaxShare > 0.2) {
-    steps.push({
-      key: "roll",
-      chapter: "review",
-      eyebrow: "the conversion, in detail",
-      render: () => {
+  // "Why this amount?" — the three-approach comparison behind the conversion,
+  // rendered as an expander INSIDE the conversion step (it used to be its own
+  // step in the Review chapter, after the decision it justifies).
+  const rollDetailPanel = () => {
         const rows = [
           { name: "Do nothing extra", p: compare.none, hint: "RMDs arrive in big, high-bracket chunks" },
           { name: "Smooth (recommended)", p: compare.smooth, hint: "small conversions, stay in low brackets", best: true },
@@ -3365,7 +3325,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
         return (
           <div>
-            <h2 className="text-xl font-bold leading-snug">Your conversion, in detail</h2>
 
             {/* Decision-critical content lives here, OUTSIDE DesktopOnly, so phones
                 get it too: the 3-approach comparison and the personalized verdict.
@@ -3496,350 +3455,80 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </DesktopOnly>
           </div>
         );
-      },
-    });
-  }
+  };
 
-  steps.push({
-    key: "ahead",
-    chapter: "review",
-    eyebrow: "looking ahead",
-    render: () => (
-      <div>
-        <h2 className="text-xl font-bold leading-snug">Your next few years, at a glance</h2>
-        <p className="mt-1 text-[13px] text-foreground/60">So you know what&apos;s coming and can plan around it.</p>
-        <p className="-mt-0.5 text-[11px] text-foreground/45">Tap any year to see everything it involves.</p>
-        <div className="mt-3 space-y-2">
-          {lookAhead.map((y, i) => (
-            <AheadYearRow key={y.year} y={y} i={i} />
-          ))}
-        </div>
-      </div>
-    ),
-  });
-
-  // STEP — the full breakdown: all the supporting detail consolidated at the END of
-  // the flow, so the question steps stay simple. This is also where MOBILE users find
-  // the deeper detail that's desktop-only on the steps. Collapsed sections keep it calm.
-  steps.push({
-    key: "breakdown",
-    chapter: "review",
-    eyebrow: "all the detail, in one place",
-    render: () => {
-      const t = plan.tax;
-      const incomeTax = t.totalTax;
-      const fed = t.federalTax ?? 0;
-      const stateTax = Math.max(0, incomeTax - fed);
-      const medicare = t.irmaa?.householdAnnual ?? 0;
-      const orderWhy =
-        settings.strategy === "smart"
-          ? "We fill your low tax brackets with pre-tax dollars first, so less is forced out later as high-taxed RMDs — then cover the rest from your brokerage, and leave tax-free Roth for last."
-          : settings.strategy === "conventional"
-            ? "We spend your brokerage and cash first (keeping taxable income low), then pre-tax, and leave tax-free Roth for last."
-            : "We draw a little from every account each year — balancing today's tax against the forced withdrawals (RMDs) building up in your pre-tax accounts.";
-      return (
-        <div>
-          <h2 className="text-xl font-bold leading-snug">Your plan, in full</h2>
-          <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
-            Everything you chose — tap any line to change it — plus the detail behind it, tucked into sections.
-          </p>
-          {(() => {
-            const hasSpouse = !!household.spouse && household.spouse.birthYear > 1900;
-            const hasSSben = household.self.socialSecurityAnnual > 0 || (hasSpouse && household.spouse.socialSecurityAnnual > 0);
-            const jumpTo = (key: string) => {
-              const i = steps.findIndex((s) => s.key === key);
-              if (i >= 0) {
-                setReturnToReview(true);
-                go(i);
-              }
-            };
-            const growth =
-              settings.spendingStrategy === "flatNominal" ? "flat" : settings.spendingStrategy === "guardrails" ? "guardrails" : "rises with inflation";
-            const recap: { label: string; value: string; key: string }[] = [
-              { label: "Goal", value: GOAL_META[settings.goal].short, key: "goal" },
-              { label: "Spending", value: `${money(household.annualSpending)}/yr · ${growth}`, key: "spend" },
-              {
-                label: "Plan to age",
-                value: `${settings.endAge}${settings.survivorModel && hasSpouse ? ` · survivor from ${settings.firstDeathAge}` : ""}`,
-                key: "longevity",
-              },
-            ];
-            if (hasSSben)
-              recap.push({
-                label: "Social Security",
-                value: `claim at ${household.self.ssClaimAge}${hasSpouse && household.spouse.socialSecurityAnnual > 0 ? ` / ${household.spouse.ssClaimAge}` : ""}`,
-                key: "ssclaim",
-              });
-            {
-              const recapWages = wageForYear(household.self, household, year) + wageForYear(household.spouse, household, year);
-              if (recapWages > 0)
-                recap.push({
-                  label: "Work income",
-                  value: `${moneyCompact(recapWages)} in ${year}`,
-                  key: "work",
-                });
-            }
-            const recapStreams = otherIncomeForYear(household.otherIncome, year).total;
-            if ((household.pensionAnnual ?? 0) > 0 || recapStreams > 0 || taxableInvestmentIncome > 0)
-              recap.push({
-                label: "Other income",
-                value: [
-                  (household.pensionAnnual ?? 0) > 0 ? `pension ${moneyCompact(household.pensionAnnual)}/yr` : "",
-                  recapStreams > 0 ? `streams ${moneyCompact(recapStreams)}/yr` : "",
-                  taxableInvestmentIncome > 0 ? `investments ${moneyCompact(taxableInvestmentIncome)}/yr` : "",
-                ]
-                  .filter(Boolean)
-                  .join(" · "),
-                key: "otherincome",
-              });
-            if (hasInvestmentIncome)
-              recap.push({ label: "Dividends", value: settings.dividendMode === "spend" ? "spent as income" : "reinvested", key: "dividends" });
-            if (pretaxShare > 0.2)
-              recap.push({
-                label: "Roth conversion",
-                value: settings.useConversions ? (proj.totalConverted > 1 ? "on" : "on — none needed") : "skipped",
-                key: "rollconfirm",
-              });
-            return (
-              <div className="mt-4 overflow-hidden rounded-2xl border border-border">
-                <div className="bg-foreground/[0.03] px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-foreground/50">
-                  Your choices — tap to change any
-                </div>
-                {recap.map((r) => (
-                  <button
-                    key={r.key}
-                    onClick={() => jumpTo(r.key)}
-                    className="press flex w-full items-center justify-between gap-3 border-t border-border/50 px-3 py-2.5 text-left"
-                  >
-                    <span className="text-[12px] text-foreground/55">{r.label}</span>
-                    <span className="flex items-center gap-2">
-                      <span className="text-[13px] font-semibold text-foreground">{r.value}</span>
-                      <span aria-hidden className="text-[12px] text-primary">✎</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            );
-          })()}
-          <div className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-foreground/45">The detail</div>
-          <div className="mt-2 space-y-2">
-            <Collapsible eyebrow="this year" title="Your tax this year" summary={`About ${money(incomeTax + medicare)} total`}>
-              <div className="mt-1">
-                <Row label="Federal income tax" value={money(fed)} />
-                <Row label="State income tax" value={money(stateTax)} />
-                {medicare > 0 && <Row label="Medicare (IRMAA) surcharge" value={money(medicare)} />}
-                <Row label="Total set-aside" value={money(incomeTax + medicare)} bold />
-              </div>
-              <p className="mt-2 text-[12px] leading-snug text-foreground/55">
-                The <strong>Plan</strong> tab shows the line-by-line math; <strong>Forecast</strong> shows how it changes year by year.
-              </p>
-            </Collapsible>
-
-            <Collapsible title="Why your money comes out in this order">
-              <p className="text-[13px] leading-relaxed text-foreground/70">{orderWhy}</p>
-            </Collapsible>
-
-            {pretaxShare > 0.2 && (
-              <Collapsible title="Your Roth conversion, compared">
-                <p className="text-[13px] leading-relaxed text-foreground/70">
-                  Smoothing small amounts to Roth each year is projected to leave your family about{" "}
-                  <strong>{moneyCompact(Math.max(0, compare.smooth.endingEstateAfterTax - compare.none.endingEstateAfterTax))}</strong>{" "}
-                  more than doing nothing, and keeps your biggest forced withdrawal (RMD) down near{" "}
-                  <strong>{moneyCompact(compare.smooth.peakRmd)}</strong> instead of{" "}
-                  <strong>{moneyCompact(compare.none.peakRmd)}</strong>. The full three-way comparison is on the
-                  &ldquo;Your conversion, in detail&rdquo; step.
-                </p>
-              </Collapsible>
-            )}
-
-            <Collapsible title="Medicare (IRMAA), in plain English">
-              <p className="text-[13px] leading-relaxed text-foreground/70">
-                Once your income crosses certain lines, Medicare adds a surcharge on top of the standard premium — billed
-                per person, and set by your income from two years earlier. It&apos;s a step, not a slope: cross a line and the
-                whole next surcharge kicks in. That&apos;s why the plan watches those lines when sizing your withdrawals and conversion.
-              </p>
-              <p className="mt-2 text-[13px] leading-relaxed text-foreground/70">
-                <strong>Just retired?</strong> The two-year lookback means your first premium bill is based on your old{" "}
-                <em>working</em> income — probably higher than your income now. You don&apos;t have to just accept that:
-                file Social Security&apos;s <strong>Form SSA-44</strong> (life-changing event: &ldquo;work stoppage&rdquo;)
-                and Medicare will re-figure your premium on your new, lower retirement income.
-              </p>
-            </Collapsible>
-
-            <Collapsible title="Key terms">
-              <div className="space-y-2 text-[13px] leading-relaxed text-foreground/70">
-                <p><strong>RMD</strong> — a Required Minimum Distribution: starting at {rmdStartAge(household.self.birthYear)} (set by your birth year under SECURE 2.0), the IRS makes you withdraw a minimum from your pre-tax accounts each year and taxes it as ordinary income.</p>
-                <p><strong>Tax bracket</strong> — income is taxed in steps; your &ldquo;bracket&rdquo; is the rate the next dollar is taxed at.</p>
-                <p><strong>Roth</strong> — an account you&apos;ve already paid tax on; it grows tax-free, comes out tax-free, and is never force-withdrawn during your life.</p>
-              </div>
-            </Collapsible>
-          </div>
-
-          <Callout tone="info" icon="📊" className="mt-3">
-            Want the live numbers and charts? The <strong>Plan</strong> and <strong>Forecast</strong> tabs have the full
-            year-by-year detail — in the menu any time, or via &ldquo;See all the numbers&rdquo; on the next step.
-          </Callout>
-        </div>
-      );
-    },
-  });
-
-  // ---- STEP: the closing artifact — this year's plan as custodian-ready
-  // instructions with named accounts, deadlines, and how the tax gets paid.
-  // Printable: the one thing a customer brings to their custodian or CPA. ----
-  steps.push({
-    key: "checklist",
-    chapter: "review",
-    eyebrow: "your to-do list",
-    render: () => {
-      const irmaaStat = buildIrmaaStatus(household, plan.tax.magi, filingStatus, year);
-      const irmaaLine = !irmaaStat
-        ? null
-        : irmaaStat.inSurcharge
-          ? `This year's income sets your ${irmaaStat.billingYear} Medicare premium${irmaaStat.enrolleesAtBilling > 1 ? "s" : ""} at ${irmaaStat.label.toLowerCase()} — about ${money(Math.round(irmaaStat.perPersonMonthly))}/mo per person on top of the standard premium.`
-          : `No Medicare surcharge at this income${Number.isFinite(irmaaStat.headroom) ? ` — ${money(Math.round(irmaaStat.headroom))} of room below the first line` : ""}${irmaaStat.inWindow ? "; remember, this year's income sets your first premium at 65" : ""}. Check the Plan tab's meter before any extra withdrawal.`;
-      const items = buildChecklist(household, plan, { yearTaxTotal: plan.tax.totalTax, irmaaLine });
-      const ICON: Record<string, string> = { rmd: "📌", withdraw: "🏦", sell: "💼", roth: "🌱", convert: "🔁", tax: "🧾", irmaa: "🏥" };
-      return (
-        <div>
-          <div className="text-2xl">📋</div>
-          <h2 className="mt-1 text-xl font-bold leading-snug">This year, do this</h2>
-          <p className="mt-1 text-[13px] leading-relaxed text-foreground/65">
-            Your whole plan, as the calls to actually make{items.some((i) => i.deadline === "Dec 31") ? " — nothing here is urgent today, but the Dec 31 items must happen this calendar year" : ""}. Print it, or bring it to your custodian or CPA.
-          </p>
-          <div className="print-area mt-3 space-y-2">
-            <div className="hidden print:block">
-              <div className="text-lg font-bold">
-                Retirement plan — {year} action list{mode === "demo" ? " (EXAMPLE DATA — not your plan)" : ""}
-              </div>
-              <div className="text-[12px] text-foreground/60">
-                Prepared {new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })} · educational estimates, not tax advice
-              </div>
-            </div>
-            {items.map((it, i) => (
-              <Card key={i} className="!p-3">
-                <div className="flex items-start gap-2.5">
-                  <span aria-hidden className="text-lg leading-none">{ICON[it.kind]}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-                      <span className="text-[14px] font-semibold leading-snug">{it.title}</span>
-                      {it.deadline && <Pill tone={it.deadline === "Dec 31" ? "tax" : undefined}>{it.deadline}</Pill>}
-                    </div>
-                    {it.detail && <p className="mt-1 text-[13px] leading-relaxed text-foreground/65">{it.detail}</p>}
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-          <button
-            onClick={() => window.print()}
-            className="press mt-3 w-full rounded-2xl border border-border bg-card px-4 py-2.5 text-[14px] font-semibold text-foreground/80 print:hidden"
-          >
-            🖨️ Print this list (or save as PDF)
-          </button>
-          <p className="mt-2 text-[12px] leading-snug text-foreground/50 print:hidden">
-            Amounts are estimates — your custodian's cents will differ; the order and the deadlines are what matter.
-          </p>
-        </div>
-      );
-    },
-  });
-
+  // ---- The finale: a short reveal, not another wall of numbers. The verdict,
+  // the first three moves (the same custodian-ready list the Plan tab leads
+  // with), and one button to the plan. Everything else lives on the Plan tab. ----
   steps.push({
     key: "done",
     chapter: "review",
-    eyebrow: confidence
-      ? confidence.successPct >= 0.85
-        ? "you're set"
-        : confidence.successPct >= 0.7
-          ? "solid — worth keeping an eye on"
-          : "worth a closer look"
-      : "the verdict",
-    render: () => (
-      <div className="text-center">
-        {confidence ? (
-          <>
-            <div className="emoji-bounce text-4xl">{confidence.successPct >= 0.85 ? "🎉" : confidence.successPct >= 0.7 ? "👍" : "⚠️"}</div>
-            <h2 className="mt-2 text-xl font-bold leading-snug">How solid is this plan?</h2>
-            <div className="pop mt-3 tabular text-5xl font-bold" style={{ color: confidence.successPct >= 0.85 ? "var(--color-gain)" : confidence.successPct >= 0.7 ? "var(--color-accent)" : "var(--color-tax)" }}>
-              <AnimatedNumber value={confidence.successPct * 100} format={(n) => `${Math.round(n)}%`} />
-            </div>
-            <p className="mt-1 text-[13px] text-foreground/65">
-              In about <strong>{Math.round(confidence.successPct * 10)} of 10</strong> of the market histories we
-              simulated — including crashes and long slumps — this plan holds for life, with your money lasting to
-              age {settings.endAge}.
-              {confidence.successPct < 0.7
-                ? " A little less spending, a later claim age, or a different mix can move this a lot."
-                : " (The Forecast tab runs a larger 1,000-path simulation, so its number can differ by a point or two — same engine, finer read.)"}
-            </p>
-            <Info q="How precise is this number?" className="mt-2 text-left">
-              This is based on {confidence.runs.toLocaleString()} simulated market futures, so the true odds are
-              likely within a couple of points of {Math.round(confidence.successPct * 100)}% — give or take, call it{" "}
-              {Math.round(confidence.successCI[0] * 100)}–{Math.round(confidence.successCI[1] * 100)}%.
-            </Info>
-            {mode === "demo" && (
-              <p className="mt-1 text-[12px] text-foreground/50">
-                This verdict is for the built-in example — enter your own numbers to see yours.
+    render: () => {
+      const moves = buildChecklist(household, plan, { yearTaxTotal: plan.tax.totalTax })
+        .filter((i) => i.kind !== "irmaa")
+        .slice(0, 3);
+      const pct = confidence ? confidence.successPct : null;
+      const tone = pct == null ? "var(--color-primary)" : pct >= 0.85 ? "var(--color-gain)" : pct >= 0.7 ? "var(--color-accent)" : "var(--color-tax)";
+      return (
+        <div className="text-center">
+          <div className="emoji-bounce text-4xl">{pct == null ? "🧭" : pct >= 0.85 ? "🎉" : pct >= 0.7 ? "👍" : "⚠️"}</div>
+          <h2 className="mt-2 text-2xl font-bold leading-snug">
+            {mode === "demo" ? "The example plan is ready" : "Your plan is ready"}
+          </h2>
+          {pct != null ? (
+            <>
+              <div className="pop mt-3 tabular text-5xl font-bold" style={{ color: tone }}>
+                <AnimatedNumber value={pct * 100} format={(n) => `${Math.round(n)}%`} />
+              </div>
+              <p className="mx-auto mt-1 max-w-sm text-[13px] leading-relaxed text-foreground/65">
+                In about <strong>{Math.round(pct * 10)} of 10</strong> simulated market futures — crashes and slumps
+                included — your money lasts to age {settings.endAge}.
+                {pct < 0.7 ? " A little less spending or a later Social Security claim can move this a lot." : ""}
               </p>
-            )}
-          </>
-        ) : (
-          <div className="py-8">
-            <div className="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-primary/25 border-t-primary" />
-            <h2 className="mt-3 text-xl font-bold leading-snug">How solid is this plan?</h2>
-            <p className="mt-1 text-[13px] text-foreground/55">Running the market-risk simulation…</p>
-          </div>
-        )}
-        {/* The living rhythm: what this plan means per month, and where to check
-            in. This is the handoff from "decide once" to "glance any day". */}
-        {(totalDraw > 0.5 || conversion > 0.5) && (
-          <div className="mt-4 rounded-2xl border border-border bg-background/50 p-3 text-left">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/45">Your monthly rhythm</div>
-            <ul className="mt-1.5 space-y-1 text-[13px] text-foreground/75">
-              {totalDraw > 0.5 && (
-                <li>
-                  💵 Withdraw about <strong>{money(Math.round(totalDraw / 12))}/mo</strong> from savings ({money(Math.round(totalDraw))} this year).
-                </li>
-              )}
-              {guaranteed > 0.5 && (
-                <li>
-                  🏦 About <strong>{money(Math.round(guaranteed / 12))}/mo</strong> arrives on its own (Social Security{household.pensionAnnual > 0 ? " + pension" : ""}).
-                </li>
-              )}
-              {conversion > 0.5 && (
-                <li>
-                  🔁 Roll <strong>{money(Math.round(conversion))}</strong> to Roth any time before <strong>Dec 31</strong>.
-                </li>
-              )}
-            </ul>
-            <p className="mt-1.5 text-[12px] leading-snug text-foreground/55">
-              The <strong>Plan</strong> tab keeps this pace live — open it any day and it shows where you should be by
-              that point in the year, plus the next real deadlines.
-            </p>
-          </div>
-        )}
-        <p className="mt-4 text-[13px] text-foreground/70">
-          That&apos;s your plan. Come back and adjust your spending or income anytime — every step updates automatically.
-        </p>
-        {/* Hand-off: once the verdict lands, point the client at their day-to-day
-            home base instead of leaving them stranded at the end of the walkthrough. */}
-        <p className="mt-3 text-[13px] text-foreground/70">
-          You&apos;re set up. Day to day, your home base is the <strong>Plan</strong> tab — this walkthrough is here
-          whenever you want to change a decision.
-        </p>
-        <div className="mt-4 space-y-2">
-          <Link href="/plan" className="press block w-full rounded-xl bg-primary py-2.5 text-center text-sm font-semibold text-white">
-            Go to your Plan →
+              <Info q="How precise is this number?" className="mt-2 text-left">
+                Based on {confidence!.runs.toLocaleString()} simulated market futures, so the true odds are likely
+                within a couple of points — call it {Math.round(confidence!.successCI[0] * 100)}–
+                {Math.round(confidence!.successCI[1] * 100)}%. The Forecast tab runs a larger simulation, so its
+                number can differ by a point or two.
+              </Info>
+            </>
+          ) : (
+            <div className="py-5">
+              <div className="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-primary/25 border-t-primary" />
+              <p className="mt-2 text-[13px] text-foreground/55">Stress-testing your plan against hundreds of markets…</p>
+            </div>
+          )}
+
+          {moves.length > 0 && (
+            <div className="mt-5 rounded-2xl border border-border bg-background/50 p-3 text-left">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/45">Your first moves for {year}</div>
+              <ol className="mt-2 space-y-2">
+                {moves.map((m, i) => (
+                  <li key={i} className="flex items-start gap-2.5 text-[13px] leading-snug">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-white">{i + 1}</span>
+                    <span className="min-w-0 flex-1 font-medium text-foreground/85">
+                      {m.title}
+                      {m.deadline === "Dec 31" && <span className="ml-1.5 whitespace-nowrap text-[11px] font-semibold text-tax">by Dec 31</span>}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+
+          <Link href="/plan" className="press mt-5 block w-full rounded-2xl bg-primary py-3.5 text-center text-[15px] font-semibold text-white" style={{ boxShadow: "var(--shadow-card-hi)" }}>
+            See exactly what to do →
           </Link>
-          <button onClick={onSeeDetails} className="press w-full rounded-xl border border-border py-2.5 text-sm font-semibold text-foreground/70">
-            See all the numbers & charts →
-          </button>
-          <button onClick={() => setStep(0)} className="press w-full rounded-xl border border-border py-2.5 text-sm font-semibold text-foreground/70">
-            ↺ Walk through it again
+          <p className="mt-2 text-[12px] leading-snug text-foreground/50">
+            Your Plan tab has the full step-by-step — which account each dollar comes from, the deadlines, and why.
+            {mode === "demo" ? " This is the example household — start over anytime with your own numbers." : " Change any answer later from the Setup tab."}
+          </p>
+          <button onClick={() => go(0)} className="press mt-3 text-[12px] font-semibold text-foreground/50 underline decoration-foreground/20 underline-offset-2">
+            {mode === "demo" ? "Start over with my own numbers" : "↺ Walk through it again"}
           </button>
         </div>
-      </div>
-    ),
+      );
+    },
   });
 
   // Order the (conditionally-built) steps into chapter order; stable sort keeps
@@ -3855,6 +3544,15 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   const curChapter = CHAPTERS.find((c) => c.id === current.chapter) ?? null;
   const curChapterIdx = curChapter ? visibleChapters.findIndex((c) => c.id === curChapter.id) : -1;
   const firstIndexOfChapter = (id: ChapterId) => steps.findIndex((s) => s.chapter === id);
+
+  // Reaching the finale = the walkthrough is done for this mode. From then on the
+  // app's front door is the Plan tab (app/page.tsx), and the Setup tab shows the
+  // answers to revisit instead of restarting at "How do you want to start?".
+  useEffect(() => {
+    if (current.key !== "done" || needsOwnSetup || settings.walkthroughDone?.[mode]) return;
+    updateSettings({ walkthroughDone: { ...settings.walkthroughDone, [mode]: Date.now() } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current.key, mode]);
 
   // Deep-link entry: another page (Plan/Forecast "Adjust →") can open the
   // walkthrough at a specific step via `/?step=<key>`. Seed once on mount, by KEY
@@ -3876,19 +3574,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     router.replace("/", { scroll: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Persistent cash-flow reference: once the user has set their spending, keep the
-  // key line items visible on every later step so they never lose track of the
-  // number they picked (or where the rest of the cash is going). Off on the
-  // setup/intro steps and when there's nothing to fund.
-  useEffect(() => {
-    if (returnToReview && steps[safeStep]?.key === "breakdown") setReturnToReview(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [safeStep]);
-
-  const spendStepIdx = steps.findIndex((s) => s.key === "spend");
-  const irmaa = plan.tax.irmaa?.householdAnnual ?? 0;
-  const showCashFlow = !needsOwnSetup && spendStepIdx >= 0 && safeStep > spendStepIdx;
 
   return (
     <Card className="overflow-hidden">
@@ -3934,90 +3619,43 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
         {/* Step content column */}
         <div className="min-w-0 lg:flex-1">
-          {/* Mobile chapter header — compact "where am I" cue */}
+          {/* One compact "where am I" header: chapter + how far along, and the
+              example-data reminder. The desktop rail above shows the full list;
+              the phone gets a slim chapter bar. Nothing else stacks above the
+              question — the step's own heading does the talking. */}
           {curChapter && (
-            <div className="mb-2 lg:hidden">
+            <div className="mb-3">
               <div className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-1.5 text-[12px] font-semibold text-foreground/70">
-                  <span aria-hidden>{curChapter.icon}</span>
-                  {curChapter.label}
+                <span className="flex min-w-0 items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-primary">
+                  <span aria-hidden className="text-sm">{curChapter.icon}</span>
+                  <span className="truncate">{curChapter.label}</span>
                 </span>
-                <span className="text-[11px] text-foreground/45">
-                  {curChapterIdx + 1} of {visibleChapters.length}
+                <span className="flex shrink-0 items-center gap-2 whitespace-nowrap">
+                  {mode === "demo" && <Pill>📊 Example</Pill>}
+                  <span className="text-[11px] text-foreground/45 lg:hidden">
+                    {curChapterIdx + 1} of {visibleChapters.length}
+                  </span>
                 </span>
               </div>
-              <div className="mt-1.5 flex gap-1">
+              <div className="mt-2 flex gap-1 lg:hidden">
                 {visibleChapters.map((c, i) => (
-                  <span key={c.id} className={`h-1 flex-1 rounded-full ${i <= curChapterIdx ? "bg-primary" : "bg-foreground/10"}`} />
+                  <button
+                    key={c.id}
+                    onClick={() => go(firstIndexOfChapter(c.id))}
+                    aria-label={`Go to ${c.label}`}
+                    className="press flex-1 py-1.5"
+                  >
+                    <span className={`block h-1.5 rounded-full transition-colors duration-300 ${i < curChapterIdx ? "bg-primary" : i === curChapterIdx ? "bg-primary/60" : "bg-foreground/10"}`} />
+                  </button>
                 ))}
               </div>
             </div>
-          )}
-
-          {/* fine progress dots (within the whole flow) — slim visual, 44px-class
-              touch target via padding so they're actually tappable on a phone */}
-          <div className="mb-1 flex items-center gap-1.5">
-            {steps.map((s, i) => (
-              <button
-                key={s.key}
-                onClick={() => go(i)}
-                aria-label={`Step ${i + 1}`}
-                className="press flex-1 py-2"
-              >
-                <span
-                  className={`block h-1.5 w-full rounded-full transition-colors duration-300 ${i <= safeStep ? "bg-primary" : "bg-foreground/10"}`}
-                />
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-primary">{current.eyebrow}</div>
-            {mode === "demo" && <Pill>📊 Example data</Pill>}
-          </div>
-
-          {/* Chapter intro — a one-line "now we'll look at X" framing on the first
-              step of each chapter, the way an advisor frames the next topic. */}
-          {curChapter && firstIndexOfChapter(curChapter.id) === safeStep && (
-            <div className="mt-2 rounded-xl border border-primary/15 bg-primary/[0.04] px-3 py-2.5">
-              <div className="flex items-center gap-2 text-[13px] font-semibold text-primary">
-                <span aria-hidden className="text-base">{curChapter.icon}</span>
-                {curChapter.label}
-              </div>
-              <p className="mt-0.5 text-[12px] leading-snug text-foreground/60">{curChapter.blurb}</p>
-            </div>
-          )}
-
-          {showCashFlow && (
-            <CashFlowBar
-              spending={spending}
-              conversion={conversion}
-              tax={totalTax}
-              irmaa={irmaa}
-              guaranteed={guaranteed}
-              fromSavings={totalDraw}
-            />
           )}
 
           {/* animated step body — re-keyed so the directional slide replays each step */}
           <div key={current.key} className={`mt-1 min-h-[360px] ${dir === "back" ? "step-back" : "step-fwd"}`}>
             {current.render()}
           </div>
-
-          {/* One-tap return after a recap "tap to change" jump — no re-walking. */}
-          {returnToReview && current.key !== "breakdown" && (
-            <div className="mt-4 text-center">
-              <button
-                onClick={() => {
-                  setReturnToReview(false);
-                  const i = steps.findIndex((st) => st.key === "breakdown");
-                  if (i >= 0) go(i);
-                }}
-                className="press rounded-full border border-primary/30 bg-primary/5 px-4 py-1.5 text-[12px] font-semibold text-primary"
-              >
-                ← Back to your summary
-              </button>
-            </div>
-          )}
 
           {/* nav */}
           <div className="mt-5 flex items-center justify-between gap-3 border-t border-border pt-3">
@@ -4028,11 +3666,18 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             >
               ← Back
             </button>
-            <span className="text-[12px] text-foreground/45">{curChapter ? curChapter.label : ""}</span>
+            {/* Already finished once? Changing one answer shouldn't mean re-walking
+                the rest — one tap back to the plan, which has already updated. */}
+            {settings.walkthroughDone?.[mode] && current.key !== "done" ? (
+              <Link href="/plan" className="press rounded-full px-2 py-1 text-[12px] font-semibold text-primary">
+                ✓ Back to my plan
+              </Link>
+            ) : (
+              <span />
+            )}
             {isLast ? (
-              <button onClick={onSeeDetails} className="press rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-white">
-                Finish
-              </button>
+              // The finale carries its own big "See exactly what to do" button.
+              <span className="w-[88px]" aria-hidden />
             ) : (
               <button onClick={() => go(safeStep + 1)} className="press rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-white">
                 Next →
@@ -4045,46 +3690,6 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   );
 }
 
-/**
- * Persistent at-a-glance cash-flow reference shown across the later walkthrough
- * steps, so the user never loses sight of the spending number they picked or how
- * the rest of this year's cash splits up. Uses (where the money goes) as chips,
- * with a muted funding line (where it comes from).
- */
-function CashFlowBar({
-  spending,
-  conversion,
-  tax,
-  irmaa,
-  guaranteed,
-  fromSavings,
-}: {
-  spending: number;
-  conversion: number;
-  tax: number;
-  irmaa: number;
-  guaranteed: number;
-  fromSavings: number;
-}) {
-  return (
-    <div className="mt-2 rounded-xl border border-border bg-background/50 px-3 py-2">
-      <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/40">
-        This year’s cash flow — for reference
-      </div>
-      {/* Just the number you picked (and the rollover, if any) — tax & Medicare are
-          shown in full on the steps that explain them, so they're not repeated here. */}
-      <div className="flex flex-wrap gap-x-5 gap-y-1.5">
-        <CFItem icon="💵" label="Personal spending" value={spending} tone="text-foreground" />
-        {conversion > 0.5 && <CFItem icon="🔄" label="Roth conversion" value={conversion} tone="text-roth" />}
-      </div>
-      <div className="mt-1.5 border-t border-border/50 pt-1 text-[10.5px] leading-snug text-foreground/45">
-        Funded by {money(guaranteed)} of guaranteed income
-        {fromSavings > 0.5 ? <> + {money(fromSavings)} pulled from your accounts</> : <> — no withdrawals needed</>}.
-        {conversion > 0.5 && " The conversion moves to Roth (not spent); its tax is best paid from cash."}
-      </div>
-    </div>
-  );
-}
 
 /**
  * Where this year's MAGI sits relative to the Medicare IRMAA cliffs. IRMAA is a
@@ -4122,15 +3727,6 @@ function irmaaCliffInfo(magi: number, factor: number, tiers: IrmaaTier[], enroll
   };
 }
 
-function CFItem({ icon, label, value, tone }: { icon: string; label: string; value: number; tone: string }) {
-  return (
-    <div className="flex items-baseline gap-1.5">
-      <span aria-hidden className="text-[12px]">{icon}</span>
-      <span className="text-[11px] text-foreground/55">{label}</span>
-      <span className={`tabular text-[13px] font-bold ${tone}`}>{money(value)}</span>
-    </div>
-  );
-}
 
 /** Professional, advisor-grade snapshot of the accounts being assessed: grouped
  *  by tax treatment (Pre-tax / Roth / Taxable) with subtotals and % of total,
@@ -4228,69 +3824,6 @@ function AccountOverview({ household, total }: { household: Household; total: nu
   );
 }
 
-/** One year in the "Looking ahead" list. Collapsed it shows a one-line summary;
- *  tapped, it reveals EVERY action for that year (RMD, conversion, brokerage
- *  sale, Roth tap…), any life events that begin that year, and the spending it
- *  funds — so "+1 more" is never a dead end. Self-contained open state. */
-const ACTION_DOT: Record<PlanAction["kind"], string> = {
-  rmd: "bg-deferred",
-  pretax: "bg-deferred",
-  convert: "bg-roth",
-  taxable: "bg-taxable",
-  roth: "bg-roth",
-  none: "bg-foreground/30",
-};
-function AheadYearRow({ y, i }: { y: PlanYear; i: number }) {
-  const [open, setOpen] = useState(false);
-  const summary = `${y.actions[0]?.text ?? ""}${y.actions.length > 1 ? `, +${y.actions.length - 1} more` : ""}`;
-  return (
-    <div className="rise rounded-2xl border border-border" style={{ ["--i" as string]: i } as React.CSSProperties}>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="press flex w-full items-center justify-between gap-2 px-3 pt-3 text-left"
-      >
-        <span className="font-semibold">
-          {y.year} <span className="text-foreground/50">· age {y.selfAge}</span>
-        </span>
-        <span className="flex shrink-0 items-center gap-2">
-          <span className="tabular text-[12px] text-foreground/55">est. tax {moneyCompact(y.tax)}</span>
-          <span className={`text-foreground/40 transition-transform ${open ? "rotate-180" : ""}`}>⌄</span>
-        </span>
-      </button>
-      {!open ? (
-        <button onClick={() => setOpen(true)} className="block w-full px-3 pb-3 pt-1 text-left">
-          <span className="text-[12px] leading-snug text-foreground/70">{summary}</span>
-        </button>
-      ) : (
-        <div className="rise px-3 pb-3 pt-2">
-          {y.events.length > 0 && (
-            <div className="mb-2 flex flex-wrap gap-1.5">
-              {y.events.map((e) => (
-                <span key={e} className="rounded-full bg-ss/10 px-2 py-0.5 text-[11px] font-medium text-ss">
-                  📌 {e}
-                </span>
-              ))}
-            </div>
-          )}
-          <ul className="space-y-1.5">
-            {y.actions.map((a, idx) => (
-              <li key={idx} className="flex gap-2 text-[12px] leading-snug">
-                <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${ACTION_DOT[a.kind]}`} />
-                <span className="text-foreground/80">{a.text}</span>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-2 border-t border-border/50 pt-2 text-[11px] leading-relaxed text-foreground/55">
-            {y.coveredByIncome
-              ? `Your guaranteed income covers your ${money(y.spendingTarget)} of spending this year — nothing forced from savings.`
-              : `This funds your ${money(y.spendingTarget)} of spending for the year, for about ${money(y.tax)} in total tax.`}
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
 
 /** Plain-English reference for "a low bracket": the actual federal ordinary
  *  brackets with their dollar ranges, marking where the smoothing plan FILLS to

@@ -5,19 +5,23 @@ import { usePathname } from "next/navigation";
 import { useStore } from "@/components/HouseholdProvider";
 
 // Single source of truth for routes + labels + icons.
+// Ordered as the journey reads: answer the questions → see what to do → dig in.
+// "Setup" is the walkthrough until it's finished, then the answers summary.
 const TABS = [
-  { href: "/", label: "Start", icon: "🎯" },
-  { href: "/accounts", label: "Accounts", icon: "💼" },
+  { href: "/", label: "Setup", icon: "✏️" },
   { href: "/plan", label: "Plan", icon: "📋" },
   { href: "/projection", label: "Forecast", icon: "📊" },
   { href: "/scenarios", label: "Compare", icon: "⚖️" },
+  { href: "/accounts", label: "Accounts", icon: "💼" },
   { href: "/learn", label: "Learn", icon: "📖" },
 ] as const;
 
 export function TabBar() {
   const pathname = usePathname();
-  const { ready, household } = useStore();
-  const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
+  const { ready, household, mode, settings } = useStore();
+  const setupDone = ready && !!settings.walkthroughDone?.[mode];
+  const hrefOf = (href: string) => (href === "/" && setupDone ? "/setup" : href);
+  const isActive = (href: string) => (href === "/" ? pathname === "/" || pathname.startsWith("/setup") : pathname.startsWith(href));
   // Same single-vs-joint convention as app/plan/page.tsx: a sentinel spouse
   // (missing, or birthYear <= 1900) means a genuinely single household.
   const isSingle = !household.spouse || household.spouse.birthYear <= 1900;
@@ -36,7 +40,7 @@ export function TabBar() {
             return (
               <li key={tab.href} className="flex-1">
                 <Link
-                  href={tab.href}
+                  href={hrefOf(tab.href)}
                   aria-current={active ? "page" : undefined}
                   className={`press flex flex-col items-center gap-0.5 pb-1.5 pt-1.5 text-[10px] transition-colors ${
                     active ? "font-semibold text-primary" : "font-medium text-foreground/50"
@@ -74,7 +78,7 @@ export function TabBar() {
                   }`}
                 />
                 <Link
-                  href={tab.href}
+                  href={hrefOf(tab.href)}
                   aria-current={active ? "page" : undefined}
                   className={`press flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
                     active ? "bg-primary/10 font-semibold text-primary" : "text-foreground/60 hover:bg-foreground/5"

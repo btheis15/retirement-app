@@ -3,7 +3,7 @@
 import { useMemo, useState, useEffect, ReactNode } from "react";
 import Link from "next/link";
 import { useStore } from "@/components/HouseholdProvider";
-import { Card, PageTitle, SectionTitle, Pill, Stat, Disclaimer, Callout, Explainer, Info, StackedBar, PageSkeleton, DesktopOnly, Collapsible, AdjustLink } from "@/components/ui";
+import { Card, PageTitle, SectionTitle, Pill, Stat, Disclaimer, Callout, Explainer, Info, StackedBar, PageSkeleton, Collapsible, AdjustLink } from "@/components/ui";
 import { Donut, Legend, AnimatedNumber } from "@/components/charts";
 import { planYear, STRATEGY_META, StrategyId, BracketTarget } from "@/lib/optimizer";
 import { buildYearPace } from "@/lib/pace";
@@ -14,6 +14,8 @@ import { detectOpportunities } from "@/lib/opportunities";
 import { projectLifetime } from "@/lib/projection";
 import { recommendPlan, describePlan, planGist, configMatches, GOAL_META } from "@/lib/goals";
 import { buildActionPlan, PlanAction } from "@/lib/actionPlan";
+import { buildChecklist } from "@/lib/checklist";
+import { PlanHero, TodoList, ComingUp, WhyCard, YourAnswers, buildTimeline, buildAnswers, doneStepOf, DoneStep } from "@/components/PlanHome";
 import { buildIrmaaStatus } from "@/lib/irmaaStatus";
 import {
   adjustedAnnualBenefit,
@@ -34,17 +36,8 @@ import { HEX } from "@/lib/palette";
 import { SOURCES } from "@/lib/sources";
 import { AdjustSheet } from "@/components/AdjustSheet";
 
-const GOALS: GoalId[] = ["maxCapital", "lowestTax", "lowestRate"];
-
 const STRATEGIES: StrategyId[] = ["smart", "conventional", "proportional"];
 const BRACKETS: BracketTarget[] = [0.12, 0.22, 0.24, 0.32];
-
-const STEP_TONE: Record<"deferred" | "taxable" | "roth" | "tax", string> = {
-  deferred: "text-deferred",
-  taxable: "text-taxable",
-  roth: "text-roth",
-  tax: "text-tax",
-};
 
 const STRATEGY_SHORT: Record<StrategyId, string> = {
   smart: "Fills low brackets early to cut lifetime tax. Often best — compare on the Compare tab to be sure.",
@@ -57,7 +50,7 @@ export default function PlanPage() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   // "Mark done" → prefilled AdjustSheet (the keep-in-sync loop): applying the
   // real-life transaction is what marks the step done.
-  const [markingDone, setMarkingDone] = useState<{ step: "rmd" | "pretax" | "taxable" | "roth" | "conversion"; label: string; amount: number } | null>(null);
+  const [markingDone, setMarkingDone] = useState<{ step: DoneStep; doneKey: string; label: string; amount: number } | null>(null);
   const year = useMemo(() => new Date().getFullYear(), []);
   const taxScopeLabel = (household.state ?? "IL") === "IL" ? "federal + Illinois" : "federal";
   // "The plan ages": the calendar rolled past the last confirmation, or manually
@@ -129,12 +122,70 @@ export default function PlanPage() {
     return buildYearPace(plan, { now: new Date(), medicareEligible, extraTax: thisYearConversionTax });
   }, [plan, household.spouse, thisYearConversionTax]);
 
+  // This year WITH the active conversion — the same YearPlan the walkthrough's
+  // finale previews, so the to-do list (named accounts, conversion, tax) matches
+  // it line for line. `plan` above stays spending-only for the funding table.
+  const planConv = useMemo(
+    () =>
+      planYear(household, {
+        strategy: settings.strategy,
+        bracketTarget: settings.bracketTarget,
+        year,
+        filingStatus,
+        irmaaMagi: household.priorMagi?.twoYearsAgo || undefined,
+        dividendMode: settings.dividendMode,
+        conversion: settings.useConversions
+          ? settings.convertMode === "recommended"
+            ? { mode: "recommended", futureRate: activeProj.futureRate }
+            : { mode: "fillBracket", toBracket: settings.bracketTarget }
+          : null,
+      }),
+    [household, settings, activeProj.futureRate, year, filingStatus],
+  );
+  const convImpact = useMemo(() => conversionImpact(household, settings, activeProj), [household, settings, activeProj]);
+
+  // How well the ACTIVE plan holds up (1,000 runs, fixed seed — the same read as
+  // the Forecast tab). Off the main thread; keyed only on inputs that move it.
+  const [confidence, setConfidence] = useState<MonteCarloResult | null>(null);
+  const confKey = JSON.stringify([
+    settings.strategy, settings.bracketTarget, settings.useConversions, settings.convertMode, settings.convertUntilAge,
+    settings.returnRate, settings.inflationRate, settings.endAge, settings.survivorModel, settings.firstDeathAge,
+    settings.heirTaxRate, settings.spendingStrategy, settings.dividendMode,
+  ]);
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    setConfidence(null);
+    computeMonteCarlo({
+      kind: "mc",
+      household,
+      assumptions: {
+        strategy: settings.strategy,
+        bracketTarget: settings.bracketTarget,
+        returnRate: settings.returnRate,
+        inflationRate: settings.inflationRate,
+        endAge: settings.endAge,
+        convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
+        survivor: survivorFromSettings(settings),
+        heirTaxRate: settings.heirTaxRate,
+        spendingStrategy: settings.spendingStrategy,
+        dividendMode: settings.dividendMode,
+      },
+      model: returnModel(household.accounts),
+      runs: 1000,
+    }).then((res) => {
+      if (!cancelled) setConfidence(res);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, household, confKey]);
+
   if (!ready) return <PageSkeleton />;
 
   const w = plan.withdrawals;
   const totalDraw = w.pretax + w.taxable + w.roth;
-  const voluntaryPretax = Math.max(0, w.pretax - plan.rmd);
-  const coveredByIncome = totalDraw < 0.5;
   // Cash/savings on hand, and the leftover when a required withdrawal (RMD) or a
   // minimum draw forces out MORE than you spend. Surfacing the leftover is what
   // makes the funding math tie out to the penny — otherwise "= yours to spend"
@@ -142,7 +193,6 @@ export default function PlanPage() {
   const cashBalance = household.accounts.filter((a) => a.kind === "cash").reduce((s2, a) => s2 + a.balance, 0);
   const afterTaxCash = plan.netCash;
   const leftover = Math.max(0, afterTaxCash - plan.spendingTarget);
-  const cashAfterRolloverTax = Math.max(0, cashBalance - thisYearConversionTax);
 
   // What funds this year's spending (Social Security shown explicitly). In the
   // default "reinvest" mode, dividends & interest are NOT taken as cash — they
@@ -195,95 +245,66 @@ export default function PlanPage() {
     { label: "Roth (tax-free)", value: w.roth, color: HEX.roth },
   ].filter((s) => s.value > 0.5);
 
-  // ---- Plain-English step list: exactly what to do, in order. ----
-  const steps: {
-    label: string;
-    amount: number;
-    detail: string;
-    tone: "deferred" | "taxable" | "roth" | "tax";
-    /** Stable key for "Mark done" (which accounts it draws from / lands in). */
-    kind?: "rmd" | "pretax" | "taxable" | "roth" | "conversion";
-  }[] = [];
-  if (plan.rmd > 0.5) {
-    // Each person's RMD must legally come out of THEIR OWN pre-tax accounts —
-    // a combined household number is actionable in the wrong way for a couple.
-    const owed = plan.rmdDetails.filter((d) => d.amount > 0.5);
-    const perPerson =
-      owed.length > 1
-        ? owed
-            .map((d) => `${household[d.owner].label || (d.owner === "self" ? "You" : "Spouse")} ${money(d.amount)}`)
-            .join(" · ")
-        : "";
-    const firstTimer = owed.find((d) => d.age === d.startAge);
-    steps.push({
-      label: "Take your required withdrawal (RMD)",
-      amount: plan.rmd,
-      detail:
-        `The IRS forces this much out of your pre-tax accounts this year — complete it by December 31. ` +
-        (perPerson ? `Each of you takes yours from your OWN accounts: ${perPerson}. ` : "") +
-        (firstTimer
-          ? `First RMD year${owed.length > 1 ? ` for ${household[firstTimer.owner].label || "one of you"}` : ""}: the IRS allows deferring it to April 1 of next year, but that stacks two RMDs into one tax year — usually a worse deal. `
-          : "") +
-        `It's taxed as ordinary income, so it always comes out first.`,
-      tone: "deferred",
-      kind: "rmd",
+  // ---- What to do: the custodian-ready list, in the engine's draw order. A
+  // couple's two RMDs get their own "Mark done" records. ----
+  const rmdCount = planConv.rmdDetails.filter((d) => d.amount > 0.5).length;
+  let rmdSeen = 0;
+  const todoItems = buildChecklist(household, planConv, { yearTaxTotal })
+    .filter((i) => i.kind !== "irmaa") // Medicare has its own card under "Why"
+    .map((i) => {
+      const step = doneStepOf(i.kind);
+      if (!step) return i;
+      return { ...i, doneKey: step === "rmd" && rmdCount > 1 ? `rmd-${rmdSeen++}` : step };
     });
-  }
-  if (voluntaryPretax > 0.5) {
-    steps.push({
-      label: plan.rmd > 0.5 ? "Withdraw a little more from pre-tax" : "Withdraw from pre-tax (IRA / 401k)",
-      amount: voluntaryPretax,
-      detail: `Pull pre-tax dollars up to the ${percent(settings.bracketTarget, 0)} tax bracket. Taking these "cheap" dollars now means smaller forced withdrawals — and a smaller tax bill — later.`,
-      tone: "deferred",
-      kind: "pretax",
+
+  // ---- Coming up: dated deadlines + life events ahead ----
+  const convRows = activeProj.rows.filter((r) => r.conversion > 0.5);
+  const timeline = buildTimeline(household, settings, pace, year, convRows.length ? convRows[convRows.length - 1].year : null);
+
+  // ---- Why: the withdrawal order, in one sentence for THIS strategy ----
+  const rmdFirst = plan.rmd > 0.5 ? " Required withdrawals (RMDs) always come out first." : "";
+  const orderWhy =
+    settings.strategy === "smart"
+      ? {
+          title: "Why pre-tax money comes out first",
+          body: `Pulling IRA/401(k) dollars now — only up to the ${percent(settings.bracketTarget, 0)} bracket — uses low tax brackets that would otherwise go to waste, and shrinks the forced withdrawals that get taxed harder later. Brokerage covers the rest, and tax-free Roth is saved for last.${rmdFirst}`,
+        }
+      : settings.strategy === "proportional"
+        ? {
+            title: "Why a little comes from every account",
+            body: `Drawing from each account in proportion keeps your tax bill steady and predictable from year to year — your goal picked this for you.${rmdFirst}`,
+          }
+        : {
+            title: "Why cash and brokerage come first",
+            body: `Spending from taxable savings costs little tax — cash isn't taxed at all, and on investments you sell only the gain is, at the lower capital-gains rate. That keeps your taxable income low${
+              settings.useConversions && thisYearConversion > 0.5 ? ", which leaves room to move pre-tax money into Roth at a low rate" : ""
+            }. Tax-free Roth is saved for last.${rmdFirst}`,
+          };
+
+  // ---- Why: Social Security, per person ----
+  const hasSpouse = !!household.spouse && household.spouse.birthYear > 1900;
+  const ssCards = (["self", "spouse"] as const)
+    .filter((who) => (who === "self" || hasSpouse) && household[who].socialSecurityAnnual > 0)
+    .map((who) => {
+      const p = household[who];
+      return {
+        name: p.label || (who === "self" ? "You" : "Spouse"),
+        age: p.ssClaimAge,
+        monthly: adjustedAnnualBenefit(p.socialSecurityAnnual, p.birthYear, p.ssClaimAge) / 12,
+        year: p.birthYear + p.ssClaimAge,
+        started: ageInYear(p.birthYear, year) >= p.ssClaimAge,
+      };
     });
-  }
-  if (w.taxable > 0.5) {
-    steps.push({
-      label: "Sell from your brokerage",
-      amount: w.taxable,
-      detail: "Only the gain portion is taxed, usually at the lower long-term capital-gains rate (often 0–15%).",
-      tone: "taxable",
-      kind: "taxable",
-    });
-  }
-  if (w.roth > 0.5) {
-    steps.push({
-      label: "Tap your Roth (tax-free)",
-      amount: w.roth,
-      detail: "Used last on purpose: Roth comes out tax-free and is never forced out, so every year it stays invested is tax-free growth.",
-      tone: "roth",
-      kind: "roth",
-    });
-  }
-  if (settings.useConversions && thisYearConversion > 0.5) {
-    steps.push({
-      label: "Roll pre-tax → Roth (the tax-bomb fix)",
-      amount: thisYearConversion,
-      detail: `Not spending — this rolls ${money(thisYearConversion)} from your pre-tax IRA/401(k) into Roth${
-        settings.convertMode === "recommended"
-          ? ", sized to your projected future RMD-era tax rate"
-          : `, filling the ${percent(settings.bracketTarget, 0)} bracket`
-      }. It shrinks every future RMD, then grows tax-free with no RMDs of its own${(household.state ?? "IL") === "IL" ? " — and Illinois doesn't tax the conversion" : ""}. Its tax bill is the next step.`,
-      tone: "roth",
-      kind: "conversion",
-    });
-  }
-  if (settings.useConversions && thisYearConversion > 0.5 && thisYearConversionTax > 0.5) {
-    steps.push({
-      label: "Pay the conversion's tax — from cash",
-      amount: thisYearConversionTax,
-      detail:
-        cashBalance >= thisYearConversionTax
-          ? `This comes out of your cash/savings ($${Math.round(cashBalance).toLocaleString()}) — NOT from selling more investments, and NOT from the ${money(plan.spendingTarget)} you're spending. That leaves about ${money(cashAfterRolloverTax)} sitting in cash afterward. Paying the tax from cash is what makes the conversion worth doing.`
-          : `Your cash ($${Math.round(cashBalance).toLocaleString()}) covers most of it; the plan automatically withholds the remaining ${money(thisYearConversionTax - cashBalance)} from the conversion itself (that much less lands in Roth) rather than selling investments to pay tax — so your cash goes to about $0 this year, not negative.`,
-      tone: "tax",
-    });
-  }
+  const ssIncomeNote = (() => {
+    const pending = ssCards.filter((c) => !c.started).sort((a, b) => a.year - b.year);
+    return pending.length ? `First check ${pending[0].year} (${pending[0].name} at ${pending[0].age})` : undefined;
+  })();
+
+  const answers = buildAnswers(household, settings, year);
 
   return (
     <div>
-      <PageTitle title={`Your ${year} plan`} subtitle="What to do this year, and the tax math behind it. (New to this? The Start tab walks you through it.)" />
+      <PageTitle title={`What to do in ${year}`} subtitle="Your plan, step by step — then the why, and the detail if you want it." />
 
       {/* ---------- The plan ages: nudge when the calendar rolled or balances
            went stale. One banner at a time; new-tax-year wins (it has a real
@@ -331,45 +352,43 @@ export default function PlanPage() {
         </Callout>
       )}
 
-      <div className="mt-1">
-      {/* ---------- The spending target (decided once in the walkthrough; every
-           card below quotes it). Shown here, changed there — one source of truth. ---------- */}
-      <SectionTitle>How much you&apos;re spending each year</SectionTitle>
-      <Explainer>Your after-tax target — the money you actually want in your pocket. You set it in the walkthrough; tap Adjust to change it and the whole plan updates.</Explainer>
-      <Card>
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-[12px] font-medium text-foreground/60">Yearly spending (after tax)</div>
-            <div className="tabular text-2xl font-bold text-primary">{money(plan.spendingTarget)}</div>
-            <div className="tabular text-[12px] text-foreground/50">{money(Math.round(plan.spendingTarget / 12))}/mo</div>
-          </div>
-          <AdjustLink step="spend" />
+      {mode === "demo" && (
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-ss/25 bg-ss/[0.06] px-3.5 py-2.5 text-[13px] text-foreground/75">
+          <span>📊 This is the <strong>example household</strong> — not your money.</span>
+          <Link href="/?step=start" className="press shrink-0 rounded-full bg-card px-3 py-1 text-[12px] font-semibold text-primary ring-1 ring-primary/25">
+            Use my numbers →
+          </Link>
         </div>
-      </Card>
+      )}
+      {mode === "own" && !settings.walkthroughDone?.own && (
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-accent/30 bg-accent/[0.07] px-3.5 py-2.5 text-[13px] text-foreground/75">
+          <span>✏️ Haven&apos;t finished setup? The plan below fills any unanswered questions with defaults.</span>
+          <Link href="/" className="press shrink-0 rounded-full bg-card px-3 py-1 text-[12px] font-semibold text-primary ring-1 ring-primary/25">
+            Finish →
+          </Link>
+        </div>
+      )}
 
-      {/* ---------- RIGHT NOW: the year's plan translated to today's pace ----------
-          This is what makes the tab worth opening any day/week/month: the monthly
-          rhythm, where you should roughly be by today, and the next real dates. */}
-      <SectionTitle hint="check in any time">Right now</SectionTitle>
-      <PaceCard
-        pace={pace}
-        incomeNote={(() => {
-          const pending = (["self", "spouse"] as const)
-            .filter((who) => household[who].socialSecurityAnnual > 0 && ageInYear(household[who].birthYear, year) < household[who].ssClaimAge)
-            .map((who) => ({ who, age: household[who].ssClaimAge, year: household[who].birthYear + household[who].ssClaimAge }));
-          if (!pending.length) return undefined;
-          const first = pending.sort((a, b) => a.year - b.year)[0];
-          const name = household[first.who].label || (first.who === "self" ? "you" : "spouse");
-          return `First check ${first.year} (${name} at ${first.age})`;
-        })()}
-      />
-      {/* Today's market, translated into what it means for THIS plan (e.g. a down
-          market makes the planned Roth rollover more valuable, not less). */}
+      <div className="mt-3">
+        <PlanHero
+          year={year}
+          spending={plan.spendingTarget}
+          totalDraw={planConv.withdrawals.pretax + planConv.withdrawals.taxable + planConv.withdrawals.roth}
+          yearTax={yearTaxTotal}
+          conversion={settings.useConversions ? thisYearConversion : 0}
+          confidence={confidence}
+          endAge={settings.endAge}
+          isDemo={mode === "demo"}
+        />
+      </div>
+
+      {/* Today's market, translated into what it means for THIS plan. Renders
+          nothing on an unremarkable market — silence beats noise. */}
       <MarketCheck
         ctx={{
           conversion: thisYearConversion,
           totalDraw,
-          cashBalance: household.accounts.filter((a) => a.kind === "cash").reduce((s, a) => s + a.balance, 0),
+          cashBalance,
           guardrails: settings.spendingStrategy === "guardrails",
           gainsAtZero: plan.tax.capitalGainsRate === 0,
           hasBrokerageGain: household.accounts.some(
@@ -381,90 +400,188 @@ export default function PlanPage() {
         }}
       />
 
-      {/* ---------- THE HEADLINE: what to do ---------- */}
-      <Callout tone="good" icon="🧭" title="Your move this year" className="mt-4">
-        {coveredByIncome ? (
-          <>
-            Good news — your guaranteed income{spendInvestmentIncome ? " (Social Security, pension and the dividends you take as cash)" : " (Social Security and pension)"} already covers your{" "}
-            <strong>{money(plan.spendingTarget)}</strong>{" "}of spending this year. You don&apos;t need to
-            pull from any account{plan.rmd > 0.5 ? " beyond the required minimum withdrawal (RMD) below" : ""}.
-          </>
-        ) : (
-          <>
-            To spend <strong>{money(plan.spendingTarget)}</strong>{" "}after tax this year, withdraw about{" "}
-            <strong>{money(totalDraw)}</strong>{" "}total from your accounts (the steps below), and set aside
-            roughly <strong>{money(yearTaxTotal)}</strong>{" "}for tax ({taxScopeLabel})
-            {thisYearConversionTax > 0.5 ? (
-              <>
-                {" "}— <strong>{money(thisYearConversionTax)}</strong>{" "}of that is the Roth conversion&apos;s tax,
-                best paid from cash
-              </>
-            ) : null}
-            .
-          </>
-        )}
-      </Callout>
+      {/* ---------- 1. WHAT TO DO — the custodian-ready list (lib/checklist):
+           named accounts, amounts, deadlines, in the engine's exact draw order. ---------- */}
+      <SectionTitle hint="in this order">What to do</SectionTitle>
+      <TodoList
+        items={todoItems}
+        year={year}
+        pace={pace}
+        canMarkDone={mode === "own"}
+        doneRecords={settings.doneActions}
+        onMarkDone={(it) => setMarkingDone({ step: doneStepOf(it.kind)!, doneKey: it.doneKey, label: it.title, amount: it.amount ?? 0 })}
+      />
 
-      {/* ---------- Medicare premium meter: always visible (mobile included).
-          IRMAA is the number a retiree can silently wreck mid-year — an extra
-          withdrawal that crosses a MAGI line costs the full next-tier surcharge
-          two years later. A calm, always-on readout of tier + headroom is the
-          guard rail; it must never live in a collapsed expander. ---------- */}
-      {irmaaStatus && (
-        <Card className="mt-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-[13px] font-semibold text-foreground/80">Medicare premium check (IRMAA)</div>
-            <Pill tone={irmaaStatus.inSurcharge ? "tax" : "gain"}>{irmaaStatus.label}</Pill>
-          </div>
-          <p className="mt-1.5 text-[13px] leading-relaxed text-foreground/70">
-            This year&apos;s income (MAGI) is <strong>{money(Math.round(irmaaStatus.magi))}</strong> — it sets your{" "}
-            {irmaaStatus.billingYear} premium{irmaaStatus.enrolleesAtBilling > 1 ? "s" : ""}.{" "}
-            {irmaaStatus.inSurcharge ? (
+      {markingDone && (() => {
+        // Prefill from the step: draw from the biggest account of the step's
+        // bucket (changeable in the sheet); conversions move pre-tax → Roth.
+        const biggest = (bucket: "pretax" | "taxable" | "roth") =>
+          household.accounts.filter((a) => bucketOf(a.kind) === bucket).sort((a, b) => b.balance - a.balance)[0];
+        const fromBucket = markingDone.step === "taxable" ? "taxable" : markingDone.step === "roth" ? "roth" : "pretax";
+        const fromAcct = biggest(fromBucket);
+        const toAcct = markingDone.step === "conversion" ? biggest("roth") : undefined;
+        return (
+          <AdjustSheet
+            prefill={{
+              kind: markingDone.step === "conversion" ? "transfer" : "withdraw",
+              accountId: fromAcct?.id,
+              toAccountId: toAcct?.id ?? "__newroth__",
+              amount: markingDone.amount,
+              reason: `Marking done: ${markingDone.label}`,
+            }}
+            onClose={() => setMarkingDone(null)}
+            onApplied={({ applied }) => {
+              updateSettings({
+                doneActions: { ...settings.doneActions, [`${year}:${markingDone.doneKey}`]: { at: Date.now(), amount: applied } },
+              });
+            }}
+          />
+        );
+      })()}
+
+      {/* ---------- 2. COMING UP — dated deadlines + the life events ahead ---------- */}
+      <SectionTitle>Coming up</SectionTitle>
+      <ComingUp entries={timeline} />
+
+      {/* ---------- 3. WHY — one short reason per decision, detail one tap away ---------- */}
+      <SectionTitle>Why this plan</SectionTitle>
+      <div className="space-y-2.5 lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0">
+        <WhyCard
+          icon="🧭"
+          title={orderWhy.title}
+          more={
+            <>
+        <p className="mb-1.5">Your accounts fall into three tax &quot;buckets,&quot; and the bucket — not the brand — sets the order:</p>
+              <ul className="space-y-1">
+                <li><strong className="text-deferred">Pre-tax</strong>{" "}(Traditional IRA / 401k): never taxed yet, so every dollar out is ordinary income. The IRS forces minimum withdrawals (RMDs) starting at 73–75.</li>
+                <li><strong className="text-taxable">Brokerage</strong>{" "}(taxable): only the <em>gain</em>{" "}is taxed, usually at the lower capital-gains rate. No forced withdrawals.</li>
+                <li><strong className="text-roth">Roth</strong>: already taxed, so it comes out tax-free and is <em>never</em>{" "}forced out — which is why it&apos;s spent last.</li>
+              </ul>
+              {plan.notes.length > 0 && (
+                <ul className="mt-2 space-y-1 border-t border-border/60 pt-2">
+                  {plan.notes.map((n, i) => (
+                    <li key={i} className="flex gap-2">
+                      <span className="text-primary">•</span>
+                      <span>{n}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          }
+        >
+          {orderWhy.body}
+        </WhyCard>
+
+        {convImpact && settings.useConversions && (
+          <WhyCard
+            icon="🔁"
+            title="Why move money to Roth now"
+            action={<AdjustLink step="rollconfirm" label="Change" />}
+            more={
               <>
-                That lands in <strong>{irmaaStatus.label.toLowerCase()}</strong>: about{" "}
-                <strong>{money(Math.round(irmaaStatus.perPersonMonthly))}/mo per person</strong> on top of the standard
-                premium ({money(Math.round(irmaaStatus.householdAnnual))}/yr household).
+                A big pre-tax balance carries a deferred IRS bill. From age 73–75 the IRS forces out a rising share every
+                year (RMDs), taxed as ordinary income whether you need it or not. Converting in your low-bracket years pays
+                that tax at a known, lower rate, and the Roth then grows tax-free with no forced withdrawals ever.
+                {(household.state ?? "IL") === "IL" && " Illinois doesn't tax the conversion at all."}
+              </>
+            }
+          >
+            Moving about <strong>{moneyCompact(convImpact.avgAnnualConversion)}/yr</strong> through{" "}
+            {convImpact.windowEndYear} shrinks your biggest future required withdrawal from{" "}
+            <strong className="text-tax">{moneyCompact(convImpact.peakRmdBaseline)}</strong> to{" "}
+            <strong className="text-gain">{moneyCompact(convImpact.peakRmdWithConversions)}</strong>
+            {convImpact.estateGain > 0 ? (
+              <>
+                {" "}— and leaves your family about <strong className="text-gain">{moneyCompact(convImpact.estateGain)}</strong>{" "}more after every tax.
               </>
             ) : (
-              <>No surcharge at this income.</>
+              <>, trading a little lifetime tax for much lower late-life taxable income.</>
             )}
-          </p>
-          {!irmaaStatus.atTop && (
-            <p
-              className={`mt-1 text-[13px] font-medium ${
-                irmaaStatus.headroom < 10_000 ? "text-tax" : irmaaStatus.headroom < 25_000 ? "text-accent" : "text-gain"
-              }`}
-            >
-              {irmaaStatus.headroom < 10_000 ? "⚠️ " : ""}
-              {money(Math.round(irmaaStatus.headroom))} of headroom below the next line — crossing it adds ~
-              {money(Math.round(irmaaStatus.nextJumpAnnual))}/yr. Check here before any extra withdrawal or conversion.
-            </p>
-          )}
-          {irmaaStatus.inWindow && (
-            <p className="mt-1 text-[13px] leading-relaxed text-foreground/70">
-              You&apos;re not on Medicare yet — but Medicare looks back two years, so this year&apos;s income already
-              counts: it sets your first premium at 65.
-            </p>
-          )}
-          <Info q="Just retired? Your first premium may be set by your old paycheck" sources={[SOURCES.irmaa]}>
-            <p>
-              Medicare sets each year&apos;s premium from your income <strong>two years earlier</strong> — so your first
-              bill in retirement is usually based on your old <em>working</em> income. File Social Security&apos;s{" "}
-              <strong>Form SSA-44</strong> (life-changing event: &ldquo;work stoppage&rdquo;) and they&apos;ll re-figure
-              it on your new retirement income instead.
-            </p>
-            <p className="mt-2">
-              The surcharge isn&apos;t a separate bill to remember: it&apos;s taken out of your Social Security check (or
-              invoiced by Medicare if you haven&apos;t claimed yet).
-            </p>
-          </Info>
-        </Card>
-      )}
+          </WhyCard>
+        )}
 
-      {/* ---------- What funds the spending (SS shown) ---------- */}
-      <SectionTitle>What pays for it</SectionTitle>
-      <Explainer>Your guaranteed income — Social Security first — covers what it can; withdrawals fill the rest. Tax comes out of the total.</Explainer>
-      <Card>
+        {ssCards.length > 0 && (
+          <WhyCard
+            icon="🏦"
+            title="When Social Security starts"
+            action={<AdjustLink step="ssclaim" label="See what waiting is worth" />}
+          >
+            {ssCards.map((c, i) => (
+              <span key={c.name} className="block">
+                <strong>{c.name}</strong> claims at {c.age} — about <strong>{money(Math.round(c.monthly))}/mo</strong>
+                {c.started ? " (already started)" : `, from ${c.year}`}
+                {i === ssCards.length - 1 ? "." : ";"}
+              </span>
+            ))}
+            {ssCards.some((c) => !c.started) && (
+              <span className="mt-1 block text-foreground/60">
+                Until then your savings carry more of the load — these are your heaviest withdrawal years.
+              </span>
+            )}
+          </WhyCard>
+        )}
+
+        {irmaaStatus && (
+          <WhyCard
+            icon="🏥"
+            title={`Medicare premiums: ${irmaaStatus.inSurcharge ? irmaaStatus.label : "no surcharge"}`}
+            more={
+              <>
+                <p>
+                  Medicare sets each year&apos;s premium from your income <strong>two years earlier</strong> — so a
+                  first bill in retirement is often based on old <em>working</em> income. File Social Security&apos;s{" "}
+                  <strong>Form SSA-44</strong> (&ldquo;work stoppage&rdquo;) to have it re-figured on retirement income.
+                </p>
+                <p className="mt-2">
+                  The surcharge isn&apos;t a separate bill: it comes out of the Social Security check (or Medicare invoices
+                  you if you haven&apos;t claimed yet).
+                </p>
+              </>
+            }
+          >
+            This year&apos;s income (MAGI) of <strong>{moneyCompact(irmaaStatus.magi)}</strong> sets your{" "}
+            {irmaaStatus.billingYear} premium{irmaaStatus.enrolleesAtBilling > 1 ? "s" : ""}
+            {irmaaStatus.inSurcharge ? (
+              <>
+                {" "}— about <strong>{money(Math.round(irmaaStatus.perPersonMonthly))}/mo per person</strong> extra.
+              </>
+            ) : (
+              <> with no surcharge.</>
+            )}
+            {!irmaaStatus.atTop && (
+              <span
+                className={`mt-1 block font-medium ${
+                  irmaaStatus.headroom < 10_000 ? "text-tax" : irmaaStatus.headroom < 25_000 ? "text-accent" : "text-gain"
+                }`}
+              >
+                {irmaaStatus.headroom < 10_000 ? "⚠️ " : ""}
+                {moneyCompact(irmaaStatus.headroom)} of room before the next line (+{moneyCompact(irmaaStatus.nextJumpAnnual)}/yr
+                if crossed) — check here before any extra withdrawal.
+              </span>
+            )}
+            {irmaaStatus.inWindow && (
+              <span className="mt-1 block text-foreground/60">
+                Not on Medicare yet — but this year&apos;s income already sets your first premium at 65.
+              </span>
+            )}
+          </WhyCard>
+        )}
+      </div>
+
+      {/* ---------- 4. YOUR ANSWERS — every decision, one tap from its step ---------- */}
+      <SectionTitle>Your answers</SectionTitle>
+      <YourAnswers rows={answers} />
+
+      {/* ---------- 5. THE DETAILS — everything else, collapsed ---------- */}
+      <SectionTitle>The details</SectionTitle>
+      <div className="space-y-2">
+        <Collapsible title="Monthly pace & how to pay the tax" summary="Where you should be by now, and withholding vs. quarterly estimates" defaultOpenDesktop={false}>
+          <PaceCard pace={pace} incomeNote={ssIncomeNote} bare />
+        </Collapsible>
+
+        <Collapsible title="Where this year's money comes from" summary={`Income + withdrawals − tax = ${money(plan.spendingTarget)} to spend`} defaultOpenDesktop={false}>
+      <div>
         {fundingSegs.length > 0 ? (
           <>
             <StackedBar segments={fundingSegs} />
@@ -539,160 +656,31 @@ export default function PlanPage() {
             ⏳ {ssPending.join("; ")} — until then, withdrawals cover more (see &quot;when to claim&quot; below).
           </p>
         )}
-      </Card>
+      </div>
+        </Collapsible>
 
-      {/* ---------- The step-by-step ---------- */}
-      <SectionTitle>Do this, in order</SectionTitle>
-      <Explainer>We always satisfy required withdrawals first, then pull from the most tax-friendly source next, saving tax-free Roth for last.</Explainer>
-      <Card className="print-area">
-        <div className="hidden print:block">
-          <div className="text-lg font-bold">
-            Your {year} plan — do this, in order{mode === "demo" ? " (EXAMPLE DATA — not your plan)" : ""}
-          </div>
-          <div className="mb-2 text-[12px] text-foreground/60">
-            Prepared {new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })} ·
-            educational estimates, not tax advice
-          </div>
-        </div>
-        {steps.length === 0 ? (
-          <p className="text-sm text-foreground/75">
-            Nothing to withdraw — your guaranteed income covers your spending. Any surplus can be reinvested
-            in your brokerage.
-          </p>
-        ) : (
-          <ol className="space-y-3">
-            {steps.map((s, i) => {
-              const doneRec = s.kind ? settings.doneActions?.[`${year}:${s.kind}`] : undefined;
-              return (
-                <li key={i} className="flex gap-3">
-                  <span
-                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[12px] font-bold text-white ${doneRec ? "bg-gain" : "bg-primary"}`}
-                  >
-                    {doneRec ? "✓" : i + 1}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className={`font-semibold ${doneRec ? "text-foreground/50 line-through decoration-foreground/30" : ""}`}>{s.label}</span>
-                      <span className={`tabular shrink-0 font-bold ${doneRec ? "text-foreground/40" : STEP_TONE[s.tone]}`}>{money(s.amount)}</span>
-                    </div>
-                    <p className="mt-0.5 text-[12px] leading-relaxed text-foreground/65">{s.detail}</p>
-                    {mode === "own" && s.kind && (
-                      doneRec ? (
-                        <p className="mt-1 text-[11px] font-medium text-gain print:hidden">
-                          ✓ Done {new Date(doneRec.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })} — {money(doneRec.amount)} recorded in your accounts
-                        </p>
-                      ) : (
-                        <button
-                          onClick={() => setMarkingDone({ step: s.kind!, label: s.label, amount: s.amount })}
-                          className="press mt-1 rounded-lg border border-border px-2 py-1 text-[11px] font-medium text-primary print:hidden"
-                        >
-                          ✓ I did this — update my accounts
-                        </button>
-                      )
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
+        <Collapsible title="Your next few years" summary="What to do each year, as the plan unfolds" defaultOpenDesktop={false}>
+          <LookingAhead />
+        </Collapsible>
+
+        {convImpact && (
+          <Collapsible title="Roth conversion plan" summary="How much, for how long, and what it's worth" defaultOpenDesktop={false}>
+            <RolloverPlanCard conv={convImpact} />
+          </Collapsible>
         )}
 
-        {w.roth < 0.5 && steps.length > 0 && (
-          <p className="mt-3 flex items-center gap-1.5 rounded-xl bg-roth/5 px-3 py-2 text-[12px] text-roth">
-            🌱 Leave your Roth untouched this year — it keeps growing tax-free.
-          </p>
-        )}
+        <Collapsible title="Social Security: when to claim" summary="Your check at every claim age, breakeven, and the survivor angle" defaultOpenDesktop={false}>
+          <SsTiming household={household} year={year} />
+        </Collapsible>
 
-        <div className="mt-4 border-t border-border pt-3 text-[13px] text-foreground/80">
-          <strong>Bottom line:</strong>{" "}you keep <strong>{money(plan.spendingTarget)}</strong>{" "}to spend
-          after paying about <strong className="text-tax">{money(yearTaxTotal)}</strong>{" "}in tax
-          ({taxScopeLabel})
-          {thisYearConversionTax > 0.5 ? <>{" "}({money(thisYearConversionTax)} of it for the Roth conversion)</> : null}
-          {thisYearConversionTax > 0.5 ? "." : <>{" "}— that&apos;s {percent(plan.tax.effectiveRate)} of your total income for the year.</>}
-        </div>
-      </Card>
-      <button
-        onClick={() => window.print()}
-        className="press mt-2 w-full rounded-2xl border border-border bg-card px-4 py-2 text-[13px] font-semibold text-foreground/70 print:hidden"
-      >
-        🖨️ Print this list (or save as PDF)
-      </button>
-
-      {markingDone && (() => {
-        // Prefill from the step: draw from the biggest account of the step's
-        // bucket (changeable in the sheet); conversions move pre-tax → Roth.
-        const biggest = (bucket: "pretax" | "taxable" | "roth") =>
-          household.accounts.filter((a) => bucketOf(a.kind) === bucket).sort((a, b) => b.balance - a.balance)[0];
-        const fromBucket = markingDone.step === "taxable" ? "taxable" : markingDone.step === "roth" ? "roth" : "pretax";
-        const fromAcct = biggest(fromBucket);
-        const toAcct = markingDone.step === "conversion" ? biggest("roth") : undefined;
-        return (
-          <AdjustSheet
-            prefill={{
-              kind: markingDone.step === "conversion" ? "transfer" : "withdraw",
-              accountId: fromAcct?.id,
-              toAccountId: toAcct?.id ?? "__newroth__",
-              amount: markingDone.amount,
-              reason: `Marking done: ${markingDone.label}`,
-            }}
-            onClose={() => setMarkingDone(null)}
-            onApplied={({ applied }) => {
-              updateSettings({
-                doneActions: { ...settings.doneActions, [`${year}:${markingDone.step}`]: { at: Date.now(), amount: applied } },
-              });
-            }}
-          />
-        );
-      })()}
-
-      {/* Why this order — defined right where the steps just used it. */}
-      <Info
-        q={`Why this order? (${
-          settings.strategy === "smart"
-            ? "pre-tax to fill low brackets → brokerage → Roth"
-            : settings.strategy === "conventional"
-              ? "brokerage & cash → pre-tax → Roth"
-              : "a little from everything"
-        })`}
-        sources={[SOURCES.rmd, SOURCES.rothNoRmd, SOURCES.capGains]}
-      >
-        <p className="mb-1.5">Your accounts fall into three tax &quot;buckets,&quot; and the bucket — not the brand — sets the order:</p>
-        <ul className="space-y-1">
-          <li><strong className="text-deferred">Pre-tax</strong>{" "}(Traditional IRA / 401k): never taxed yet, so every dollar out is ordinary income. The IRS forces minimum withdrawals (RMDs) starting at 73–75.</li>
-          <li><strong className="text-taxable">Brokerage</strong>{" "}(taxable): only the <em>gain</em>{" "}is taxed, usually at the lower capital-gains rate. No forced withdrawals.</li>
-          <li><strong className="text-roth">Roth</strong>: already taxed, so it comes out tax-free and is <em>never</em>{" "}forced out — which is why it&apos;s spent last.</li>
-        </ul>
-      </Info>
-
-      {/* ---------- LOOKING AHEAD: the next several years ---------- */}
-      <LookingAhead />
-
-      {/* ---------- ROLLOVER / ROTH-CONVERSION PLAN (the canonical, editable control) ---------- */}
-      <RolloverPlanCard activeProj={activeProj} />
-
-      {/* ---------- SOCIAL SECURITY timing — the one place to act on claim age ---------- */}
-      <SsTiming household={household} year={year} />
-
-      {/* ---------- The strategy we picked (demoted below the action; collapsed) ---------- */}
       <Collapsible
         eyebrow="under the hood"
         title="See the strategy we picked for you"
         summary="Your goal, the recommended plan, and how confident we are"
-        className="mt-2"
+        defaultOpenDesktop={false}
+        className=""
       >
         <GoalAndRecommendation />
-      </Collapsible>
-
-      {/* ---------- Why this plan (collapsed detail) ---------- */}
-      <Collapsible title="Why this plan" summary="The reasoning behind the steps, in your own numbers" className="mt-2">
-        <ul className="space-y-2 text-[13px] text-foreground/75">
-          {plan.notes.map((n, i) => (
-            <li key={i} className="flex gap-2">
-              <span className="text-primary">•</span>
-              <span>{n}</span>
-            </li>
-          ))}
-        </ul>
       </Collapsible>
 
       {/* ---------- Opportunities (collapsed detail) ---------- */}
@@ -700,7 +688,8 @@ export default function PlanPage() {
         <Collapsible
           title="More ways to save"
           summary={`${opportunities.length} optional move${opportunities.length > 1 ? "s" : ""} that could lower your tax`}
-          className="mt-2"
+          defaultOpenDesktop={false}
+          className=""
         >
           <div className="space-y-2 lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0">
             {opportunities.map((o) => (
@@ -736,21 +725,9 @@ export default function PlanPage() {
         </Collapsible>
       )}
 
-      {/* ---------- Deep detail — desktop-only. The phone keeps the Plan tab to the
-           action (your move, the order, what's coming); the source/income donuts and
-           the full tax breakdown are richest on a larger screen. ---------- */}
-      <DesktopOnly
-        mobileNote={
-          <Card className="mt-2">
-            <p className="text-[13px] leading-relaxed text-foreground/65">
-              📊 The detailed breakdowns — where each dollar comes from, your full income picture, and the line-by-line
-              tax math — are on the <strong>desktop version</strong>. Open this on a laptop to see them.
-            </p>
-          </Card>
-        }
-      >
-      <SectionTitle>The full tax math</SectionTitle>
-      <Explainer>Where each dollar comes from, your full income picture, and the line-by-line tax bill — the complete detail behind the numbers above.</Explainer>
+
+        <Collapsible title="The full tax math" summary="Income, deductions, and every line of this year's tax" defaultOpenDesktop={false}>
+            <Explainer>Where each dollar comes from, your full income picture, and the line-by-line tax bill — the complete detail behind the numbers above.</Explainer>
       {/* ---------- Source donut ---------- */}
       <p className="mb-2 mt-4 text-[13px] font-semibold text-foreground/70">Where the money comes from</p>
       <Explainer>Each slice is an account we&apos;d draw on to fund your spending this year.</Explainer>
@@ -853,7 +830,25 @@ export default function PlanPage() {
           </p>
         )}
       </Card>
-      </DesktopOnly>
+        </Collapsible>
+      </div>
+
+      {/* ---------- Go deeper ---------- */}
+      <SectionTitle>Go deeper</SectionTitle>
+      <div className="grid grid-cols-2 gap-2">
+        {[
+          { href: "/projection", icon: "📊", title: "Forecast", sub: "Every year to age " + settings.endAge },
+          { href: "/scenarios", icon: "⚖️", title: "Compare", sub: "Try other strategies" },
+          { href: "/accounts", icon: "💼", title: "Accounts", sub: "Balances & holdings" },
+          { href: "/learn", icon: "📖", title: "Learn", sub: "The rules, in plain English" },
+        ].map((c) => (
+          <Link key={c.href} href={c.href} className="press rounded-2xl border border-border bg-card p-3.5" style={{ boxShadow: "var(--shadow-card)" }}>
+            <div className="text-xl">{c.icon}</div>
+            <div className="mt-1 text-[14px] font-semibold">{c.title} →</div>
+            <div className="text-[12px] text-foreground/55">{c.sub}</div>
+          </Link>
+        ))}
+      </div>
 
       {/* ---------- Advanced: tune the strategy yourself (collapsed by default) ---------- */}
       <button
@@ -970,7 +965,6 @@ export default function PlanPage() {
       </Card>
       </div>
       )}
-      </div>
 
       <div className="mt-6">
         <Disclaimer />
@@ -1017,7 +1011,6 @@ function SsTiming({
 
   return (
     <>
-      <SectionTitle>Social Security: when to claim</SectionTitle>
       <Explainer>
         Claiming later means a bigger check for life (about +8%/yr after full retirement, up to age 70) — but you
         collect nothing while you wait. Here&apos;s the trade-off for each of you. You pick the claim ages in the walkthrough.
@@ -1422,7 +1415,6 @@ function LookingAhead() {
 
   return (
     <>
-      <SectionTitle hint={`next ${years.length} years`}>The next few years</SectionTitle>
       <Explainer>
         What to actually do each year, so you can plan around it{settings.useConversions ? ", including the Roth conversions" : ""}.
         It re-runs whenever you change your goal, spending, or assumptions.
@@ -1498,37 +1490,50 @@ function ConvertUntilControl({
   );
 }
 
-/** The RMD tax-bomb explainer + the Roth-conversion plan that defuses it. */
-function RolloverPlanCard({ activeProj }: { activeProj: ReturnType<typeof projectLifetime> }) {
-  const { household, settings } = useStore();
-  // ONE engine for the whole page: this card compares the ACTIVE projection
-  // against the same strategy WITHOUT conversions (or, when rollovers are off,
-  // against what turning them on would do). The step list above quotes the same
-  // active projection, so the two can never disagree about sizes or years.
-  const flipped = useMemo(
-    () =>
-      projectLifetime(household, {
-        strategy: settings.strategy,
-        bracketTarget: settings.bracketTarget,
-        returnRate: settings.returnRate,
-        inflationRate: settings.inflationRate,
-        endAge: settings.endAge,
-        convert: settings.useConversions ? null : { untilAge: settings.convertUntilAge, mode: settings.convertMode },
-        survivor: survivorFromSettings(settings),
-        heirTaxRate: settings.heirTaxRate,
-        spendingStrategy: settings.spendingStrategy,
-        dividendMode: settings.dividendMode,
-      }),
-    [household, settings],
-  );
-  const withConv = settings.useConversions ? activeProj : flipped;
-  const noConv = settings.useConversions ? flipped : activeProj;
-
+/** What the conversion plan is worth: the ACTIVE projection vs. the same plan
+ *  with conversions flipped (off when they're on, on when they're off). ONE
+ *  engine for the whole page — the to-do list, the "why" card, and the detail
+ *  card all quote this. Null when there's no meaningful pre-tax balance or
+ *  nothing would be converted. */
+type ConversionImpact = {
+  pretaxShare: number;
+  totalConverted: number;
+  avgAnnualConversion: number;
+  windowEndYear: number;
+  windowYears: number;
+  peakRmdBaseline: number;
+  peakRmdWithConversions: number;
+  peakRmdReduction: number;
+  estateGain: number;
+  lifetimeTaxDelta: number;
+  recommended: boolean;
+};
+function conversionImpact(
+  household: Household,
+  settings: PlannerSettings,
+  activeProj: ReturnType<typeof projectLifetime>,
+): ConversionImpact | null {
   const pretax = household.accounts.filter((a) => bucketOf(a.kind) === "pretax").reduce((t, a) => t + a.balance, 0);
   const total = household.accounts.reduce((t, a) => t + a.balance, 0);
   const pretaxShare = total > 0 ? pretax / total : 0;
+  if (pretaxShare < 0.25) return null;
+  const flipped = projectLifetime(household, {
+    strategy: settings.strategy,
+    bracketTarget: settings.bracketTarget,
+    returnRate: settings.returnRate,
+    inflationRate: settings.inflationRate,
+    endAge: settings.endAge,
+    convert: settings.useConversions ? null : { untilAge: settings.convertUntilAge, mode: settings.convertMode },
+    survivor: survivorFromSettings(settings),
+    heirTaxRate: settings.heirTaxRate,
+    spendingStrategy: settings.spendingStrategy,
+    dividendMode: settings.dividendMode,
+  });
+  const withConv = settings.useConversions ? activeProj : flipped;
+  const noConv = settings.useConversions ? flipped : activeProj;
   const convYears = withConv.rows.filter((r) => r.conversion > 0.5);
-  const conv = {
+  if (withConv.totalConverted < 5_000) return null;
+  return {
     pretaxShare,
     totalConverted: withConv.totalConverted,
     avgAnnualConversion: convYears.length ? withConv.totalConverted / convYears.length : 0,
@@ -1541,15 +1546,15 @@ function RolloverPlanCard({ activeProj }: { activeProj: ReturnType<typeof projec
     lifetimeTaxDelta: withConv.lifetimeTax - noConv.lifetimeTax,
     recommended: withConv.endingEstateAfterTax - noConv.endingEstateAfterTax > 0,
   };
+}
 
-  // Only worth showing if there's a real pre-tax balance and a conversion to make.
-  if (conv.pretaxShare < 0.25 || conv.totalConverted < 5_000) return null;
-
+/** The RMD tax-bomb explainer + the Roth-conversion plan that defuses it. */
+function RolloverPlanCard({ conv }: { conv: ConversionImpact }) {
+  const { household, settings } = useStore();
   const helps = conv.estateGain > 0;
 
   return (
     <>
-      <SectionTitle>Roth conversions: pay a little tax now to cut future RMDs</SectionTitle>
       <Explainer>
         {Math.round(conv.pretaxShare * 100)}% of your money is pre-tax, so big required withdrawals later can push you into a
         higher bracket. The fix: move a little to Roth now, while you&apos;re in a low bracket — that smooths your income and
