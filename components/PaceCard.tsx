@@ -24,15 +24,17 @@ const TONE_BAR: Record<string, string> = {
   ss: "bg-ss",
 };
 
-export function PaceCard({ pace, incomeNote }: { pace: YearPace; incomeNote?: string }) {
+export function PaceCard({ pace, incomeNote, bare = false }: { pace: YearPace; incomeNote?: string; bare?: boolean }) {
   const { household } = useStore();
   const isIllinois = (household.state ?? "IL") === "IL";
   const pct = Math.round(pace.yearFraction * 100);
   const monthsLeft = 12 - pace.monthsDone;
   const nextDeadlines = useMemo(() => pace.deadlines.slice(0, 3), [pace.deadlines]);
 
+  // `bare` drops the card chrome when it's embedded in an already-framed section.
+  const Frame = bare ? "div" : Card;
   return (
-    <Card>
+    <Frame>
       {/* Header: where in the year we are */}
       <div className="flex items-baseline justify-between gap-2">
         <div className="text-[15px] font-bold">
@@ -156,6 +158,6 @@ export function PaceCard({ pace, incomeNote }: { pace: YearPace; incomeNote?: st
           December 31 totals that matter for taxes, RMDs, and conversions.
         </p>
       </Info>
-    </Card>
+    </Frame>
   );
 }
