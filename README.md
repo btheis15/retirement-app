@@ -27,6 +27,13 @@ Investment Income Tax — using **2026** figures.
   effective & marginal rates, SS taxability, capital-gains rate, NIIT, and the
   IRMAA tier. Switch strategies (smart bracket-fill / conventional /
   proportional) and pick the bracket to fill.
+- **Quarterly review PDF** (`/report`) — the whole plan written up like an
+  advisor's report (≈13–19 letter pages): executive summary and recommendations,
+  this quarter's deadlines, the year's custodian-ready action plan, portfolio and
+  every holding, withdrawal and Roth-conversion strategy, Social Security, taxes
+  and Medicare, Monte-Carlo outlook and stress tests, a year-by-year appendix.
+  Each quarter's report compares against the last one. Saved via the browser's
+  print dialog; made on-device.
 - **Opportunities** — actionable, sourced callouts: Roth-conversion headroom in
   low-tax years, 0% capital-gains harvesting, IRMAA-cliff avoidance, QCDs once
   RMD-eligible, the pre-tax "RMD tax bomb," and asset-location tips.
