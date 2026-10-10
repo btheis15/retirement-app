@@ -3481,12 +3481,12 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 <AnimatedNumber value={pct * 100} format={(n) => `${Math.round(n)}%`} />
               </div>
               <p className="mx-auto mt-1 max-w-sm text-[13px] leading-relaxed text-foreground/65">
-                In about <strong>{Math.round(pct * 10)} of 10</strong> simulated market futures — crashes and slumps
+                In about <strong>{Math.round(pct * 10)} of 10</strong>{" "}simulated market futures — crashes and slumps
                 included — your money lasts to age {settings.endAge}.
                 {pct < 0.7 ? " A little less spending or a later Social Security claim can move this a lot." : ""}
               </p>
               <Info q="How precise is this number?" className="mt-2 text-left">
-                Based on {confidence!.runs.toLocaleString()} simulated market futures, so the true odds are likely
+                Based on {confidence!.runs.toLocaleString()}{" "}simulated market futures, so the true odds are likely
                 within a couple of points — call it {Math.round(confidence!.successCI[0] * 100)}–
                 {Math.round(confidence!.successCI[1] * 100)}%. The Forecast tab runs a larger simulation, so its
                 number can differ by a point or two.
@@ -3518,6 +3518,9 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
           <Link href="/plan" className="press mt-5 block w-full rounded-2xl bg-primary py-3.5 text-center text-[15px] font-semibold text-white" style={{ boxShadow: "var(--shadow-card-hi)" }}>
             See exactly what to do →
+          </Link>
+          <Link href="/report" className="press mt-2 block w-full rounded-2xl border border-border bg-card py-3 text-center text-[14px] font-semibold text-primary">
+            📄 Download your full plan (PDF)
           </Link>
           <p className="mt-2 text-[12px] leading-snug text-foreground/50">
             Your Plan tab has the full step-by-step — which account each dollar comes from, the deadlines, and why.

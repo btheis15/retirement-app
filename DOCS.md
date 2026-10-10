@@ -128,6 +128,7 @@ The app is a small set of pages plus the proxy API. A persistent `TabBar` (deskt
 | `/` | `app/page.tsx` | **Setup** — the calm step-by-step `GuidedPlan` walkthrough ("Let's build your plan"); the front door for a first-time visitor. Once the walkthrough is finished for the current data mode (`settings.walkthroughDone[mode]`), `/` redirects to `/plan` unless a `?step=` deep link is present. |
 | `/setup` | `app/setup/page.tsx` | **Setup (returning)** — every walkthrough answer as a tap-to-change list (`YourAnswers`), plus "walk through every question again." The Setup tab points here once the walkthrough is done. |
 | `/plan` | `app/plan/page.tsx` | **Plan** — the home base, action-first: what to do this year (named accounts, deadlines), what's coming up, why, your answers, then the detail collapsed. See "The Plan tab" below. |
+| `/report` | `app/report/page.tsx` | **Quarterly review (PDF)** — the advisor-style client report, previewed on screen and saved as a PDF via the browser's print dialog. See "The quarterly client report" below. |
 | `/accounts` | `app/accounts/page.tsx` | **Accounts** — enter accounts/holdings; ticker search and live price/dividend valuation. |
 | `/projection` | `app/projection/page.tsx` | **Forecast** — the year-by-year lifetime projection and confidence (Monte-Carlo) view. |
 | `/scenarios` | `app/scenarios/page.tsx` | **Compare** — scenario lab: head-to-head plan comparisons, crossover analysis, CSV export. |
@@ -655,6 +656,16 @@ The Plan tab answers in a fixed order, so a customer reads "what to do" before a
 5. **Your answers — `YourAnswers`** (`buildAnswers`): every walkthrough decision, one tap from its step. Shared with `/setup`.
 6. **The details** — collapsed: monthly pace & paying the tax (`PaceCard`), where the money comes from, the next few years (`LookingAhead`), the conversion plan (`RolloverPlanCard`), Social Security by claim age (`SsTiming`), the strategy under the hood, more ways to save, and the full tax math (now on mobile too).
 
+### The quarterly client report (`/report`)
+
+The whole plan written up the way an advisor would present it, as letter-size pages: **cover** (key figures, contents) → **executive summary** (where you stand, plan confidence, this year in one paragraph, numbered recommendations each with its reason, *since your last review*, what we're watching) → **this quarter** (dated deadlines + seasonal reviews, where you should be by now / by quarter-end, next-quarter preview) → **this year's action plan** (the custodian-ready checklist, a funding table that ties out to the penny) → **situation & assumptions** → **portfolio** (allocation, stock/bond/cash mix, every account and every holding, concentration flag) → **withdrawal strategy** (the three buckets, the chosen method's reasoning, all three methods compared on lifetime tax and after-tax estate) → **Roth conversions** (impact, how to execute, the year-by-year schedule) → **Social Security** (benefit at every claim age 62–70, breakeven, survivor angle) → **taxes & Medicare** (this year's return line by line, how to pay it, IRMAA) → **lifetime outlook** (balances by bucket, Monte-Carlo fan + percentiles, stress tests, next five years) → **opportunities & milestones** → **Appendix A** (year-by-year projection) → **Appendix B** (assumptions, methods, disclosures).
+
+- **One number, one source.** `lib/planContext.ts` computes the active plan (assumptions, projection, this year with and without the conversion, the all-in tax, `conversionImpact`) for both the Plan tab and the report. `lib/report.ts` (`buildReport`) assembles every figure the document shows from it; `components/ClientReport.tsx` only writes it up; `components/ReportCharts.tsx` holds static, print-first SVG charts (bucket colors validated as a categorical palette).
+- **Quarterly rhythm** (`lib/quarterly.ts`): `quarterOf`/`nextQuarter`; `quarterAgenda(q, ctx)` lists what a quarter asks of this household — 1040-ES installments that fall in it (including January's prior-year catch-up), the April filing, Q1 re-plan + tax forms + withholding setup, Q2 mid-year pace check, Q3 IRMAA projection, Q4 Medicare open enrollment / loss & gain harvesting / QCD / the Dec 31 conversion and RMD.
+- **Since your last review.** Viewing the report stores a `ReviewSnapshot` for the quarter (`components/reviewHistory.ts`, localStorage `rto-reviews-<mode>`, last 12 kept); the next quarter's report compares against the latest earlier one (`compareSnapshots`). The Plan tab's "Your full report" card shows whether this quarter's review is done, and a banner announces a new quarter's review.
+- **PDF.** "Download PDF" sets the document title (the saved file name) and opens the print dialog; print CSS in `globals.css` (`.report-doc`, `.report-sheet`) drops the app chrome, starts the summary and appendices on fresh sheets, keeps headers/tables/figures from splitting, and `@page` margin boxes add a running footer and "Page x of y". Nothing is uploaded.
+- **Probe:** `scripts/_audit_report.mts` — plan/projection agreement and the funding-table tie-out across 93 household × settings cases, quarter boundaries, agenda placement, snapshot deltas.
+
 ---
 
 ## Verification & Quality Bar
@@ -755,6 +766,7 @@ These proxies exist only to dodge browser CORS on Yahoo's endpoints. **Only tick
 | --- | --- |
 | `rto-own-household` | The user's real household (accounts, balances, ages, goals) — JSON. |
 | `rto-mode` | `"own"` vs `"demo"` mode toggle. |
+| `rto-reviews-own` / `rto-reviews-demo` | Quarterly review snapshots (one per quarter, last 12) for "since your last review". |
 | `rto-settings` | UI/assumption settings, merged over `DEFAULT_SETTINGS` from `lib/defaults.ts` on load. Includes `walkthroughDone` (per-mode completion timestamps) and `doneActions` ("Mark done" records). |
 | `rto-demo-seed` | Seed for the deterministic demo household (`lib/demo.ts`). |
 

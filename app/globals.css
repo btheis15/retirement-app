@@ -304,3 +304,74 @@ body {
     box-shadow: none !important;
   }
 }
+
+/* ---- Client report (/report): letter-size "paper" on screen, real pages in
+   print. The checklist print rule above hides everything but .print-area; the
+   report overrides it (body:has(.report-doc) outranks body *) so the whole
+   document prints, minus the app chrome. ---- */
+.report-doc {
+  color: #0f1f24;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.report-page {
+  background: #ffffff;
+}
+@media screen {
+  .report-page {
+    margin: 0 auto 20px;
+    max-width: 8.5in;
+    padding: 28px 20px;
+    border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(15, 31, 36, 0.08), 0 10px 30px rgba(15, 31, 36, 0.08);
+  }
+}
+@media screen and (min-width: 640px) {
+  .report-page {
+    padding: 0.6in;
+  }
+}
+@media print {
+  body:has(.report-doc) * {
+    visibility: visible;
+  }
+  body:has(.report-doc) nav,
+  body:has(.report-doc) .no-print {
+    display: none !important;
+  }
+  html:has(.report-doc) {
+    background: #ffffff !important;
+    font-size: 16px;
+  }
+  body:has(.report-doc) main {
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  body:has(.report-doc) .lg\:pl-56 {
+    padding-left: 0 !important;
+  }
+  .report-page {
+    padding: 0;
+    margin: 0 0 0.35in;
+  }
+  .report-sheet {
+    break-before: page;
+  }
+  .report-doc header {
+    break-inside: avoid;
+    break-after: avoid;
+  }
+  .report-doc .avoid-break,
+  .report-doc tr,
+  .report-doc figure {
+    break-inside: avoid;
+  }
+  .report-doc thead {
+    display: table-header-group;
+  }
+  .report-doc h2,
+  .report-doc h3 {
+    break-after: avoid;
+  }
+}

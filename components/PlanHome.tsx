@@ -26,6 +26,7 @@ import { Household, otherIncomeForYear, wageForYear } from "@/lib/accounts";
 import { PlannerSettings } from "@/lib/defaults";
 import { GOAL_META } from "@/lib/goals";
 import { rmdStartAge } from "@/lib/tax/constants";
+import { Quarter, ReviewSnapshot } from "@/lib/quarterly";
 import { adjustedAnnualBenefit } from "@/lib/socialSecurity";
 import { money, moneyCompact } from "@/lib/format";
 
@@ -179,7 +180,7 @@ export function TodoList({
       <div className="hidden print:block">
         <div className="text-lg font-bold">Your {year} plan — what to do, in order</div>
         <div className="mb-2 text-[12px] text-foreground/60">
-          Prepared {new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })} · educational
+          Prepared {new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}{" "}· educational
           estimates, not tax advice
         </div>
       </div>
@@ -492,6 +493,67 @@ export function YourAnswers({ rows, title = "Your answers" }: { rows: AnswerRow[
           </span>
         </Link>
       ))}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* 6. Quarterly review                                                 */
+/* ------------------------------------------------------------------ */
+
+/** The way into the advisor-style PDF report, framed by the quarterly rhythm:
+ *  not yet prepared this quarter → invite; prepared → when, and when's next. */
+export function QuarterlyReviewCard({
+  quarter,
+  nextLabel,
+  last,
+}: {
+  quarter: Quarter;
+  nextLabel: string;
+  /** The most recent review prepared (any quarter), or null. */
+  last: ReviewSnapshot | null;
+}) {
+  const doneThisQuarter = last?.quarter === quarter.key;
+  const lastLabel = last ? last.quarter.replace(/(\d{4})-(Q\d)/, "$2 $1") : null;
+  return (
+    <div
+      className={`rounded-2xl border p-4 ${doneThisQuarter ? "border-border bg-card" : "border-primary/30 bg-primary/[0.04]"}`}
+      style={{ boxShadow: "var(--shadow-card)" }}
+    >
+      <div className="flex items-start gap-3">
+        <span aria-hidden className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-xl text-white">
+          📄
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[15px] font-semibold leading-snug">Your {quarter.label} quarterly review</div>
+          <p className="mt-1 text-[13px] leading-relaxed text-foreground/70">
+            {doneThisQuarter ? (
+              <>
+                ✓ Prepared {new Date(last!.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}. Your next review is{" "}
+                <strong>{nextLabel}</strong> — update your balances then and it will show what changed.
+              </>
+            ) : last ? (
+              <>
+                <strong>New quarter.</strong> Your last review was {lastLabel}. Refresh your balances, then open this quarter&apos;s report — it
+                compares against the last one.
+              </>
+            ) : (
+              <>
+                Your whole plan, written up the way an advisor would: what to do this quarter and this year, why, your portfolio and
+                holdings, taxes, Social Security, and the lifetime outlook. A fresh one every quarter.
+              </>
+            )}
+          </p>
+          <Link
+            href="/report"
+            className={`press mt-3 inline-block rounded-xl px-4 py-2 text-[14px] font-semibold ${
+              doneThisQuarter ? "border border-primary/30 bg-card text-primary" : "bg-primary text-white"
+            }`}
+          >
+            {doneThisQuarter ? "Open the report →" : "Open & download PDF →"}
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }

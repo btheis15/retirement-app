@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useStore } from "@/components/HouseholdProvider";
 import { Card, PageTitle, SectionTitle, Pill, Stat, Disclaimer, Callout, Explainer, Info, StackedBar, PageSkeleton, Collapsible, AdjustLink } from "@/components/ui";
 import { Donut, Legend, AnimatedNumber } from "@/components/charts";
-import { planYear, STRATEGY_META, StrategyId, BracketTarget } from "@/lib/optimizer";
+import { STRATEGY_META, StrategyId, BracketTarget } from "@/lib/optimizer";
 import { buildYearPace } from "@/lib/pace";
 import { PaceCard } from "@/components/PaceCard";
 import { MarketCheck } from "@/components/MarketCheck";
@@ -15,8 +15,11 @@ import { projectLifetime } from "@/lib/projection";
 import { recommendPlan, describePlan, planGist, configMatches, GOAL_META } from "@/lib/goals";
 import { buildActionPlan, PlanAction } from "@/lib/actionPlan";
 import { buildChecklist } from "@/lib/checklist";
-import { PlanHero, TodoList, ComingUp, WhyCard, YourAnswers, buildTimeline, buildAnswers, doneStepOf, DoneStep } from "@/components/PlanHome";
-import { buildIrmaaStatus } from "@/lib/irmaaStatus";
+import { activeAssumptions, yearPlanFor, yearTaxAllIn, conversionImpact, filingStatusOf, ConversionImpact } from "@/lib/planContext";
+import { PlanHero, TodoList, ComingUp, WhyCard, YourAnswers, QuarterlyReviewCard, buildTimeline, buildAnswers, doneStepOf, DoneStep } from "@/components/PlanHome";
+import { buildIrmaaStatus, irmaaRoomPhrase } from "@/lib/irmaaStatus";
+import { quarterOf, nextQuarter, ReviewSnapshot } from "@/lib/quarterly";
+import { loadReviews } from "@/components/reviewHistory";
 import {
   adjustedAnnualBenefit,
   ssBenefitFactor,
@@ -64,48 +67,20 @@ export default function PlanPage() {
   // A genuinely single household (sentinel spouse, birthYear ≤ 1900) must be taxed
   // on the SINGLE curve — defaulting to mfj would count the sentinel as a 65+
   // spouse and grant double deductions/brackets and 2 IRMAA enrollees.
-  const filingStatus = household.spouse && household.spouse.birthYear > 1900 ? ("mfj" as const) : ("single" as const);
-  const plan = useMemo(
-    () =>
-      planYear(household, {
-        strategy: settings.strategy,
-        bracketTarget: settings.bracketTarget,
-        year,
-        filingStatus,
-        // A new retiree's ACTUAL premium this year comes from their old working
-        // income (2-year lookback) — use it when they've told us.
-        irmaaMagi: household.priorMagi?.twoYearsAgo || undefined,
-        dividendMode: settings.dividendMode,
-      }),
-    [household, settings, year, filingStatus],
-  );
+  const filingStatus = filingStatusOf(household);
+  const plan = useMemo(() => yearPlanFor(household, settings, year, null), [household, settings, year]);
   const opportunities = useMemo(
     () => detectOpportunities(household, plan, settings.bracketTarget),
     [household, plan, settings.bracketTarget],
   );
   // Active lifetime plan (respects the conversion mode) — its first row is this year.
-  const activeProj = useMemo(
-    () =>
-      projectLifetime(household, {
-        strategy: settings.strategy,
-        bracketTarget: settings.bracketTarget,
-        returnRate: settings.returnRate,
-        inflationRate: settings.inflationRate,
-        endAge: settings.endAge,
-        convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
-        survivor: survivorFromSettings(settings),
-        heirTaxRate: settings.heirTaxRate,
-        spendingStrategy: settings.spendingStrategy,
-        dividendMode: settings.dividendMode,
-      }),
-    [household, settings],
-  );
+  const activeProj = useMemo(() => projectLifetime(household, activeAssumptions(settings)), [household, settings]);
   const thisYearConversion = activeProj.rows[0]?.conversion ?? 0;
   // The year's FULL tax bill includes the Roth conversion's tax — quoting only
   // the spending tax next to a step list that orders a six-figure conversion
   // understated the set-aside by ~an order of magnitude.
-  const thisYearConversionTax = Math.max(0, (activeProj.rows[0]?.tax ?? plan.tax.totalTax) - plan.tax.totalTax);
-  const yearTaxTotal = plan.tax.totalTax + thisYearConversionTax;
+  const yearTaxTotal = yearTaxAllIn(plan, activeProj);
+  const thisYearConversionTax = yearTaxTotal - plan.tax.totalTax;
   // Medicare meter runs on the WITH-conversion MAGI (the projection row) — the
   // conversion is precisely the income most likely to cross an IRMAA line.
   const irmaaStatus = buildIrmaaStatus(
@@ -126,26 +101,23 @@ export default function PlanPage() {
   // finale previews, so the to-do list (named accounts, conversion, tax) matches
   // it line for line. `plan` above stays spending-only for the funding table.
   const planConv = useMemo(
-    () =>
-      planYear(household, {
-        strategy: settings.strategy,
-        bracketTarget: settings.bracketTarget,
-        year,
-        filingStatus,
-        irmaaMagi: household.priorMagi?.twoYearsAgo || undefined,
-        dividendMode: settings.dividendMode,
-        conversion: settings.useConversions
-          ? settings.convertMode === "recommended"
-            ? { mode: "recommended", futureRate: activeProj.futureRate }
-            : { mode: "fillBracket", toBracket: settings.bracketTarget }
-          : null,
-      }),
-    [household, settings, activeProj.futureRate, year, filingStatus],
+    () => yearPlanFor(household, settings, year, { futureRate: activeProj.futureRate }),
+    [household, settings, activeProj.futureRate, year],
   );
   const convImpact = useMemo(() => conversionImpact(household, settings, activeProj), [household, settings, activeProj]);
 
   // How well the ACTIVE plan holds up (1,000 runs, fixed seed — the same read as
   // the Forecast tab). Off the main thread; keyed only on inputs that move it.
+  // Quarterly review history (on-device) — drives the review card and the
+  // new-quarter nudge.
+  const quarter = useMemo(() => quarterOf(new Date()), []);
+  const [lastReview, setLastReview] = useState<ReviewSnapshot | null>(null);
+  useEffect(() => {
+    if (!ready) return;
+    const list = loadReviews(mode);
+    setLastReview(list.length ? list[list.length - 1] : null);
+  }, [ready, mode]);
+
   const [confidence, setConfidence] = useState<MonteCarloResult | null>(null);
   const confKey = JSON.stringify([
     settings.strategy, settings.bracketTarget, settings.useConversions, settings.convertMode, settings.convertUntilAge,
@@ -159,18 +131,7 @@ export default function PlanPage() {
     computeMonteCarlo({
       kind: "mc",
       household,
-      assumptions: {
-        strategy: settings.strategy,
-        bracketTarget: settings.bracketTarget,
-        returnRate: settings.returnRate,
-        inflationRate: settings.inflationRate,
-        endAge: settings.endAge,
-        convert: settings.useConversions ? { untilAge: settings.convertUntilAge, mode: settings.convertMode } : null,
-        survivor: survivorFromSettings(settings),
-        heirTaxRate: settings.heirTaxRate,
-        spendingStrategy: settings.spendingStrategy,
-        dividendMode: settings.dividendMode,
-      },
+      assumptions: activeAssumptions(settings),
       model: returnModel(household.accounts),
       runs: 1000,
     }).then((res) => {
@@ -352,6 +313,14 @@ export default function PlanPage() {
         </Callout>
       )}
 
+      {mode === "own" && lastReview && lastReview.quarter < quarter.key && (
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-primary/25 bg-primary/[0.05] px-3.5 py-2.5 text-[13px] text-foreground/75">
+          <span>📄 New quarter — your <strong>{quarter.label} review</strong> is ready.</span>
+          <Link href="/report" className="press shrink-0 rounded-full bg-primary px-3 py-1 text-[12px] font-semibold text-white">
+            Open →
+          </Link>
+        </div>
+      )}
       {mode === "demo" && (
         <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-ss/25 bg-ss/[0.06] px-3.5 py-2.5 text-[13px] text-foreground/75">
           <span>📊 This is the <strong>example household</strong> — not your money.</span>
@@ -529,7 +498,7 @@ export default function PlanPage() {
             more={
               <>
                 <p>
-                  Medicare sets each year&apos;s premium from your income <strong>two years earlier</strong> — so a
+                  Medicare sets each year&apos;s premium from your income <strong>two years earlier</strong>{" "}— so a
                   first bill in retirement is often based on old <em>working</em> income. File Social Security&apos;s{" "}
                   <strong>Form SSA-44</strong> (&ldquo;work stoppage&rdquo;) to have it re-figured on retirement income.
                 </p>
@@ -556,8 +525,7 @@ export default function PlanPage() {
                 }`}
               >
                 {irmaaStatus.headroom < 10_000 ? "⚠️ " : ""}
-                {moneyCompact(irmaaStatus.headroom)} of room before the next line (+{moneyCompact(irmaaStatus.nextJumpAnnual)}/yr
-                if crossed) — check here before any extra withdrawal.
+                {irmaaRoomPhrase(irmaaStatus).replace(/^./, (c) => c.toUpperCase())} — check here before any extra withdrawal.
               </span>
             )}
             {irmaaStatus.inWindow && (
@@ -568,6 +536,10 @@ export default function PlanPage() {
           </WhyCard>
         )}
       </div>
+
+      {/* ---------- The quarterly review: the full plan as an advisor-style PDF ---------- */}
+      <SectionTitle>Your full report</SectionTitle>
+      <QuarterlyReviewCard quarter={quarter} nextLabel={nextQuarter(quarter).label} last={lastReview} />
 
       {/* ---------- 4. YOUR ANSWERS — every decision, one tap from its step ---------- */}
       <SectionTitle>Your answers</SectionTitle>
@@ -1490,64 +1462,6 @@ function ConvertUntilControl({
   );
 }
 
-/** What the conversion plan is worth: the ACTIVE projection vs. the same plan
- *  with conversions flipped (off when they're on, on when they're off). ONE
- *  engine for the whole page — the to-do list, the "why" card, and the detail
- *  card all quote this. Null when there's no meaningful pre-tax balance or
- *  nothing would be converted. */
-type ConversionImpact = {
-  pretaxShare: number;
-  totalConverted: number;
-  avgAnnualConversion: number;
-  windowEndYear: number;
-  windowYears: number;
-  peakRmdBaseline: number;
-  peakRmdWithConversions: number;
-  peakRmdReduction: number;
-  estateGain: number;
-  lifetimeTaxDelta: number;
-  recommended: boolean;
-};
-function conversionImpact(
-  household: Household,
-  settings: PlannerSettings,
-  activeProj: ReturnType<typeof projectLifetime>,
-): ConversionImpact | null {
-  const pretax = household.accounts.filter((a) => bucketOf(a.kind) === "pretax").reduce((t, a) => t + a.balance, 0);
-  const total = household.accounts.reduce((t, a) => t + a.balance, 0);
-  const pretaxShare = total > 0 ? pretax / total : 0;
-  if (pretaxShare < 0.25) return null;
-  const flipped = projectLifetime(household, {
-    strategy: settings.strategy,
-    bracketTarget: settings.bracketTarget,
-    returnRate: settings.returnRate,
-    inflationRate: settings.inflationRate,
-    endAge: settings.endAge,
-    convert: settings.useConversions ? null : { untilAge: settings.convertUntilAge, mode: settings.convertMode },
-    survivor: survivorFromSettings(settings),
-    heirTaxRate: settings.heirTaxRate,
-    spendingStrategy: settings.spendingStrategy,
-    dividendMode: settings.dividendMode,
-  });
-  const withConv = settings.useConversions ? activeProj : flipped;
-  const noConv = settings.useConversions ? flipped : activeProj;
-  const convYears = withConv.rows.filter((r) => r.conversion > 0.5);
-  if (withConv.totalConverted < 5_000) return null;
-  return {
-    pretaxShare,
-    totalConverted: withConv.totalConverted,
-    avgAnnualConversion: convYears.length ? withConv.totalConverted / convYears.length : 0,
-    windowEndYear: convYears.length ? convYears[convYears.length - 1].year : 0,
-    windowYears: convYears.length,
-    peakRmdBaseline: noConv.peakRmd,
-    peakRmdWithConversions: withConv.peakRmd,
-    peakRmdReduction: Math.max(0, noConv.peakRmd - withConv.peakRmd),
-    estateGain: withConv.endingEstateAfterTax - noConv.endingEstateAfterTax,
-    lifetimeTaxDelta: withConv.lifetimeTax - noConv.lifetimeTax,
-    recommended: withConv.endingEstateAfterTax - noConv.endingEstateAfterTax > 0,
-  };
-}
-
 /** The RMD tax-bomb explainer + the Roth-conversion plan that defuses it. */
 function RolloverPlanCard({ conv }: { conv: ConversionImpact }) {
   const { household, settings } = useStore();
@@ -1567,7 +1481,7 @@ function RolloverPlanCard({ conv }: { conv: ConversionImpact }) {
       >
         <p>
           Rolling about <strong>{money(conv.avgAnnualConversion)}/yr</strong> across {conv.windowYears} year
-          {conv.windowYears === 1 ? "" : "s"} (through <strong>{conv.windowEndYear}</strong>, ≈{money(conv.totalConverted)} in
+          {conv.windowYears === 1 ? "" : "s"} (through <strong>{conv.windowEndYear}</strong>, ≈{money(conv.totalConverted)}{" "}in
           total — this year&apos;s amount is in the step list above) cuts your worst-year RMD from{" "}
           <strong className="text-tax">{money(conv.peakRmdBaseline)}</strong> down to{" "}
           <strong className="text-gain">{money(conv.peakRmdWithConversions)}</strong>.

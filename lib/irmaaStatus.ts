@@ -21,6 +21,7 @@
  * slightly conservative (never optimistic).
  */
 
+import { moneyCompact } from "./format";
 import { Household, ageInYear } from "./accounts";
 import { FILING_CONSTANTS, FilingStatus, IrmaaTier } from "./tax/constants";
 
@@ -94,4 +95,14 @@ export function buildIrmaaStatus(
     nextJumpAnnual: next ? (next.monthlyPerPerson - cur.monthlyPerPerson) * 12 * enrolleesAtBilling : 0,
     atTop,
   };
+}
+
+/** The headroom in plain English. A conversion sized to stop just under a line
+ *  leaves ~$0 of room — say "right at the edge" rather than "$0 of room". */
+export function irmaaRoomPhrase(s: IrmaaStatus): string {
+  if (s.atTop) return "";
+  const jump = moneyCompact(Math.round(s.nextJumpAnnual));
+  return s.headroom < 1_000
+    ? `right at the edge of the next Medicare line — any extra income this year crosses it (about +${jump}/yr in premiums)`
+    : `about ${moneyCompact(Math.round(s.headroom))} of room before the next Medicare line (crossing it adds about ${jump}/yr)`;
 }
