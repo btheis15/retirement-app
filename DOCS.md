@@ -69,6 +69,10 @@ The app is **mobile-first** ([`app/layout.tsx`](app/layout.tsx): `max-w-md` on p
 
 This is how both audiences are served from one codebase: the phone gives the retiree a clean answer; the desktop gives the CFA the full justification, without either having to toggle modes.
 
+### Launch splash
+
+Opening the app shows a brief branded splash (`components/SplashScreen.tsx`, keyframes in `app/globals.css`): the app's own mark animates in — the tile springs in, the gold growth line draws upward, the dot lands and pulses — while the app hydrates underneath. It is server-rendered from the layout, so it is on screen from the first paint, and it leaves once the household data is loaded and a minimum time has passed (≈1.8s on the first open of a session, ≈0.45s on a later reload, ≈0.25s with reduced motion). In-app navigation never shows it, it never prints, and a CSS-only failsafe fades it out after ~6s if JavaScript never arrives. The PWA manifest's `background_color` matches it, so the OS launch screen blends into it.
+
 ### No backend — everything is client-side
 
 There is **no server**. The app is a static-export PWA (Next.js 16 App Router + React 19 + TypeScript, Tailwind v4, dependency-free SVG charts), deployed to Vercel; every route builds static. All state — the household, accounts/holdings, and planner settings — lives in the browser via the `HouseholdProvider` React context, persisted to **localStorage** under the `rto-*` keys (`rto-mode`, `rto-own-household`, `rto-settings`, `rto-demo-seed`). The store runs in one of two modes: a read-only built-in **~$5M example** (`demo`, deterministic per seed, re-rollable via `newExample`) and the user's **own** data. Nothing is uploaded; the only network calls send ticker *symbols* (never amounts) to refresh live prices and dividends, and those refreshes only ever touch the user's own holdings, never the static example. Backups are explicit file import/export (`loadOwn`). The privacy posture — your numbers never leave your device — is itself part of the design contract.
