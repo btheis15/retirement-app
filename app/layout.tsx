@@ -3,6 +3,7 @@ import "./globals.css";
 import { TabBar } from "@/components/TabBar";
 import { HouseholdProvider } from "@/components/HouseholdProvider";
 import { PricesProvider } from "@/components/PricesProvider";
+import { SplashScreen } from "@/components/SplashScreen";
 
 export const metadata: Metadata = {
   title: "Retirement Tax Optimizer",
@@ -46,6 +47,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               </main>
             </div>
             <TabBar />
+            {/* Launch splash: server-rendered, so it's on screen from the first
+                paint while the app hydrates underneath. */}
+            <SplashScreen />
           </PricesProvider>
         </HouseholdProvider>
       </body>

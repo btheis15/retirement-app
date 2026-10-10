@@ -4,7 +4,7 @@
   "description": "Plan tax-efficient retirement withdrawals across all your accounts.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f4f6f7",
+  "background_color": "#0b3f3b",
   "theme_color": "#0d4f4a",
   "icons": [
     { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
