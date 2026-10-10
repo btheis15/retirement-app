@@ -11,17 +11,19 @@
  *
  * Rendered on the server as part of the layout, so it's on screen from the very
  * first paint — before any JavaScript runs. Shown in full on the first open of
- * a session; a reload later in the same session gets a brief version. Reduced-
+ * a session; a reload later in the same session gets a shorter version. Reduced-
  * motion users get a static mark and a quick fade. Never prints.
  */
 
 import { useEffect, useState } from "react";
 import { useStore } from "@/components/HouseholdProvider";
 
-const FULL_MS = 1800; // the dot lands at ~1.6s — linger just past it
-const REPEAT_MS = 450; // a reload later in the same session
-const REDUCED_MS = 250;
-const EXIT_MS = 480;
+// The name and tagline finish rising at ~1s; these leave them on screen long
+// enough to actually read before the fade.
+const FULL_MS = 3200; // first open of a session: the full animation, then ~2s to read
+const REPEAT_MS = 2000; // a reload later in the same session — still readable
+const REDUCED_MS = 1500; // static mark (no animation), readable at once
+const EXIT_MS = 600;
 const SEEN_KEY = "rto-splash-seen";
 
 export function SplashScreen() {
