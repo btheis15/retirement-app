@@ -14,6 +14,14 @@
    use bg-card/95, bg-background/80, bg-primary/10. Never use a dark translucent
    tint (bg-black/40, bg-zinc-800/50) as a card/panel background — it goes muddy
    grey on light. A dark bg-black wash is fine only as a full-screen modal scrim. */
+/* iOS 26.1+ Home Screen apps report env(safe-area-inset-top) as 0 while the
+   status bar's fade still covers the top ~24px (WebKit bug 301994). Use
+   var(--safe-top) for every TOP inset; bottom/left/right stay on env(). */
+:root { --safe-top: env(safe-area-inset-top); }
+@media (display-mode: standalone) {
+  :root { --safe-top: max(env(safe-area-inset-top), 28px); }
+}
+
 @theme {
   --color-background: #f4f6f7; /* cool warm-grey near-white */
   --color-foreground: #0f1f24; /* deep slate near-black text */

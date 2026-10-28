@@ -39,7 +39,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               <main
                 className="page-enter mx-auto w-full max-w-md px-4 lg:max-w-4xl lg:px-8 lg:py-6 xl:max-w-5xl"
                 style={{
-                  paddingTop: "env(safe-area-inset-top)",
+                  paddingTop: "var(--safe-top)",
                   paddingBottom: "calc(6rem + env(safe-area-inset-bottom))",
                 }}
               >
