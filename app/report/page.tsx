@@ -13,6 +13,7 @@ import { MonteCarloResult } from "@/lib/monteCarlo";
 import { compareSnapshots, ReviewSnapshot } from "@/lib/quarterly";
 import { GOAL_META } from "@/lib/goals";
 import { STRATEGY_META } from "@/lib/optimizer";
+import { findSafeSpend, SafeSpendResult } from "@/components/spendingOdds";
 import { loadReviews, previousReview, saveReview } from "@/components/reviewHistory";
 
 /** The quarterly client report: an advisor-style plan document built from the
@@ -43,6 +44,32 @@ export default function ReportPage() {
       cancelled = true;
     };
   }, [data, household, settings]);
+
+  // "How much you can spend": same paired Monte Carlo inputs as the confidence number above
+  // (same run count and default seed); only yearly spending varies. Waits for mc like the Plan tab.
+  const [safe, setSafe] = useState<SafeSpendResult | null>(null);
+  useEffect(() => {
+    if (!data || !mc) return;
+    let cancelled = false;
+    setSafe(null);
+    const assumptions = activeAssumptions(settings);
+    const model = returnModel(household.accounts);
+    findSafeSpend(household.annualSpending, async (yearly) => {
+      const r = await computeMonteCarlo({ kind: "mc", household: { ...household, annualSpending: yearly }, assumptions, model, runs: 1000 });
+      return r.successPct;
+    })
+      .then((out) => {
+        if (!cancelled) setSafe(out);
+      })
+      .catch(() => {
+        if (!cancelled) setSafe({ safe: null, atLeast: false, levels: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, mc, household, settings]);
+  const reportReady = !!mc && !!safe;
 
   // This quarter's snapshot, and the previous quarter's for comparison.
   const snapshot: ReviewSnapshot | null = useMemo(() => {
@@ -115,12 +142,12 @@ export default function ReportPage() {
               {data.quarter.label} quarterly review
             </div>
             <div className="text-[12px] text-foreground/55">
-              {mc ? "Ready — letter-size pages, about 15 in all." : "Running the market simulation for the report…"}
+              {reportReady ? "Ready — letter-size pages, about 15 in all." : "Preparing… running the market simulations for the report"}
             </div>
           </div>
           <button
             onClick={download}
-            disabled={!mc}
+            disabled={!reportReady}
             className="press rounded-xl bg-primary px-5 py-2.5 text-[15px] font-semibold text-white disabled:opacity-40"
           >
             ⬇️ Download PDF
@@ -132,7 +159,7 @@ export default function ReportPage() {
         </p>
       </div>
 
-      <ClientReport data={data} mc={mc} prev={prev} changes={changes} household={household} settings={settings} isDemo={mode === "demo"} />
+      <ClientReport data={data} mc={mc} safe={safe} prev={prev} changes={changes} household={household} settings={settings} isDemo={mode === "demo"} />
     </div>
   );
 }
