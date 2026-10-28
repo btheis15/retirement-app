@@ -47,7 +47,10 @@ html {
   background-repeat: no-repeat;
   min-height: 100%;
   /* Slightly larger rem root so the whole app reads roomier — easier on older
-     eyes. The in-app Text-size control overrides this inline. */
+     eyes. The in-app Text-size control (components/TextSize.tsx) does NOT
+     change this font-size: it sets CSS `zoom` on <html> (1 / 1.12 / 1.25,
+     saved in localStorage `rto-text-size`, applied before first paint by an
+     inline script in app/layout.tsx) so hard-px sizes scale too. */
   font-size: 17px;
 }
 
@@ -285,6 +288,9 @@ body {
    all hidden), full-width on white. The classic visibility trick keeps the
    DOM untouched — no reparenting, no print-specific route. ---- */
 @media print {
+  html {
+    zoom: 1 !important;
+  }
   body * {
     visibility: hidden;
   }
