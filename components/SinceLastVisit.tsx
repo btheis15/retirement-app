@@ -9,7 +9,7 @@
  * shows the same comparison and slow drift adds up until it matters.
  */
 import { useEffect, useRef, useState } from "react";
-import { money, of100 } from "@/lib/format";
+import { money } from "@/lib/format";
 
 type Mode = "demo" | "own";
 interface Snap {
@@ -58,7 +58,7 @@ function buildLines(prev: Snap, cur: Snap): string[] {
   }
   const dPts = Math.round((cur.successPct - prev.successPct) * 100);
   if (Math.abs(dPts) >= 3) {
-    let line = `Your plan's odds: ${of100(prev.successPct)} → ${of100(cur.successPct)} out of 100 market futures.`;
+    let line = `Your plan's odds: ${Math.round(prev.successPct * 1000).toLocaleString("en-US")} → ${Math.round(cur.successPct * 1000).toLocaleString("en-US")} of 1,000 simulated markets (${prev.successPct >= 0.9995 ? 100 : Math.min(99, Math.round(prev.successPct * 100))}% → ${cur.successPct >= 0.9995 ? 100 : Math.min(99, Math.round(cur.successPct * 100))}%).`;
     if (dPts < 0) {
       if (cur.successPct >= 0.85) line += " Still on track — nothing to do today unless it drops below 85%.";
       else if (cur.successPct >= 0.7) line += " Still solid; worth keeping an eye on.";

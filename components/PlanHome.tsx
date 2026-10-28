@@ -29,7 +29,7 @@ import { GOAL_META } from "@/lib/goals";
 import { rmdStartAge } from "@/lib/tax/constants";
 import { Quarter, ReviewSnapshot } from "@/lib/quarterly";
 import { adjustedAnnualBenefit } from "@/lib/socialSecurity";
-import { money, moneyCompact, of100 } from "@/lib/format";
+import { money, moneyCompact, oddsText } from "@/lib/format";
 
 /** Same deep-link shape as GuidedPlan's adjustHref (kept local so this module
  *  doesn't pull the whole walkthrough into the Plan tab's bundle). */
@@ -63,10 +63,10 @@ export function PlanHero({
     pct == null
       ? { dot: "bg-white/50", text: "Checking how your plan holds up across hundreds of markets…" }
       : pct >= 0.85
-        ? { dot: "bg-[#7ee2a8]", text: `On track — your money lasts to ${endAge} in about ${of100(pct)} of 100 market futures` }
+        ? { dot: "bg-[#7ee2a8]", text: `On track — your money lasts to ${endAge} in ${oddsText(pct, confidence?.runs)}` }
         : pct >= 0.7
-          ? { dot: "bg-[#f4c870]", text: `Solid, worth watching — lasts to ${endAge} in about ${of100(pct)} of 100 market futures` }
-          : { dot: "bg-[#f59d8a]", text: `Needs a look — lasts to ${endAge} in only about ${of100(pct)} of 100 market futures` };
+          ? { dot: "bg-[#f4c870]", text: `Solid, worth watching — lasts to ${endAge} in ${oddsText(pct, confidence?.runs)}` }
+          : { dot: "bg-[#f59d8a]", text: `Needs a look — lasts to ${endAge} in only ${oddsText(pct, confidence?.runs)}` };
   const stats: { label: string; value: string }[] = [
     { label: "Withdraw", value: totalDraw > 0.5 ? moneyCompact(totalDraw) : "$0" },
     { label: "Set aside for tax", value: moneyCompact(yearTax) },

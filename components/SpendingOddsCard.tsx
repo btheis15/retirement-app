@@ -5,7 +5,7 @@ import { Info, AdjustLink } from "@/components/ui";
 import { activeAssumptions } from "@/lib/planContext";
 import { computeMonteCarlo } from "@/lib/mcClient";
 import { returnModel } from "@/lib/returns";
-import { money, moneyCompact, of100 } from "@/lib/format";
+import { money, moneyCompact, of100, oddsText } from "@/lib/format";
 import type { Household } from "@/lib/accounts";
 import type { PlannerSettings } from "@/lib/defaults";
 import type { MonteCarloResult } from "@/lib/monteCarlo";
@@ -15,7 +15,7 @@ import { safeSpendFor, ladderAmounts, LADDER_FACTORS, ON_TRACK, SafeSpendResult 
  *  Shape + fill, not color alone. */
 function DotArray({ n }: { n: number }) {
   return (
-    <span role="img" aria-label={`${n} of 100`} className="inline-grid shrink-0 grid-cols-10 gap-[2px]">
+    <span role="img" aria-label={`${n} of 100 squares filled (${n}%)`} className="inline-grid shrink-0 grid-cols-10 gap-[2px]">
       {Array.from({ length: 100 }, (_, i) => (
         <span
           key={i}
@@ -97,8 +97,8 @@ export function SpendingOddsCard({
             You can safely spend {upTo} {money(safe)} a year ({money(safe / 12)} a month), {who}
           </h2>
           <p className="mt-1 text-[15px] leading-snug">
-            &ldquo;Safely&rdquo; means your money still lasts to age {settings.endAge}{" "}in at least 90 of 100 market futures
-            (the same bar as the Forecast tab&apos;s safe-spending range).
+            &ldquo;Safely&rdquo; means your money still lasts to age {settings.endAge}{" "}in at least 900 of 1,000 simulated markets (90%)
+            &mdash; the same bar as the Forecast tab&apos;s safe-spending range.
           </p>
         </>
       ) : (
@@ -155,7 +155,7 @@ export function SpendingOddsCard({
                   <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
                     <DotArray n={n} />
                     <span>
-                      Lasts to age {settings.endAge} in <strong>{n} of 100</strong> market futures
+                      Lasts to age {settings.endAge} in <strong>{oddsText(pct)}</strong>
                       <span className="text-foreground/65"> — {tone(pct)}</span>
                     </span>
                   </div>
@@ -165,8 +165,8 @@ export function SpendingOddsCard({
           </ul>
           <p className="mt-3 text-[13px] text-foreground/70">
             These odds assume you never change your spending. Real retirees trim spending in bad years, so a lower number
-            means &ldquo;you&apos;d likely need to adjust,&rdquo; not &ldquo;you&apos;d go broke.&rdquo; Filled dots show
-            how many of 100 market futures your money lasts; the odds are an estimate, not a promise.
+            means &ldquo;you&apos;d likely need to adjust,&rdquo; not &ldquo;you&apos;d go broke.&rdquo; Each square stands for 10 of the
+            1,000 simulated markets; filled squares are where your money lasts; the odds are an estimate, not a promise.
           </p>
         </div>
       </Info>
