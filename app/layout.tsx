@@ -32,6 +32,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en" className="h-full">
       <body className="min-h-full text-foreground antialiased">
+        {/* iOS 26 scroll-edge fade suppressor: see .top-band in globals.css. */}
+        <div className="top-band" aria-hidden="true" />
         <HouseholdProvider>
           <PricesProvider>
             {/* Offset for the desktop sidebar; phone has a bottom bar instead. */}
@@ -39,7 +41,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               <main
                 className="page-enter mx-auto w-full max-w-md px-4 lg:max-w-4xl lg:px-8 lg:py-6 xl:max-w-5xl"
                 style={{
-                  paddingTop: "var(--safe-top)",
+                  paddingTop: "calc(var(--safe-top) + var(--top-band))",
                   paddingBottom: "calc(6rem + env(safe-area-inset-bottom))",
                 }}
               >
