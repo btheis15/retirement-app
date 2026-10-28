@@ -18,7 +18,7 @@ import { ReviewSnapshot, SnapshotChange } from "@/lib/quarterly";
 import { money, moneyCompact, percent } from "@/lib/format";
 import { AllocationBar, BalancesChart, OutcomeFan, REPORT_COLORS } from "@/components/ReportCharts";
 import { irmaaRoomPhrase } from "@/lib/irmaaStatus";
-import { SafeSpendResult, ON_TRACK, LADDER_FACTORS, ladderAmounts } from "@/components/spendingOdds";
+import { SafeSpendResult, SAFE_LINE, LADDER_FACTORS, ladderAmounts } from "@/components/spendingOdds";
 import { survivorSnapshot } from "@/components/SurvivorCard";
 import { glossaryEntry } from "@/lib/glossary";
 
@@ -340,7 +340,7 @@ export function ClientReport({
         {safeAmt != null && (
           <P>
             <strong>Safe to spend: {money(safeAmt)}/yr</strong> ({money(safeAmt / 12)} a month, {who}) — the most your savings can support while still lasting to age{" "}
-            {settings.endAge} in about 9 of 10 market futures. See Section {toc.indexOf("How much you can spend") + 1}.
+            {settings.endAge} in at least 9 of 10 market futures. See Section {toc.indexOf("How much you can spend") + 1}.
           </P>
         )}
         {mc && (
@@ -464,7 +464,7 @@ export function ClientReport({
           <P>Preparing…</P>
         ) : safeAmt == null ? (
           <P>
-            Even the lower spending levels we tried fall below our &ldquo;on track&rdquo; line ({percent(ON_TRACK, 0)}), so we can&apos;t name a safe amount. See the
+            Even the lower spending levels we tried fall below our safe line ({percent(SAFE_LINE, 0)}), so we can&apos;t name a safe amount. See the
             table below and consider the options in Section {toc.indexOf("Lifetime outlook & stress tests") + 1}.
           </P>
         ) : (
@@ -474,8 +474,7 @@ export function ClientReport({
                 You can safely spend {upTo} {money(safeAmt)} a year ({money(safeAmt / 12)} a month), {who}
               </div>
               <div className="mt-1 text-[12px] leading-relaxed text-[#26363b]">
-                &ldquo;Safely&rdquo; means your money still lasts to age {settings.endAge} in at least {percent(ON_TRACK, 0)} of our {mc ? mc.runs.toLocaleString() : "1,000"} simulated market futures (about 9 in
-                10) &mdash; the &ldquo;on track&rdquo; line.
+                &ldquo;Safely&rdquo; means your money still lasts to age {settings.endAge} in at least {percent(SAFE_LINE, 0)} of our {mc ? mc.runs.toLocaleString() : "1,000"} simulated market futures (9 in 10) &mdash; the same bar as the safe-spending range on the Forecast tab.
               </div>
             </div>
             {safeGap >= 3000 && (

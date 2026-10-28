@@ -9,7 +9,7 @@ import { money, moneyCompact } from "@/lib/format";
 import type { Household } from "@/lib/accounts";
 import type { PlannerSettings } from "@/lib/defaults";
 import type { MonteCarloResult } from "@/lib/monteCarlo";
-import { findSafeSpend, ladderAmounts, LADDER_FACTORS, ON_TRACK, SafeSpendResult } from "@/components/spendingOdds";
+import { safeSpendFor, ladderAmounts, LADDER_FACTORS, ON_TRACK, SafeSpendResult } from "@/components/spendingOdds";
 
 /** 10-dot icon array: filled = lasts, hollow = doesn't. Shape + fill, not color alone. */
 function DotArray({ of10 }: { of10: number }) {
@@ -29,7 +29,7 @@ function DotArray({ of10 }: { of10: number }) {
 const tone = (pct: number) => (pct >= ON_TRACK ? "On track" : pct >= 0.7 ? "Worth watching" : "Needs a look");
 
 /** "How much you can safely spend" — shown right under the plan summary, not collapsed.
- *  Safe = highest spending whose paired Monte-Carlo odds are at least 85% (PlanHero's
+ *  Safe = highest spending whose paired Monte-Carlo odds are at least 90% (SAFE_LINE; PlanHero's
  *  "On track" line). Read-only: spending is edited in the walkthrough, never here. */
 export function SpendingOddsCard({
   household,
@@ -55,20 +55,10 @@ export function SpendingOddsCard({
     setFailed(false);
     // Same function, inputs, run count and DEFAULT fixed seed as the Plan tab's confidence
     // number, so every level sees the same market paths. Only spending varies.
-    const assumptions = activeAssumptions(settings);
-    const model = returnModel(household.accounts);
     (async () => {
       let current: MonteCarloResult | null = null;
-      const out = await findSafeSpend(base, async (yearly) => {
-        const r = await computeMonteCarlo({
-          kind: "mc",
-          household: { ...household, annualSpending: yearly },
-          assumptions,
-          model,
-          runs: 1000,
-        });
+      const out = await safeSpendFor(household, settings, (yearly, r) => {
         if (yearly === base) current = r;
-        return r.successPct;
       });
       if (cancelled) return;
       setAtPlan(current);
@@ -106,8 +96,8 @@ export function SpendingOddsCard({
             You can safely spend {upTo} {money(safe)} a year ({money(safe / 12)} a month), {who}
           </h2>
           <p className="mt-1 text-[15px] leading-snug">
-            &ldquo;Safely&rdquo; means your money still lasts to age {settings.endAge} in about 9 of 10 market futures
-            (at least 85%, our &ldquo;on track&rdquo; line).
+            &ldquo;Safely&rdquo; means your money still lasts to age {settings.endAge} in at least 9 of 10 market futures
+            (90% or better — the same bar as the Forecast tab&apos;s safe-spending range).
           </p>
         </>
       ) : (
@@ -119,7 +109,7 @@ export function SpendingOddsCard({
       {safe != null && gap >= 3000 && (
         <p className="mt-2.5 text-[16px] leading-snug">
           <strong>You could give yourselves a raise of about {money(Math.round(gap / 12 / 10) * 10)} a month</strong> and
-          still be On track.
+          still be safe.
           {endReal != null && endReal > 0 && (
             <>
               {" "}

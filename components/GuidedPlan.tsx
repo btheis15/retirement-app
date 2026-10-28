@@ -28,7 +28,7 @@ import { projectLifetime, ProjectionAssumptions } from "@/lib/projection";
 import { recommendPlan, planGist, configMatches, GOAL_META } from "@/lib/goals";
 import { MonteCarloResult } from "@/lib/monteCarlo";
 import { computeMonteCarlo, computeMostMoney } from "@/lib/mcClient";
-import { findSafeSpend } from "@/components/spendingOdds";
+import { safeSpendFor } from "@/components/spendingOdds";
 import { MostMoneyStat, MostMoneyMetric, argmaxByMetric } from "@/lib/recommendMonteCarlo";
 import { planAssumptions } from "@/lib/scenarioLab";
 import { returnModel } from "@/lib/returns";
@@ -773,7 +773,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     };
   }, [dHousehold, dAssumptions]);
   // The ONE app-wide "safe to spend" number (same helper + inputs as the Plan tab's
-  // SpendingOddsCard: paired 1,000-run Monte Carlo, default seed, >= 85%). It does not
+  // SpendingOddsCard: paired 1,000-run Monte Carlo, default seed, >= 90%, SAFE_LINE). It does not
   // depend on the slider, so it is debounced and keyed on everything EXCEPT spending;
   // the base level is read from a ref at run time so a slider commit never re-runs it.
   const safeBaseRef = useRef(household.annualSpending);
@@ -783,18 +783,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     let cancelled = false;
     setSafeSpend(null);
     const t = setTimeout(() => {
-      const base = safeBaseRef.current;
-      const model = returnModel(household.accounts);
-      findSafeSpend(base, async (yearly) => {
-        const r = await computeMonteCarlo({
-          kind: "mc",
-          household: { ...household, annualSpending: yearly },
-          assumptions: activeAssumptions,
-          model,
-          runs: 1000,
-        });
-        return r.successPct;
-      })
+      safeSpendFor({ ...household, annualSpending: safeBaseRef.current }, settings)
         .then((out) => {
           if (!cancelled) setSafeSpend({ safe: out.safe, atLeast: out.atLeast });
         })
@@ -2068,7 +2057,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       if (hasRoom && sweep.sustainableMax > sweep.comfortableMax + 5_000 && sweep.sustainableMax < SPEND_MAX)
         markers.push({ key: "sust", value: sweep.sustainableMax, cls: "bg-accent", title: "Lasts even in a weak market" });
       if (safeX != null && safeX < SPEND_MAX)
-        markers.push({ key: "safe", value: safeX, cls: "bg-primary", title: "Safe (8½ of 10 market futures or better)" });
+        markers.push({ key: "safe", value: safeX, cls: "bg-primary", title: "Safe (lasts in 9 of 10 market futures or better)" });
       // The IRMAA lines are drawn DOTTED — they mark where this year's income would
       // cross a Medicare surcharge. Because spending is funded partly from cash/Roth/
       // basis (not taxable income), this line sits far to the right of your spending:
@@ -2250,7 +2239,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-foreground/65">
                 <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-gain" /> cushion even in a weak market</span>
                 {markers.some((m) => m.key === "safe") && (
-                  <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-primary" /> safe (8½ of 10 market futures or better)</span>
+                  <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-primary" /> safe (lasts in 9 of 10 market futures or better)</span>
                 )}
                 {markers.some((m) => m.key === "sust") && (
                   <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-accent" /> lasts even in a weak market</span>

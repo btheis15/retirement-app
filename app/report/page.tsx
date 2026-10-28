@@ -13,7 +13,7 @@ import { MonteCarloResult } from "@/lib/monteCarlo";
 import { compareSnapshots, ReviewSnapshot } from "@/lib/quarterly";
 import { GOAL_META } from "@/lib/goals";
 import { STRATEGY_META } from "@/lib/optimizer";
-import { findSafeSpend, SafeSpendResult } from "@/components/spendingOdds";
+import { safeSpendFor, SafeSpendResult } from "@/components/spendingOdds";
 import { loadReviews, previousReview, saveReview } from "@/components/reviewHistory";
 
 /** The quarterly client report: an advisor-style plan document built from the
@@ -52,12 +52,7 @@ export default function ReportPage() {
     if (!data || !mc) return;
     let cancelled = false;
     setSafe(null);
-    const assumptions = activeAssumptions(settings);
-    const model = returnModel(household.accounts);
-    findSafeSpend(household.annualSpending, async (yearly) => {
-      const r = await computeMonteCarlo({ kind: "mc", household: { ...household, annualSpending: yearly }, assumptions, model, runs: 1000 });
-      return r.successPct;
-    })
+    safeSpendFor(household, settings)
       .then((out) => {
         if (!cancelled) setSafe(out);
       })

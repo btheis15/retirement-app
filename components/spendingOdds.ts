@@ -4,7 +4,21 @@
  * the SAME seed/paths every call (common random numbers), so levels are paired.
  */
 
-export const ON_TRACK = 0.85; // same "On track" line as PlanHero
+import type { Household } from "@/lib/accounts";
+import type { ProjectionAssumptions } from "@/lib/projection";
+import type { ReturnModel } from "@/lib/returns";
+import { returnModel } from "@/lib/returns";
+import type { MonteCarloResult } from "@/lib/monteCarlo";
+import type { PlannerSettings } from "@/lib/defaults";
+import { activeAssumptions } from "@/lib/planContext";
+
+const SAFE_SPEND_RUNS = 1000;
+
+export const ON_TRACK = 0.85; // PlanHero's "On track" status line (labels only)
+/** The ONE app-wide definition of "safe to spend": 90% Monte-Carlo success — the same
+ *  bar the Forecast tab's safe-spending range uses (lib/spendingSolver, [0.9]) and the
+ *  "plan-with" convention of MoneyGuidePro/eMoney. */
+export const SAFE_LINE = 0.9;
 export const LADDER_FACTORS = [0.8, 0.9, 1.0, 1.1, 1.2] as const;
 const SCAN_FACTORS = [0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.6];
 
@@ -14,7 +28,7 @@ export interface OddsLevel {
 }
 
 export interface SafeSpendResult {
-  /** Highest VERIFIED spending (rounded down to $1,000) with odds >= 85%; null if none tested passes. */
+  /** Highest VERIFIED spending (rounded down to $1,000) with odds >= 90% (SAFE_LINE); null if none tested passes. */
   safe: number | null;
   /** True if even the top level tested (1.6x) passed, so the real limit is higher. */
   atLeast: boolean;
@@ -50,12 +64,12 @@ export async function findSafeSpend(
   // Scan ascending, stopping once we are past the current plan and a level fails.
   for (const a of amounts) {
     const p = await test(a);
-    if (a >= base && p < ON_TRACK) break;
+    if (a >= base && p < SAFE_LINE) break;
   }
   // Highest passing level below the lowest failing level.
   const tested = [...cache.entries()].sort((a, b) => a[0] - b[0]);
-  const firstFail = tested.find(([, p]) => p < ON_TRACK);
-  const passing = tested.filter(([, p]) => p >= ON_TRACK && (!firstFail || firstFail[0] > 0));
+  const firstFail = tested.find(([, p]) => p < SAFE_LINE);
+  const passing = tested.filter(([, p]) => p >= SAFE_LINE && (!firstFail || firstFail[0] > 0));
   // Monotone assumption: spending up => odds down. Passing levels are those below the first failure
   // among ascending levels; any "pass" above a fail is noise and ignored.
   const valid = firstFail ? passing.filter(([a]) => a < firstFail[0]) : passing;
@@ -67,7 +81,7 @@ export async function findSafeSpend(
     for (let i = 0; i < 4 && hi - lo > 1000; i++) {
       const mid = floorK((lo + hi) / 2);
       if (mid <= lo || mid >= hi) break;
-      if ((await test(mid)) >= ON_TRACK) lo = mid;
+      if ((await test(mid)) >= SAFE_LINE) lo = mid;
       else hi = mid;
     }
   }
@@ -79,3 +93,46 @@ export async function findSafeSpend(
     levels,
   };
 }
+
+type McRunner = (req: {
+  kind: "mc";
+  household: Household;
+  assumptions: ProjectionAssumptions;
+  model: ReturnModel;
+  runs: number;
+}) => Promise<MonteCarloResult>;
+
+/** The ONE shared "safe to spend" computation used by the Plan tab, the walkthrough's spend step and
+ *  the report: assumptions = activeAssumptions(settings), model = returnModel(accounts), 1,000 runs,
+ *  default seed, paired levels. `run` is injectable so Node probes can call runMonteCarlo directly.
+ *  `onLevel` lets a caller capture the full result at a level (e.g. the plan's current spending). */
+export async function safeSpendWith(
+  run: McRunner,
+  household: Household,
+  settings: PlannerSettings,
+  onLevel?: (yearly: number, r: MonteCarloResult) => void,
+): Promise<SafeSpendResult> {
+  const assumptions = activeAssumptions(settings);
+  const model = returnModel(household.accounts);
+  return findSafeSpend(household.annualSpending, async (yearly) => {
+    const r = await run({
+      kind: "mc",
+      household: { ...household, annualSpending: yearly },
+      assumptions,
+      model,
+      runs: SAFE_SPEND_RUNS,
+    });
+    onLevel?.(yearly, r);
+    return r.successPct;
+  });
+}
+
+export const safeSpendFor = async (
+  household: Household,
+  settings: PlannerSettings,
+  onLevel?: (yearly: number, r: MonteCarloResult) => void,
+) => {
+  // Lazy so Node probes can import this module without the worker client.
+  const { computeMonteCarlo } = await import("@/lib/mcClient");
+  return safeSpendWith(computeMonteCarlo as McRunner, household, settings, onLevel);
+};
