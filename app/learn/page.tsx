@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Card, PageTitle, Disclaimer } from "@/components/ui";
 import { SOURCES, Source } from "@/lib/sources";
+import { GLOSSARY } from "@/lib/glossary";
 
 interface Topic {
   icon: string;
@@ -415,7 +416,7 @@ export default function LearnPage() {
                 <span className="flex items-center gap-2 font-semibold">
                   <span className="text-lg">{t.icon}</span> {t.title}
                 </span>
-                <span className={`text-foreground/40 transition-transform ${isOpen ? "rotate-180" : ""}`}>⌄</span>
+                <span className={`text-foreground/65 transition-transform ${isOpen ? "rotate-180" : ""}`}>⌄</span>
               </button>
               {isOpen && (
                 <div className="rise mt-3 space-y-2 border-t border-border pt-3">
@@ -447,7 +448,7 @@ export default function LearnPage() {
       {METHODS.length > 0 && (
         <div className="mt-8">
           <h2 className="text-lg font-bold">The models &amp; methods behind your forecast</h2>
-          <p className="mb-3 mt-0.5 text-[13px] leading-relaxed text-foreground/60">
+          <p className="mb-3 mt-0.5 text-[13px] leading-relaxed text-foreground/65">
             The forecast and Monte Carlo lean on techniques from professional financial planning, investment risk, and
             actuarial science. Here&apos;s each one in plain English — what it does, why it&apos;s used, and who in the
             industry relies on it — with sources.
@@ -464,7 +465,7 @@ export default function LearnPage() {
                     <span className="flex items-center gap-2 font-semibold">
                       <span className="text-lg">{m.icon}</span> {m.name}
                     </span>
-                    <span className={`text-foreground/40 transition-transform ${isOpen ? "rotate-180" : ""}`}>⌄</span>
+                    <span className={`text-foreground/65 transition-transform ${isOpen ? "rotate-180" : ""}`}>⌄</span>
                   </button>
                   {isOpen && (
                     <div className="rise mt-3 space-y-3 border-t border-border pt-3">
@@ -492,6 +493,28 @@ export default function LearnPage() {
           </div>
         </div>
       )}
+
+      <div id="glossary" className="mt-8 scroll-mt-4">
+        <h2 className="text-lg font-bold">Glossary</h2>
+        <p className="mb-3 mt-0.5 text-[13px] leading-relaxed text-foreground/65">
+          Plain-English meanings for the terms you will see around the app.
+        </p>
+        <Card as="div">
+          <dl className="space-y-3">
+            {[...GLOSSARY]
+              .sort((a, b) => a.term.localeCompare(b.term))
+              .map((g) => (
+                <div key={g.id} id={`glossary-${g.id}`}>
+                  <dt className="text-[14px] font-semibold">{g.term}</dt>
+                  <dd className="mt-0.5 text-[13px] leading-relaxed text-foreground/75">
+                    {g.short}
+                    {g.why ? ` ${g.why}` : ""}
+                  </dd>
+                </div>
+              ))}
+          </dl>
+        </Card>
+      </div>
 
       <div className="mt-6">
         <Disclaimer />

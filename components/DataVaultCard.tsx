@@ -156,7 +156,7 @@ export function DataVaultCard() {
                 >
                   💾 {busy ? "Saving…" : "Save my changes (encrypted)"}
                 </button>
-                <p className="px-1 text-[11px] text-foreground/55">
+                <p className="px-1 text-[11px] text-foreground/65">
                   Re-saves with the passphrase you just used — no re-typing. Your edits are also kept on this device
                   automatically; this updates your backup file so you can reload it later.
                 </p>
@@ -216,7 +216,7 @@ export function DataVaultCard() {
         {mode === "import" && pendingEnvelope && (
           <div className="space-y-2">
             <p className="text-[13px] text-foreground/75">Enter the passphrase for this file to unlock it.</p>
-            {pendingEnvelope.hint && <p className="text-[12px] text-foreground/55">Hint: {pendingEnvelope.hint}</p>}
+            {pendingEnvelope.hint && <p className="text-[12px] text-foreground/65">Hint: {pendingEnvelope.hint}</p>}
             <input className={INPUT} type="password" placeholder="Passphrase" value={pass} onChange={(e) => setPass(e.target.value)} autoFocus />
             <div className="flex gap-2 pt-1">
               <button onClick={reset} className="press flex-1 rounded-xl border border-border py-2.5 text-sm font-medium">

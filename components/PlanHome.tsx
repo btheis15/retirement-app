@@ -19,6 +19,7 @@
 import { ReactNode, useState } from "react";
 import Link from "next/link";
 import { Pill } from "@/components/ui";
+import { Term } from "@/components/Term";
 import { ChecklistItem } from "@/lib/checklist";
 import { YearPace } from "@/lib/pace";
 import { MonteCarloResult } from "@/lib/monteCarlo";
@@ -37,6 +38,9 @@ const adjustHref = (step: string) => `/?step=${step}`;
 /* ------------------------------------------------------------------ */
 /* 1. Hero                                                             */
 /* ------------------------------------------------------------------ */
+
+/** "X of 10" for the hero line — never round a real risk up to a perfect 10 of 10. */
+const of10 = (p: number) => (p >= 0.995 ? 10 : Math.min(9, Math.round(p * 10)));
 
 export function PlanHero({
   year,
@@ -62,10 +66,10 @@ export function PlanHero({
     pct == null
       ? { dot: "bg-white/50", text: "Checking how your plan holds up across hundreds of markets…" }
       : pct >= 0.85
-        ? { dot: "bg-[#7ee2a8]", text: `On track — your money lasts to ${endAge} in about ${Math.round(pct * 10)} of 10 market futures` }
+        ? { dot: "bg-[#7ee2a8]", text: `On track — your money lasts to ${endAge} in about ${of10(pct)} of 10 market futures` }
         : pct >= 0.7
-          ? { dot: "bg-[#f4c870]", text: `Solid, worth watching — lasts to ${endAge} in about ${Math.round(pct * 10)} of 10 market futures` }
-          : { dot: "bg-[#f59d8a]", text: `Needs a look — lasts to ${endAge} in only about ${Math.round(pct * 10)} of 10 market futures` };
+          ? { dot: "bg-[#f4c870]", text: `Solid, worth watching — lasts to ${endAge} in about ${of10(pct)} of 10 market futures` }
+          : { dot: "bg-[#f59d8a]", text: `Needs a look — lasts to ${endAge} in only about ${of10(pct)} of 10 market futures` };
   const stats: { label: string; value: string }[] = [
     { label: "Withdraw", value: totalDraw > 0.5 ? moneyCompact(totalDraw) : "$0" },
     { label: "Set aside for tax", value: moneyCompact(yearTax) },
@@ -179,7 +183,7 @@ export function TodoList({
     <div className="print-area">
       <div className="hidden print:block">
         <div className="text-lg font-bold">Your {year} plan — what to do, in order</div>
-        <div className="mb-2 text-[12px] text-foreground/60">
+        <div className="mb-2 text-[12px] text-foreground/65">
           Prepared {new Date().toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}{" "}· educational
           estimates, not tax advice
         </div>
@@ -216,7 +220,7 @@ export function TodoList({
       )}
       <button
         onClick={() => window.print()}
-        className="press mt-2 w-full rounded-xl px-4 py-2 text-[13px] font-semibold text-foreground/55 print:hidden"
+        className="press mt-2 w-full rounded-xl px-4 py-2 text-[13px] font-semibold text-foreground/65 print:hidden"
       >
         🖨️ Print this list or save as PDF — bring it to your custodian or CPA
       </button>
@@ -250,7 +254,7 @@ function TodoItem({
           {done ? "✓" : n}
         </span>
         <div className="min-w-0 flex-1">
-          <div className={`text-[15px] font-semibold leading-snug ${done ? "text-foreground/45 line-through decoration-foreground/25" : ""}`}>
+          <div className={`text-[15px] font-semibold leading-snug ${done ? "text-foreground/65 line-through decoration-foreground/25" : ""}`}>
             <span aria-hidden className="mr-1">{TODO_ICON[item.kind]}</span>
             {item.title}
           </div>
@@ -276,7 +280,7 @@ function TodoItem({
               </span>
             ) : (
               canMarkDone && (
-                <button onClick={onMarkDone} className="text-[12px] font-semibold text-foreground/55 underline decoration-foreground/20 underline-offset-2">
+                <button onClick={onMarkDone} className="text-[12px] font-semibold text-foreground/65 underline decoration-foreground/20 underline-offset-2">
                   ✓ I did this
                 </button>
               )
@@ -296,7 +300,7 @@ function TodoItem({
 
 export interface TimelineEntry {
   when: string;
-  title: string;
+  title: ReactNode;
   sub?: string;
   /** "soon" = a dated deadline within ~45 days. */
   tone: "soon" | "date" | "life";
@@ -333,10 +337,10 @@ export function buildTimeline(
     const medYear = p.birthYear + 65;
     if (medYear > year) life.push({ y: medYear, when: String(medYear), title: `${name} ${isYou ? "turn" : "turns"} 65 — Medicare`, sub: "income from 2 years earlier sets the premium", tone: "life" });
     const rmdYear = p.birthYear + rmdStartAge(p.birthYear);
-    if (rmdYear > year) life.push({ y: rmdYear, when: String(rmdYear), title: `${poss} required withdrawals (RMDs) begin`, sub: `at age ${rmdStartAge(p.birthYear)}`, tone: "life" });
+    if (rmdYear > year) life.push({ y: rmdYear, when: String(rmdYear), title: <>{poss} required withdrawals (<Term id="rmd">RMDs</Term>) begin</>, sub: `at age ${rmdStartAge(p.birthYear)}`, tone: "life" });
   }
   if (settings.useConversions && lastConversionYear && lastConversionYear > year) {
-    life.push({ y: lastConversionYear, when: String(lastConversionYear), title: "Last planned Roth conversion", sub: `through age ${settings.convertUntilAge}`, tone: "life" });
+    life.push({ y: lastConversionYear, when: String(lastConversionYear), title: <>Last planned <Term id="roth-conversion">Roth conversion</Term></>, sub: `through age ${settings.convertUntilAge}`, tone: "life" });
   }
   life.sort((a, b) => a.y - b.y);
   return [...out, ...life.slice(0, 4)];
@@ -348,7 +352,7 @@ export function ComingUp({ entries }: { entries: TimelineEntry[] }) {
     <div className="rounded-2xl border border-border bg-card px-4 py-3" style={{ boxShadow: "var(--shadow-card)" }}>
       <ol className="relative">
         {entries.map((e, i) => (
-          <li key={`${e.when}-${e.title}`} className="relative flex gap-3 pb-3 last:pb-0">
+          <li key={`${e.when}-${i}`} className="relative flex gap-3 pb-3 last:pb-0">
             {/* rail */}
             {i < entries.length - 1 && <span aria-hidden className="absolute left-[33px] top-6 h-[calc(100%-12px)] w-px bg-border" />}
             <span
@@ -360,7 +364,7 @@ export function ComingUp({ entries }: { entries: TimelineEntry[] }) {
             </span>
             <span className="min-w-0 pt-0.5">
               <span className="block text-[14px] font-semibold leading-snug">{e.title}</span>
-              {e.sub && <span className="block text-[12px] leading-snug text-foreground/55">{e.sub}</span>}
+              {e.sub && <span className="block text-[12px] leading-snug text-foreground/65">{e.sub}</span>}
             </span>
           </li>
         ))}
@@ -477,8 +481,8 @@ export function YourAnswers({ rows, title = "Your answers" }: { rows: AnswerRow[
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-card" style={{ boxShadow: "var(--shadow-card)" }}>
       <div className="flex items-center justify-between bg-foreground/[0.03] px-4 py-2.5">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground/50">{title}</span>
-        <span className="text-[11px] text-foreground/40">tap any to change</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground/65">{title}</span>
+        <span className="text-[11px] text-foreground/65">tap any to change</span>
       </div>
       {rows.map((r) => (
         <Link
@@ -486,7 +490,7 @@ export function YourAnswers({ rows, title = "Your answers" }: { rows: AnswerRow[
           href={adjustHref(r.step)}
           className="press flex items-center justify-between gap-3 border-t border-border/50 px-4 py-3 hover:bg-foreground/[0.02]"
         >
-          <span className="shrink-0 text-[13px] text-foreground/55">{r.label}</span>
+          <span className="shrink-0 text-[13px] text-foreground/65">{r.label}</span>
           <span className="flex min-w-0 items-center gap-2">
             <span className="truncate text-[14px] font-semibold text-foreground">{r.value}</span>
             <span aria-hidden className="text-primary/70">›</span>

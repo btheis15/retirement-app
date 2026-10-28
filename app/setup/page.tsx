@@ -43,7 +43,7 @@ export default function SetupPage() {
           ↺ Walk through every question again
         </Link>
       </div>
-      <p className="mt-3 text-[12px] leading-snug text-foreground/50">
+      <p className="mt-3 text-[12px] leading-snug text-foreground/65">
         Want to list specific funds, tickers, or cost basis? Itemize any account on the{" "}
         <Link href="/accounts" className="font-semibold text-primary underline decoration-primary/30">Accounts</Link> tab.
       </p>

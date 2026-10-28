@@ -40,7 +40,7 @@ export function PaceCard({ pace, incomeNote, bare = false }: { pace: YearPace; i
         <div className="text-[15px] font-bold">
           Your pace — <span className="text-primary">{pace.monthName} {pace.year}</span>
         </div>
-        <div className="text-[11px] text-foreground/45">{pct}% through the year</div>
+        <div className="text-[11px] text-foreground/65">{pct}% through the year</div>
       </div>
       <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-foreground/8">
         <div className="h-full rounded-full bg-primary transition-[width] duration-700" style={{ width: `${pct}%` }} />
@@ -49,20 +49,20 @@ export function PaceCard({ pace, incomeNote, bare = false }: { pace: YearPace; i
       {/* The monthly rhythm */}
       <div className="mt-3 grid grid-cols-2 gap-2">
         <div className="rounded-xl border border-border bg-background/60 p-2.5">
-          <div className="text-[11px] text-foreground/55">You spend about</div>
-          <div className="tabular text-lg font-bold">{money(Math.round(pace.spendingMonthly))}<span className="text-[12px] font-medium text-foreground/45">/mo</span></div>
+          <div className="text-[11px] text-foreground/65">You spend about</div>
+          <div className="tabular text-lg font-bold">{money(Math.round(pace.spendingMonthly))}<span className="text-[12px] font-medium text-foreground/65">/mo</span></div>
         </div>
         <div className="rounded-xl border border-border bg-background/60 p-2.5">
-          <div className="text-[11px] text-foreground/55">Checks arriving</div>
+          <div className="text-[11px] text-foreground/65">Checks arriving</div>
           {pace.guaranteedMonthly > 0.5 ? (
             <div className="tabular text-lg font-bold text-ss">
               {money(Math.round(pace.guaranteedMonthly))}
-              <span className="text-[12px] font-medium text-foreground/45">/mo</span>
+              <span className="text-[12px] font-medium text-foreground/65">/mo</span>
             </div>
           ) : (
             <>
-              <div className="text-lg font-bold text-foreground/40">None yet</div>
-              {incomeNote && <div className="text-[10px] leading-snug text-foreground/50">{incomeNote}</div>}
+              <div className="text-lg font-bold text-foreground/65">None yet</div>
+              {incomeNote && <div className="text-[10px] leading-snug text-foreground/65">{incomeNote}</div>}
             </>
           )}
         </div>
@@ -77,7 +77,7 @@ export function PaceCard({ pace, incomeNote, bare = false }: { pace: YearPace; i
               <div key={it.label}>
                 <div className="flex items-baseline justify-between gap-2 text-[13px]">
                   <span className="font-medium">{it.label}</span>
-                  <span className="tabular text-foreground/60">
+                  <span className="tabular text-foreground/65">
                     ≈ <strong className="text-foreground">{moneyCompact(it.monthly)}</strong>/mo · {moneyCompact(it.annual)}/yr
                   </span>
                 </div>
@@ -85,7 +85,7 @@ export function PaceCard({ pace, incomeNote, bare = false }: { pace: YearPace; i
                   <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-foreground/8">
                     <div className={`h-full rounded-full ${TONE_BAR[it.tone]}`} style={{ width: `${donePct}%`, opacity: 0.75 }} />
                   </div>
-                  <span className="tabular shrink-0 text-[11px] text-foreground/50">
+                  <span className="tabular shrink-0 text-[11px] text-foreground/65">
                     by now ≈ {moneyCompact(it.byNow)}
                   </span>
                 </div>
@@ -107,7 +107,7 @@ export function PaceCard({ pace, incomeNote, bare = false }: { pace: YearPace; i
       {/* Real dates coming up */}
       {nextDeadlines.length > 0 && (
         <div className="mt-3 border-t border-border/60 pt-2.5">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/45">Coming up</div>
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/65">Coming up</div>
           <ul className="mt-1.5 space-y-1.5">
             {nextDeadlines.map((d) => (
               <li key={`${d.label}-${d.when}`} className="flex items-start gap-2.5 text-[12px]">
@@ -116,9 +116,9 @@ export function PaceCard({ pace, incomeNote, bare = false }: { pace: YearPace; i
                 </span>
                 <span className="min-w-0 leading-snug">
                   <strong>{d.label}</strong>
-                  {d.inDays <= 45 && <span className="text-foreground/50"> · in {d.inDays} day{d.inDays === 1 ? "" : "s"}</span>}
+                  {d.inDays <= 45 && <span className="text-foreground/65"> · in {d.inDays} day{d.inDays === 1 ? "" : "s"}</span>}
                   <DesktopOnly>
-                    <span className="block text-foreground/55">{d.detail}</span>
+                    <span className="block text-foreground/65">{d.detail}</span>
                   </DesktopOnly>
                 </span>
               </li>
@@ -132,7 +132,7 @@ export function PaceCard({ pace, incomeNote, bare = false }: { pace: YearPace; i
           it changes what the customer does, so it must exist on the phone. */}
       {pace.estTaxQuarterly > 0 && (
         <>
-          <p className="mt-2.5 text-[12px] leading-snug text-foreground/55">
+          <p className="mt-2.5 text-[12px] leading-snug text-foreground/65">
             Taxes: either have your custodian <strong>withhold</strong> from each withdrawal, or pay quarterly estimates
             of about <strong>{money(Math.round(pace.estTaxQuarterly))}</strong> (IRS 1040-ES: Apr 15, Jun 15, Sep 15,
             Jan 15){isIllinois ? (
@@ -142,7 +142,7 @@ export function PaceCard({ pace, incomeNote, bare = false }: { pace: YearPace; i
               </>
             ) : null}.
           </p>
-          <p className="mt-2 text-[12px] leading-snug text-foreground/55">
+          <p className="mt-2 text-[12px] leading-snug text-foreground/65">
             No-penalty shortcut: if your withholding + estimates this year total at least 100% of last year&apos;s tax
             bill (110% if your income was over $150k), the IRS charges no underpayment penalty even if you owe more
             in April — especially useful in your first year of retirement or a big conversion year.

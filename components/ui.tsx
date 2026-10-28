@@ -13,7 +13,7 @@ export function AdjustLink({ step, label = "Adjust", className = "" }: { step: s
   return (
     <Link
       href={`/?step=${step}`}
-      className={`press inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-3 py-1.5 text-[12px] font-semibold text-primary ${className}`}
+      className={`press inline-flex shrink-0 items-center gap-1 min-h-[40px] rounded-full border border-primary/30 bg-primary/5 px-3.5 py-2 text-[14px] font-semibold text-primary ${className}`}
     >
       {label} →
     </Link>
@@ -76,9 +76,9 @@ export function Collapsible({
         <span className="min-w-0">
           {eyebrow && <span className="block text-[11px] font-semibold uppercase tracking-wide text-primary">{eyebrow}</span>}
           <span className="block font-semibold leading-snug">{title}</span>
-          {!open && summary && <span className="mt-0.5 block text-[12px] leading-snug text-foreground/55">{summary}</span>}
+          {!open && summary && <span className="mt-0.5 block text-[12px] leading-snug text-foreground/65">{summary}</span>}
         </span>
-        <span className={`shrink-0 text-foreground/40 transition-transform ${open ? "rotate-180" : ""}`}>⌄</span>
+        <span className={`shrink-0 text-foreground/65 transition-transform ${open ? "rotate-180" : ""}`}>⌄</span>
       </button>
       {open && <div className="rise border-t border-border/60 px-4 pb-4 pt-3">{children}</div>}
     </div>
@@ -116,8 +116,8 @@ export function PageSkeleton() {
 export function SectionTitle({ children, hint }: { children: ReactNode; hint?: string }) {
   return (
     <div className="mb-2 mt-6 flex items-baseline justify-between">
-      <h2 className="text-xs font-semibold uppercase tracking-wide text-foreground/55">{children}</h2>
-      {hint && <span className="text-[11px] text-foreground/40">{hint}</span>}
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-foreground/65">{children}</h2>
+      {hint && <span className="text-[11px] text-foreground/65">{hint}</span>}
     </div>
   );
 }
@@ -143,9 +143,9 @@ export function Stat({
   }[tone];
   return (
     <div className="flex flex-col">
-      <span className="text-[11px] uppercase tracking-wide text-foreground/50">{label}</span>
+      <span className="text-[11px] uppercase tracking-wide text-foreground/65">{label}</span>
       <span className={`tabular text-xl font-semibold ${toneClass}`}>{value}</span>
-      {sub && <span className="text-[11px] text-foreground/50">{sub}</span>}
+      {sub && <span className="text-[11px] text-foreground/65">{sub}</span>}
     </div>
   );
 }
@@ -178,7 +178,7 @@ export function PageTitle({ title, subtitle }: { title: string; subtitle?: strin
   return (
     <header className="mb-2 pt-2">
       <h1 className="text-[28px] font-bold leading-tight tracking-tight text-foreground">{title}</h1>
-      {subtitle && <p className="mt-1 text-sm leading-snug text-foreground/60">{subtitle}</p>}
+      {subtitle && <p className="mt-1 text-sm leading-snug text-foreground/65">{subtitle}</p>}
     </header>
   );
 }
@@ -242,7 +242,7 @@ export function Callout({
  *  what the reader is looking at. Desktop-only: it's "why/what this is" context, so
  *  on a phone the view stays decision-focused (the title + the numbers remain). */
 export function Explainer({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <p className={`hidden md:block -mt-1 mb-2 text-[12px] leading-relaxed text-foreground/55 ${className}`}>{children}</p>;
+  return <p className={`hidden md:block -mt-1 mb-2 text-[12px] leading-relaxed text-foreground/65 ${className}`}>{children}</p>;
 }
 
 /** A tappable "what's this?" click-through: a question row that expands to a
@@ -301,7 +301,7 @@ export function Info({
 
 export function Disclaimer({ className = "", state = "Illinois" }: { className?: string; state?: string }) {
   return (
-    <p className={`text-[11px] leading-relaxed text-foreground/45 ${className}`}>
+    <p className={`text-[11px] leading-relaxed text-foreground/65 ${className}`}>
       Educational estimates only — not tax, legal, or investment advice. Models 2026 federal tax and{" "}
       {state}{" "}state tax (other states aren&apos;t modeled). Uses reasonable assumptions; figures and
       future projections are estimates — verify with a qualified tax professional before acting.

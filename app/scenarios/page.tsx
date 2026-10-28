@@ -125,7 +125,7 @@ export default function ScenariosPage() {
             <div
               key={g}
               className={`rounded-xl border p-2.5 text-center ${
-                settings.goal === g ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/40"
+                settings.goal === g ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/65"
               }`}
             >
               <div className="text-lg leading-none">{GOAL_META[g].icon}</div>
@@ -154,7 +154,7 @@ export default function ScenariosPage() {
           </>
         )}
       </Callout>
-      <p className="mt-2 text-[12px] leading-relaxed text-foreground/55">
+      <p className="mt-2 text-[12px] leading-relaxed text-foreground/65">
         The recommendation is chosen at a standard reference spending level (about 4% of savings), so it stays stable
         as you explore; each card&apos;s numbers use your actual spending.
       </p>
@@ -209,7 +209,7 @@ export default function ScenariosPage() {
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="font-semibold">{p.label}</div>
-                  <p className="mt-0.5 text-[12px] text-foreground/60">{p.how}</p>
+                  <p className="mt-0.5 text-[12px] text-foreground/65">{p.how}</p>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1">
                   {isRec && <Pill tone="roth">Recommended</Pill>}
@@ -220,14 +220,14 @@ export default function ScenariosPage() {
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <div className="rounded-xl border border-border bg-background/60 p-2">
-                  <div className="text-[11px] text-foreground/55">After-tax money left</div>
+                  <div className="text-[11px] text-foreground/65">After-tax money left</div>
                   <div className="tabular text-[13px] font-semibold text-gain">{money(p.netWealth)}</div>
-                  <div className="text-[10px] text-foreground/45">at age {settings.endAge}</div>
+                  <div className="text-[10px] text-foreground/65">at age {settings.endAge}</div>
                 </div>
                 <div className="rounded-xl border border-border bg-background/60 p-2">
-                  <div className="text-[11px] text-foreground/55">Lifetime tax</div>
+                  <div className="text-[11px] text-foreground/65">Lifetime tax</div>
                   <div className="tabular text-[13px] font-semibold text-tax">{money(p.lifetimeTax)}</div>
-                  <div className="text-[10px] text-foreground/45">peak RMD {moneyCompact(p.projection.peakRmd)}</div>
+                  <div className="text-[10px] text-foreground/65">peak RMD {moneyCompact(p.projection.peakRmd)}</div>
                 </div>
               </div>
               <button
@@ -258,7 +258,7 @@ export default function ScenariosPage() {
       {/* ───── The evidence: head-to-head + raw data (desktop-depth only) ───── */}
       <DesktopOnly
         mobileNote={
-          <p className="mt-4 rounded-xl border border-border bg-card px-3 py-2.5 text-[12px] text-foreground/55">
+          <p className="mt-4 rounded-xl border border-border bg-card px-3 py-2.5 text-[12px] text-foreground/65">
             🖥️ The full evidence layer — head-to-head odds across 1,000 simulated markets, the year-by-year numbers
             behind every option, and CSV export — is on the desktop view, where there&apos;s room to lay it out.
           </p>

@@ -71,9 +71,9 @@ export function Donut({
         })}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-        {centerTop && <span className="text-[10px] uppercase tracking-wide text-foreground/45">{centerTop}</span>}
+        {centerTop && <span className="text-[10px] uppercase tracking-wide text-foreground/65">{centerTop}</span>}
         {centerMain && <span className="tabular text-2xl font-bold">{centerMain}</span>}
-        {centerSub && <span className="text-[11px] text-foreground/50">{centerSub}</span>}
+        {centerSub && <span className="text-[11px] text-foreground/65">{centerSub}</span>}
       </div>
     </div>
   );
@@ -90,7 +90,7 @@ export function Legend({ segments, total }: { segments: Segment[]; total?: numbe
             {s.label}
           </span>
           <span className="tabular text-foreground/70">
-            {money(s.value)} <span className="text-foreground/40">· {Math.round((s.value / sum) * 100)}%</span>
+            {money(s.value)} <span className="text-foreground/65">· {Math.round((s.value / sum) * 100)}%</span>
           </span>
         </li>
       ))}
@@ -343,14 +343,14 @@ export function FanChart({
             {band[hoverI!].year}
             {startAge != null ? ` · age ${ageAt(hoverI!)}` : ""}
           </div>
-          <div className="mt-0.5 flex items-center gap-1 text-foreground/60"><span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color, opacity: 0.55 }} /> best 10%: {fmt(hb.p90)}</div>
+          <div className="mt-0.5 flex items-center gap-1 text-foreground/65"><span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color, opacity: 0.55 }} /> best 10%: {fmt(hb.p90)}</div>
           {hb.p25 != null && hb.p75 != null && (
             <div className="flex items-center gap-1 text-foreground/70">
               <span className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ background: color, opacity: 0.45 }} /> middle 50%: {fmt(hb.p25)}–{fmt(hb.p75)}
             </div>
           )}
           <div className="flex items-center gap-1 font-semibold" style={{ color: lineColor }}><span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: lineColor }} /> typical: {fmt(hb.p50)}</div>
-          <div className="flex items-center gap-1 text-foreground/60"><span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color, opacity: 0.55 }} /> worst 10%: {fmt(hb.p10)}</div>
+          <div className="flex items-center gap-1 text-foreground/65"><span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color, opacity: 0.55 }} /> worst 10%: {fmt(hb.p10)}</div>
         </div>
       )}
     </div>
@@ -379,7 +379,7 @@ export function Bars({
     <div className="flex items-end justify-between gap-1" style={{ height }}>
       {data.map((d, i) => (
         <div key={i} className="flex flex-1 flex-col items-center justify-end gap-1">
-          <span className="tabular text-[9px] text-foreground/50">{d.value > 0 ? format(d.value) : ""}</span>
+          <span className="tabular text-[9px] text-foreground/65">{d.value > 0 ? format(d.value) : ""}</span>
           <div
             className="w-full rounded-t-md"
             style={{
@@ -388,7 +388,7 @@ export function Bars({
               transition: `height 700ms cubic-bezier(0.22,1,0.36,1) ${i * 18}ms`,
             }}
           />
-          <span className="text-[9px] text-foreground/45">{d.label}</span>
+          <span className="text-[9px] text-foreground/65">{d.label}</span>
         </div>
       ))}
     </div>
@@ -458,7 +458,7 @@ export function PriceLine({
   const padT = 8;
   const padB = 18;
   const n = points.length;
-  if (n < 2) return <div className="py-8 text-center text-[12px] text-foreground/45">Not enough price history yet.</div>;
+  if (n < 2) return <div className="py-8 text-center text-[12px] text-foreground/65">Not enough price history yet.</div>;
 
   const values = points.map((p) => p.value);
   const minV = Math.min(...values);

@@ -8,7 +8,9 @@ import { Donut, Legend, AnimatedNumber } from "@/components/charts";
 import { STRATEGY_META, StrategyId, BracketTarget } from "@/lib/optimizer";
 import { buildYearPace } from "@/lib/pace";
 import { PaceCard } from "@/components/PaceCard";
+import { SpendingOddsCard } from "@/components/SpendingOddsCard";
 import { MarketCheck } from "@/components/MarketCheck";
+import { SinceLastVisit } from "@/components/SinceLastVisit";
 import { ordinaryBracketCeiling } from "@/lib/tax/engine";
 import { detectOpportunities } from "@/lib/opportunities";
 import { projectLifetime } from "@/lib/projection";
@@ -338,6 +340,16 @@ export default function PlanPage() {
         </div>
       )}
 
+      <SinceLastVisit
+        mode={mode}
+        ready={ready}
+        balance={household.accounts.reduce((t, a) => t + a.balance, 0)}
+        withdrawal={planConv.withdrawals.pretax + planConv.withdrawals.taxable + planConv.withdrawals.roth}
+        tax={yearTaxTotal}
+        successPct={confidence?.successPct ?? null}
+        spending={plan.spendingTarget}
+      />
+
       <div className="mt-3">
         <PlanHero
           year={year}
@@ -350,6 +362,7 @@ export default function PlanPage() {
           isDemo={mode === "demo"}
         />
       </div>
+      <SpendingOddsCard household={household} settings={settings} confidence={confidence} />
 
       {/* Today's market, translated into what it means for THIS plan. Renders
           nothing on an unremarkable market — silence beats noise. */}
@@ -484,7 +497,7 @@ export default function PlanPage() {
               </span>
             ))}
             {ssCards.some((c) => !c.started) && (
-              <span className="mt-1 block text-foreground/60">
+              <span className="mt-1 block text-foreground/65">
                 Until then your savings carry more of the load — these are your heaviest withdrawal years.
               </span>
             )}
@@ -529,7 +542,7 @@ export default function PlanPage() {
               </span>
             )}
             {irmaaStatus.inWindow && (
-              <span className="mt-1 block text-foreground/60">
+              <span className="mt-1 block text-foreground/65">
                 Not on Medicare yet — but this year&apos;s income already sets your first premium at 65.
               </span>
             )}
@@ -611,14 +624,14 @@ export default function PlanPage() {
           )}
         </div>
         {leftover > 0.5 && (
-          <p className="mt-2 text-[11px] leading-snug text-foreground/50">
+          <p className="mt-2 text-[11px] leading-snug text-foreground/65">
             You&apos;re pulling <strong>{money(leftover)}</strong> more than you spend this year because a required
             withdrawal (RMD) forces it out. It isn&apos;t lost — it stays yours, reinvested in your brokerage (or parked
             in cash if you prefer), and still shows up in your balances next year.
           </p>
         )}
         {thisYearConversionTax > 0.5 && (
-          <p className="mt-2 text-[11px] leading-snug text-foreground/50">
+          <p className="mt-2 text-[11px] leading-snug text-foreground/65">
             The Roth conversion adds <strong>{money(thisYearConversionTax)}</strong> of tax on top of this table — paid
             from cash, not from the spending money above.
           </p>
@@ -817,7 +830,7 @@ export default function PlanPage() {
           <Link key={c.href} href={c.href} className="press rounded-2xl border border-border bg-card p-3.5" style={{ boxShadow: "var(--shadow-card)" }}>
             <div className="text-xl">{c.icon}</div>
             <div className="mt-1 text-[14px] font-semibold">{c.title} →</div>
-            <div className="text-[12px] text-foreground/55">{c.sub}</div>
+            <div className="text-[12px] text-foreground/65">{c.sub}</div>
           </Link>
         ))}
       </div>
@@ -845,7 +858,7 @@ export default function PlanPage() {
               <span
                 key={s}
                 className={`whitespace-nowrap rounded-full px-3 py-1.5 text-[13px] font-medium ${
-                  settings.strategy === s ? "bg-primary text-white" : "border border-border bg-card text-foreground/40"
+                  settings.strategy === s ? "bg-primary text-white" : "border border-border bg-card text-foreground/65"
                 }`}
               >
                 {settings.strategy === s ? "✓ " : ""}
@@ -856,7 +869,7 @@ export default function PlanPage() {
           <AdjustLink step="goal" />
         </div>
         <p className="mt-2 text-[13px] font-medium text-foreground/70">{STRATEGY_SHORT[settings.strategy]}</p>
-        <p className="mt-1 text-[12px] text-foreground/55">{STRATEGY_META[settings.strategy].blurb}</p>
+        <p className="mt-1 text-[12px] text-foreground/65">{STRATEGY_META[settings.strategy].blurb}</p>
 
         <Info q="What does &quot;Pre-tax first (bracket-fill)&quot; actually mean?" sources={[SOURCES.brackets2026, SOURCES.rmd, SOURCES.rothConversion]}>
           <p className="mb-1.5">
@@ -879,7 +892,7 @@ export default function PlanPage() {
         {settings.strategy === "smart" && (
           <div className="mt-4 rounded-xl border border-border bg-background/50 p-3">
             <div className="text-[13px] font-semibold">Fill pre-tax up to this tax bracket</div>
-            <p className="mt-1 text-[12px] leading-relaxed text-foreground/60">
+            <p className="mt-1 text-[12px] leading-relaxed text-foreground/65">
               Your income is taxed in tiers called brackets. This control sets the <strong>highest rate
               you&apos;re willing to pay</strong>{" "}to voluntarily pull extra pre-tax money now. We add pre-tax
               withdrawals until your taxable income reaches the top of the bracket you pick, then stop and use
@@ -893,11 +906,11 @@ export default function PlanPage() {
                   className={`rounded-xl border py-2 text-center ${
                     settings.bracketTarget === b
                       ? "border-primary bg-primary/10 text-primary"
-                      : "border-border text-foreground/40"
+                      : "border-border text-foreground/65"
                   }`}
                 >
                   <div className="text-sm font-bold">{settings.bracketTarget === b ? "✓ " : ""}{Math.round(b * 100)}%</div>
-                  <div className="text-[9px] leading-tight text-foreground/45">
+                  <div className="text-[9px] leading-tight text-foreground/65">
                     to {moneyCompact(ordinaryBracketCeiling(b))}
                   </div>
                 </span>
@@ -906,7 +919,7 @@ export default function PlanPage() {
             <div className="mt-2 text-right">
               <AdjustLink step="goal" label="Change bracket" />
             </div>
-            <p className="mt-2 text-[11px] text-foreground/55">
+            <p className="mt-2 text-[11px] text-foreground/65">
               Filling to <strong>{percent(settings.bracketTarget, 0)}</strong>{" "}means we keep pulling pre-tax
               dollars until your taxable income reaches about{" "}
               <strong>{money(ordinaryBracketCeiling(settings.bracketTarget))}</strong>, then switch to other
@@ -1000,7 +1013,7 @@ function SsTiming({
           return (
             <Card key={who} className="mb-2">
               <div className="font-semibold">{p.label}</div>
-              <p className="mt-1 text-[12px] text-foreground/60">
+              <p className="mt-1 text-[12px] text-foreground/65">
                 Add {p.label}&apos;s full-retirement benefit on the Accounts tab to compare claim ages.
               </p>
             </Card>
@@ -1018,16 +1031,16 @@ function SsTiming({
           <Card key={who} className="mb-2">
             <div className="flex items-center justify-between">
               <span className="font-semibold">{p.label}</span>
-              <span className="text-[11px] text-foreground/55">full retirement age {fmtAgePlan(fra)}</span>
+              <span className="text-[11px] text-foreground/65">full retirement age {fmtAgePlan(fra)}</span>
             </div>
 
             <div className="mt-2 flex items-baseline justify-between rounded-xl border border-border bg-background/60 px-3 py-2">
-              <span className="text-[12px] font-medium text-foreground/60">
+              <span className="text-[12px] font-medium text-foreground/65">
                 Claiming at age <strong className="text-foreground">{claim}</strong>
               </span>
               <span className="tabular text-xl font-bold text-ss">{money(Math.round(benefit / 12))}/mo</span>
             </div>
-            <div className="mt-1 text-right text-[12px] text-foreground/60">
+            <div className="mt-1 text-right text-[12px] text-foreground/65">
               {money(benefit)}/yr · {percent(pct, 0)} of full
             </div>
             {(() => {
@@ -1064,17 +1077,17 @@ function SsTiming({
                   <div
                     key={a}
                     className={`rounded-xl border py-2 text-center ${
-                      active ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/55"
+                      active ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/65"
                     }`}
                   >
                     <div className="text-[12px] font-semibold">Age {a}{a === fraInt ? "*" : ""}</div>
                     <div className="tabular text-[13px] font-bold">{money(Math.round(b / 12))}</div>
-                    <div className="text-[9px] text-foreground/45">/mo</div>
+                    <div className="text-[9px] text-foreground/65">/mo</div>
                   </div>
                 );
               })}
             </div>
-            <p className="mt-1 text-[10px] text-foreground/45">* full retirement age</p>
+            <p className="mt-1 text-[10px] text-foreground/65">* full retirement age</p>
           </Card>
         );
       })}
@@ -1144,7 +1157,7 @@ function MiniStat({ label, value, tone }: { label: string; value: string; tone?:
     tone === "gain" ? "text-gain" : tone === "tax" ? "text-tax" : tone === "deferred" ? "text-deferred" : "text-foreground";
   return (
     <div className="rounded-xl border border-border bg-card/60 p-2 text-center">
-      <div className="text-[10px] uppercase tracking-wide text-foreground/50">{label}</div>
+      <div className="text-[10px] uppercase tracking-wide text-foreground/65">{label}</div>
       <div className={`tabular text-sm font-bold ${color}`}>{value}</div>
     </div>
   );
@@ -1257,7 +1270,7 @@ function GoalAndRecommendation() {
             <span className="text-2xl leading-none">{GOAL_META[settings.goal].icon}</span>
             <div className="min-w-0">
               <div className="text-[13px] font-semibold text-primary">{GOAL_META[settings.goal].short}</div>
-              <div className="text-[12px] leading-snug text-foreground/60">{GOAL_META[settings.goal].blurb}</div>
+              <div className="text-[12px] leading-snug text-foreground/65">{GOAL_META[settings.goal].blurb}</div>
             </div>
           </div>
           <AdjustLink step="goal" />
@@ -1275,11 +1288,11 @@ function GoalAndRecommendation() {
             <Pill tone="ss">calculating confidence…</Pill>
           )}
         </div>
-        <p className="-mt-0.5 mb-1 text-[11px] text-foreground/45">
+        <p className="-mt-0.5 mb-1 text-[11px] text-foreground/65">
           Technical version: {describePlan(rec.best.config, rec.chosenConvertUntilAge)}.
         </p>
         {confidence && (
-          <p className="-mt-0.5 mb-1 text-[12px] text-foreground/60">
+          <p className="-mt-0.5 mb-1 text-[12px] text-foreground/65">
             In about <strong>{Math.round(confidence.successPct * 10)} of 10</strong> of the market histories we
             simulated, this plan holds for life.
           </p>
@@ -1320,7 +1333,7 @@ function GoalAndRecommendation() {
         {matches ? (
           <p className="mt-3 text-[12px] font-medium text-gain">✓ This is your plan — active everywhere, automatically.</p>
         ) : (
-          <p className="mt-3 text-[12px] leading-relaxed text-foreground/60">
+          <p className="mt-3 text-[12px] leading-relaxed text-foreground/65">
             Your active plan differs because you adjusted the conversion yourself.{" "}
             <button
               onClick={() => applyGoal(settings.goal)}
@@ -1396,9 +1409,9 @@ function LookingAhead() {
           <Card as="div" key={y.year} className={i === 0 ? "border-primary/40" : ""}>
             <div className="flex items-center justify-between">
               <span className="font-semibold">
-                {y.year} <span className="text-foreground/50">· age {y.selfAge}/{y.spouseAge}</span>
+                {y.year} <span className="text-foreground/65">· age {y.selfAge}/{y.spouseAge}</span>
               </span>
-              <span className="tabular text-[12px] text-foreground/55">est. tax {moneyCompact(y.tax)}</span>
+              <span className="tabular text-[12px] text-foreground/65">est. tax {moneyCompact(y.tax)}</span>
             </div>
             {y.events.length > 0 && (
               <div className="mt-1.5 flex flex-wrap gap-1">
@@ -1444,7 +1457,7 @@ function ConvertUntilControl({
   const opts = [70, 73, 75, 80];
   return (
     <div>
-      <div className="text-[11px] font-medium text-foreground/55">Keep rolling through age</div>
+      <div className="text-[11px] font-medium text-foreground/65">Keep rolling through age</div>
       <div className="mt-1 grid grid-cols-4 gap-2">
         {opts.map((a) => (
           <button
@@ -1517,10 +1530,10 @@ function RolloverPlanCard({ conv }: { conv: ConversionImpact }) {
                 {settings.useConversions ? (
                   <span className="text-gain">✓ Conversion plan is on</span>
                 ) : (
-                  <span className="text-foreground/60">Conversion plan is off</span>
+                  <span className="text-foreground/65">Conversion plan is off</span>
                 )}
               </div>
-              <div className="mt-0.5 text-[12px] leading-snug text-foreground/55">
+              <div className="mt-0.5 text-[12px] leading-snug text-foreground/65">
                 {settings.useConversions
                   ? `${settings.convertMode === "recommended" ? "Recommended sizing" : `Fill the ${percent(settings.bracketTarget, 0)} bracket`} · through age ${settings.convertUntilAge}`
                   : "You decide whether to roll pre-tax money to Roth in the walkthrough."}

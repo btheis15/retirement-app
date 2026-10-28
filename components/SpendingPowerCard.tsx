@@ -121,7 +121,7 @@ function SpendScale({
           </div>
         ))}
       </div>
-      <p className="mt-1.5 text-[10px] text-foreground/45">▏The line marks your current {moneyCompact(current)}/yr.</p>
+      <p className="mt-1.5 text-[10px] text-foreground/65">▏The line marks your current {moneyCompact(current)}/yr.</p>
     </div>
   );
 }
@@ -206,7 +206,7 @@ export function SpendingPowerCard() {
       </Explainer>
       <Card>
         <div className="flex items-baseline justify-between">
-          <span className="text-[12px] font-medium text-foreground/60">What-if spending (after tax)</span>
+          <span className="text-[12px] font-medium text-foreground/65">What-if spending (after tax)</span>
           <span className="tabular text-2xl font-bold text-primary">{money(whatIf)}</span>
         </div>
         <input
@@ -219,7 +219,7 @@ export function SpendingPowerCard() {
           className="ios-range mt-1 w-full"
           aria-label="What-if yearly spending"
         />
-        <div className="mt-1 flex justify-between text-[11px] text-foreground/45">
+        <div className="mt-1 flex justify-between text-[11px] text-foreground/65">
           <span>{moneyCompact(0)}</span>
           <span>{moneyCompact(SPEND_MAX)}+</span>
         </div>
@@ -259,20 +259,20 @@ export function SpendingPowerCard() {
             <Card>
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-xl border border-gain/30 bg-gain/5 p-3">
-                  <div className="text-[11px] text-foreground/55">Keep pace with inflation</div>
+                  <div className="text-[11px] text-foreground/65">Keep pace with inflation</div>
                   <div className="tabular text-lg font-bold text-gain">
                     {moneyCompact(sustain.real)}
-                    <span className="text-[11px] font-medium text-foreground/50">/yr</span>
+                    <span className="text-[11px] font-medium text-foreground/65">/yr</span>
                   </div>
-                  <div className="text-[10px] text-foreground/45">buying power intact at age {settings.endAge}</div>
+                  <div className="text-[10px] text-foreground/65">buying power intact at age {settings.endAge}</div>
                 </div>
                 <div className="rounded-xl border border-border bg-background/60 p-3">
-                  <div className="text-[11px] text-foreground/55">Never lose a dollar</div>
+                  <div className="text-[11px] text-foreground/65">Never lose a dollar</div>
                   <div className="tabular text-lg font-bold text-taxable">
                     {moneyCompact(sustain.nominal)}
-                    <span className="text-[11px] font-medium text-foreground/50">/yr</span>
+                    <span className="text-[11px] font-medium text-foreground/65">/yr</span>
                   </div>
-                  <div className="text-[10px] text-foreground/45">balance never dips below today</div>
+                  <div className="text-[10px] text-foreground/65">balance never dips below today</div>
                 </div>
               </div>
               <p className="mt-3 text-[13px] leading-relaxed text-foreground/75">{sustainMessage}</p>

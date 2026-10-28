@@ -4,6 +4,11 @@ import { TabBar } from "@/components/TabBar";
 import { HouseholdProvider } from "@/components/HouseholdProvider";
 import { PricesProvider } from "@/components/PricesProvider";
 import { SplashScreen } from "@/components/SplashScreen";
+import { TextSize } from "@/components/TextSize";
+
+// Runs before first paint so the saved text size never flashes. Keep in sync
+// with components/TextSize.tsx (key + scales).
+const TEXT_SIZE_SCRIPT = `try{var s=localStorage.getItem("rto-text-size");var z=s==="larger"?"1.12":s==="largest"?"1.25":"";if(z)document.documentElement.style.zoom=z}catch(e){}`;
 
 export const metadata: Metadata = {
   title: "Retirement Tax Optimizer",
@@ -30,7 +35,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className="h-full">
+    <html lang="en" className="h-full" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: TEXT_SIZE_SCRIPT }} />
+      </head>
       <body className="min-h-full text-foreground antialiased">
         <HouseholdProvider>
           <PricesProvider>
@@ -47,6 +55,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               </main>
             </div>
             <TabBar />
+            <TextSize />
             {/* Launch splash: server-rendered, so it's on screen from the first
                 paint while the app hydrates underneath. */}
             <SplashScreen />

@@ -207,7 +207,7 @@ export function ImportHoldingsSheet({ targetAccount, onClose }: { targetAccount?
   };
 
   const privacy = (
-    <p className="mt-3 text-[11px] leading-snug text-foreground/50">
+    <p className="mt-3 text-[11px] leading-snug text-foreground/65">
       🔒 Your file is read right here on your device — it never leaves it. Only ticker symbols are ever looked up, to
       fetch prices.
     </p>
@@ -227,7 +227,7 @@ export function ImportHoldingsSheet({ targetAccount, onClose }: { targetAccount?
             <h2 className="text-lg font-semibold">
               {targetAccount ? `Update “${targetAccount.label}” from a CSV` : "Import from your brokerage"}
             </h2>
-            <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+            <p className="mt-1 text-[13px] leading-relaxed text-foreground/65">
               Download your <strong>positions</strong> (holdings) file from Fidelity, Schwab, Vanguard, or any broker —
               not the transaction history — and open it here. Or paste rows copied straight off your positions page.
             </p>
@@ -249,7 +249,7 @@ export function ImportHoldingsSheet({ targetAccount, onClose }: { targetAccount?
                 ⬇️
               </div>
               <div className="mt-1 text-[14px] font-semibold">Choose your CSV file</div>
-              <div className="mt-0.5 text-[11px] text-foreground/50">…or drag it onto this box</div>
+              <div className="mt-0.5 text-[11px] text-foreground/65">…or drag it onto this box</div>
             </button>
             <input
               ref={fileRef}
@@ -278,7 +278,7 @@ export function ImportHoldingsSheet({ targetAccount, onClose }: { targetAccount?
                 </button>
               </div>
             ) : (
-              <button onClick={() => setPasteOpen(true)} className="press mt-2 w-full rounded-xl border border-border py-2 text-[12px] font-medium text-foreground/60">
+              <button onClick={() => setPasteOpen(true)} className="press mt-2 w-full rounded-xl border border-border py-2 text-[12px] font-medium text-foreground/65">
                 Or paste it instead
               </button>
             )}
@@ -307,7 +307,7 @@ export function ImportHoldingsSheet({ targetAccount, onClose }: { targetAccount?
         {step === "map" && result && (
           <>
             <h2 className="text-lg font-semibold">Which column is which?</h2>
-            <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+            <p className="mt-1 text-[13px] leading-relaxed text-foreground/65">
               We didn&apos;t recognize this layout — point us at the right columns and we&apos;ll take it from there.
             </p>
             <div className="mt-3 space-y-2">
@@ -320,7 +320,7 @@ export function ImportHoldingsSheet({ targetAccount, onClose }: { targetAccount?
                 ] as const
               ).map(([key, label]) => (
                 <label key={key} className="block">
-                  <span className="text-[12px] font-medium text-foreground/60">{label}</span>
+                  <span className="text-[12px] font-medium text-foreground/65">{label}</span>
                   <select
                     className={`${INPUT} mt-1`}
                     value={mapping[key] ?? ""}
@@ -336,7 +336,7 @@ export function ImportHoldingsSheet({ targetAccount, onClose }: { targetAccount?
                 </label>
               ))}
             </div>
-            <div className="mt-3 overflow-x-auto rounded-xl border border-border p-2 text-[11px] text-foreground/60">
+            <div className="mt-3 overflow-x-auto rounded-xl border border-border p-2 text-[11px] text-foreground/65">
               {result.raw.slice(result.headerRowIndex, result.headerRowIndex + 4).map((r, i) => (
                 <div key={i} className="truncate">
                   {r.join(" · ")}
@@ -347,7 +347,7 @@ export function ImportHoldingsSheet({ targetAccount, onClose }: { targetAccount?
             <button
               onClick={applyMap}
               disabled={mapping.symbol == null || mapping.shares == null}
-              className={`press mt-3 w-full rounded-xl py-2.5 text-[13px] font-semibold ${mapping.symbol != null && mapping.shares != null ? "bg-primary text-background" : "bg-foreground/10 text-foreground/40"}`}
+              className={`press mt-3 w-full rounded-xl py-2.5 text-[13px] font-semibold ${mapping.symbol != null && mapping.shares != null ? "bg-primary text-background" : "bg-foreground/10 text-foreground/65"}`}
             >
               Continue
             </button>
@@ -361,12 +361,12 @@ export function ImportHoldingsSheet({ targetAccount, onClose }: { targetAccount?
               {groups.length > 1 ? ` across ${groups.length} accounts` : ""} —{" "}
               {money(groups.reduce((s, g) => s + g.det.totalValue, 0))}
             </h2>
-            <p className="mt-1 text-[12px] text-foreground/55">
+            <p className="mt-1 text-[12px] text-foreground/65">
               From your {result.brokerLabel} file. Uncheck anything you don&apos;t want; pick where each account&apos;s
               holdings should land.
             </p>
             {result.warnings.map((w) => (
-              <p key={w} className="mt-1 text-[11px] text-foreground/45">
+              <p key={w} className="mt-1 text-[11px] text-foreground/65">
                 ℹ️ {w}
               </p>
             ))}
@@ -383,14 +383,14 @@ export function ImportHoldingsSheet({ targetAccount, onClose }: { targetAccount?
                         <div className="truncate text-[13px] font-semibold">
                           {g.det.name || (gid === "__single__" ? "Your holdings" : gid)}
                         </div>
-                        <div className="text-[11px] text-foreground/50">
+                        <div className="text-[11px] text-foreground/65">
                           {g.rows.filter((r) => r.include).length} holdings · {money(g.det.totalValue)}
                         </div>
                       </div>
                     </div>
                     {!targetAccount && dest && (
                       <div className="mt-2">
-                        <span className="text-[11px] font-medium text-foreground/55">Into:</span>
+                        <span className="text-[11px] font-medium text-foreground/65">Into:</span>
                         <select
                           className={`${INPUT} mt-1`}
                           value={dest.mode === "existing" ? dest.accountId : "__new__"}
@@ -430,7 +430,7 @@ export function ImportHoldingsSheet({ targetAccount, onClose }: { targetAccount?
                                 <button
                                   key={o}
                                   onClick={() => setDests((d) => ({ ...d, [gid]: { ...dest, owner: o } }))}
-                                  className={`press rounded-xl border px-2.5 text-[12px] ${dest.owner === o ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/60"}`}
+                                  className={`press rounded-xl border px-2.5 text-[12px] ${dest.owner === o ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/65"}`}
                                 >
                                   {o === "self" ? household.self.label || "You" : household.spouse.label || "Spouse"}
                                 </button>
@@ -451,7 +451,7 @@ export function ImportHoldingsSheet({ targetAccount, onClose }: { targetAccount?
                           <button
                             key={k}
                             onClick={() => setMerge((m) => ({ ...m, [gid]: k }))}
-                            className={`press rounded-xl border px-2.5 py-1.5 text-[11px] ${(merge[gid] ?? "update") === k ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/60"}`}
+                            className={`press rounded-xl border px-2.5 py-1.5 text-[11px] ${(merge[gid] ?? "update") === k ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/65"}`}
                           >
                             {label}
                           </button>
@@ -472,13 +472,13 @@ export function ImportHoldingsSheet({ targetAccount, onClose }: { targetAccount?
                               <span className="truncate text-[13px] font-semibold">
                                 {r.symbol || (
                                   <span>
-                                    {(r.description || "—").slice(0, 28)} <span className="rounded bg-foreground/10 px-1 text-[9px] font-medium text-foreground/55">fixed $</span>
+                                    {(r.description || "—").slice(0, 28)} <span className="rounded bg-foreground/10 px-1 text-[9px] font-medium text-foreground/65">fixed $</span>
                                   </span>
                                 )}
                               </span>
                               <span className="tabular shrink-0 text-[12px] text-foreground/70">{r.value != null ? money(Math.round(r.value)) : "—"}</span>
                             </span>
-                            <span className="block truncate text-[10px] text-foreground/45">
+                            <span className="block truncate text-[10px] text-foreground/65">
                               {r.symbol ? r.description : ""}
                               {r.shares != null && r.symbol ? ` · ${r.shares} sh` : ""}
                               {r.costPerShare != null ? ` · cost $${Math.round(r.costPerShare)}/sh` : ""}
@@ -495,7 +495,7 @@ export function ImportHoldingsSheet({ targetAccount, onClose }: { targetAccount?
             <button
               onClick={doImport}
               disabled={rows.every((r) => !r.include)}
-              className={`press mt-4 w-full rounded-xl py-2.5 text-[14px] font-semibold ${rows.some((r) => r.include) ? "bg-primary text-background" : "bg-foreground/10 text-foreground/40"}`}
+              className={`press mt-4 w-full rounded-xl py-2.5 text-[14px] font-semibold ${rows.some((r) => r.include) ? "bg-primary text-background" : "bg-foreground/10 text-foreground/65"}`}
             >
               Import {rows.filter((r) => r.include).length} holdings
             </button>
@@ -519,17 +519,17 @@ export function ImportHoldingsSheet({ targetAccount, onClose }: { targetAccount?
             </p>
             {rows.some((r) => !r.include && r.problem) && (
               <div className="mt-3 rounded-xl border border-border p-2.5">
-                <div className="text-[11px] font-semibold text-foreground/60">Left out (you can add these by hand)</div>
+                <div className="text-[11px] font-semibold text-foreground/65">Left out (you can add these by hand)</div>
                 {rows
                   .filter((r) => !r.include && r.problem)
                   .map((r, i) => (
-                    <p key={i} className="mt-1 text-[11px] leading-snug text-foreground/50">
+                    <p key={i} className="mt-1 text-[11px] leading-snug text-foreground/65">
                       {r.rawSymbol || r.description}: {r.problem}
                     </p>
                   ))}
               </div>
             )}
-            <p className="mt-2 text-[12px] leading-snug text-foreground/55">
+            <p className="mt-2 text-[12px] leading-snug text-foreground/65">
               Next time your statement changes, just download a fresh file and use{" "}
               <strong>“⟳ Update from CSV”</strong> on the account — matching holdings update in place and your manual
               tweaks are kept.

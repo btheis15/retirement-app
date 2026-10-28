@@ -87,7 +87,7 @@ export function PortfolioCard() {
       <Card>
         <div className="flex items-end justify-between">
           <div>
-            <div className="text-[11px] uppercase tracking-wide text-foreground/50">Current value</div>
+            <div className="text-[11px] uppercase tracking-wide text-foreground/65">Current value</div>
             <div className="tabular text-2xl font-bold">{current > 0 ? money(current) : "—"}</div>
           </div>
           {points.length > 1 && (
@@ -105,7 +105,7 @@ export function PortfolioCard() {
         </div>
         <div className="mt-3 -mx-1">
           {loading && points.length === 0 ? (
-            <div className="py-10 text-center text-[12px] text-foreground/45">Loading prices…</div>
+            <div className="py-10 text-center text-[12px] text-foreground/65">Loading prices…</div>
           ) : (
             <PriceLine points={points} color={up ? HEX.gain : HEX.tax} />
           )}
@@ -116,7 +116,7 @@ export function PortfolioCard() {
               key={r.id}
               onClick={() => setRange(r.id)}
               className={`press flex-1 rounded-lg py-1.5 text-[12px] font-medium ${
-                range === r.id ? "bg-primary text-white" : "border border-border text-foreground/60"
+                range === r.id ? "bg-primary text-white" : "border border-border text-foreground/65"
               }`}
             >
               {r.label}
