@@ -14,11 +14,12 @@ import { runStressTests } from "@/lib/stressTest";
 import { solveSafeSpending } from "@/lib/spendingSolver";
 import { STRATEGY_META } from "@/lib/optimizer";
 import { returnModel } from "@/lib/returns";
-import { survivorFromSettings, PlannerSettings } from "@/lib/defaults";
+import { survivorFromSettings, SURVIVOR_SPENDING_FACTOR, PlannerSettings } from "@/lib/defaults";
 import { survivalCurve, planningHorizonAge, probReachAge, lifeExpectancy, paramsFor, MORTALITY_META, Sex } from "@/lib/mortality";
 import { Household } from "@/lib/accounts";
 import { ReturnMethodInfo } from "@/components/ReturnMethodInfo";
 import { SpendingPowerCard } from "@/components/SpendingPowerCard";
+import { SurvivorCard } from "@/components/SurvivorCard";
 import { money, moneyCompact, percent } from "@/lib/format";
 import { HEX } from "@/lib/palette";
 import { SOURCES } from "@/lib/sources";
@@ -620,6 +621,16 @@ export default function ProjectionPage() {
           joint years pays off.
         </Callout>
       )}
+
+      <SurvivorCard
+        rows={rows}
+        survivorYear={chosen.survivorYear}
+        defAt={defAt}
+        real={real}
+        isCouple={!!household.spouse && household.spouse.birthYear > 1900}
+        survivorModel={settings.survivorModel}
+        spendingFactor={SURVIVOR_SPENDING_FACTOR}
+      />
 
       {/* What-if spending explorer — demoted and collapsed. Your SAFE number is the
           range above; this slider is purely exploratory ("could I spend more?"). */}
