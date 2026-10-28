@@ -8,6 +8,7 @@ import { Donut, Legend, AnimatedNumber } from "@/components/charts";
 import { STRATEGY_META, StrategyId, BracketTarget } from "@/lib/optimizer";
 import { buildYearPace } from "@/lib/pace";
 import { PaceCard } from "@/components/PaceCard";
+import { SpendingOddsCard } from "@/components/SpendingOddsCard";
 import { MarketCheck } from "@/components/MarketCheck";
 import { ordinaryBracketCeiling } from "@/lib/tax/engine";
 import { detectOpportunities } from "@/lib/opportunities";
@@ -350,6 +351,7 @@ export default function PlanPage() {
           isDemo={mode === "demo"}
         />
       </div>
+      <SpendingOddsCard household={household} settings={settings} confidence={confidence} />
 
       {/* Today's market, translated into what it means for THIS plan. Renders
           nothing on an unremarkable market — silence beats noise. */}
