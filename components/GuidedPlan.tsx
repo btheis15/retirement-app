@@ -2012,6 +2012,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       const pos = (v: number) => Math.max(0, Math.min(100, (v / SPEND_MAX) * 100));
       const round5 = (n: number) => Math.round(n / 5_000) * 5_000;
       const floor5 = (n: number) => Math.floor(n / 5_000) * 5_000;
+      const comfortYear = Math.floor(sweep.comfortableMax / 1_000) * 1_000;
+      const underRoom = comfortYear - localSpend;
       const shortTier = (label: string) => label.replace(" surcharge", "").replace("Standard premium", "standard premium");
 
       // Ticks under the slider: the safe ceilings (green/amber) and every IRMAA
@@ -2063,6 +2065,14 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       });
       if (hasRoom && sweep.sustainableMax > 5_000 && sweep.sustainableMax <= SPEND_MAX)
         rawChips.push({ label: "Most you can afford", value: floor5(sweep.sustainableMax), cls: "border-accent/50 text-accent" });
+      // The SUGGESTED amount is the comfortable ceiling (what you can spend without
+      // worry); the classic 4% pace, when it differs, stays as an ordinary chip.
+      if (hasRoom && sweep.comfortableMax >= 5_000) {
+        const sug = Math.min(SPEND_MAX, floor5(sweep.comfortableMax));
+        if (recSpend != null && Math.abs(recSpend - sug) >= 5_000)
+          rawChips.push({ label: "4% pace", value: recSpend, cls: "border-border text-foreground/70" });
+        recSpend = sug;
+      }
       const otherChips: typeof rawChips = [];
       rawChips
         .sort((a, b) => a.value - b.value)
@@ -2087,7 +2097,25 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       return (
         <div>
           <h2 className="text-xl font-bold leading-snug">How much do you want to spend each year?</h2>
-          <p className="mt-1 text-[13px] text-foreground/60">
+          {/* The "retirement paycheck": lead with what you're ALLOWED to spend. Careful
+              savers chronically under-spend, so the permission comes before the dial. */}
+          {comfortYear >= 5_000 && (
+            <div className="mt-3 rounded-2xl border border-gain/30 bg-gain/[0.07] p-3">
+              <p className="text-[16px] font-semibold leading-snug">
+                You can comfortably spend about <span className="tabular text-gain">{money(comfortYear)} a year</span>{" "}
+                — <span className="tabular text-gain">{money(Math.round(comfortYear / 12))} a month</span>
+                {plan.filingStatus === "mfj" ? " (both of you)" : ""}.
+              </p>
+              {hasRoom && sweep.sustainableMax >= comfortYear + 10_000 && (
+                <p className="mt-1 text-[14px] leading-snug text-foreground/70">
+                  Up to <strong>{money(Math.floor(sweep.sustainableMax / 1_000) * 1_000)} a year</strong> (
+                  {money(Math.round((Math.floor(sweep.sustainableMax / 1_000) * 1_000) / 12))} a month) if you&apos;re
+                  willing to trim in bad markets.
+                </p>
+              )}
+            </div>
+          )}
+          <p className="mt-2 text-[13px] text-foreground/65">
             Your <strong>take-home</strong> target — money in your pocket after all taxes. As you move it, watch your tax
             rate, your Medicare (IRMAA) tier, and what your savings are worth at the end all update below.
           </p>
@@ -2095,12 +2123,37 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             <div className="tabular text-4xl font-bold text-primary">
               <AnimatedNumber value={localSpend} format={(n) => money(n)} />
             </div>
-            <div className="text-[12px] text-foreground/50">
-              per year, after tax{" "}
-              <span className="text-foreground/40">(≈ {money(Math.round(localSpend / 12))}/mo)</span>
-              {plan.filingStatus === "mfj" ? <span className="text-foreground/40"> · total for both of you</span> : ""}
+            <div className="text-[13px] text-foreground/65">per year, after tax</div>
+            <div className="tabular text-xl font-semibold text-primary/85">
+              ≈ {money(Math.round(localSpend / 12))} a month
             </div>
+            {plan.filingStatus === "mfj" && <div className="text-[13px] text-foreground/60">total for both of you</div>}
           </div>
+
+          {/* Under-spending callout — live with the slider. Only claims growth when the
+              (cautious, below-average-market) projection really ends above today's total. */}
+          {underRoom >= 5_000 && !cur.depleted && (
+            <div className="mt-3 rounded-2xl border border-primary/25 bg-primary/[0.06] p-3 text-[14px] leading-relaxed text-foreground/80" aria-live="polite">
+              {cur.endingEstateReal > sweep.startingTotal ? (
+                <p>
+                  At <strong>{money(localSpend)} a year</strong>, your savings keep growing — even in a below-average market,
+                  to about <strong>{moneyCompact(cur.endingEstateReal)}</strong> by age {settings.endAge} in today&apos;s
+                  dollars (you have {moneyCompact(sweep.startingTotal)} now).
+                </p>
+              ) : (
+                <p>
+                  At <strong>{money(localSpend)} a year</strong>, even in a below-average market you&apos;d still have about{" "}
+                  <strong>{moneyCompact(cur.endingEstateReal)}</strong> left at age {settings.endAge} in today&apos;s dollars
+                  (you have {moneyCompact(sweep.startingTotal)} now).
+                </p>
+              )}
+              <p className="mt-1">
+                That&apos;s money you saved to enjoy. You could spend about{" "}
+                <strong>{money(Math.floor(underRoom / 12 / 10) * 10)} more a month</strong> and still be comfortable. If
+                leaving more to family is your goal, that&apos;s a fine choice too — this is just the extra room if you want it.
+              </p>
+            </div>
+          )}
 
           {/* Colored "how much you can spend" zones with the slider thumb riding
               directly ON the zone bar (iOS style: the bar IS the track). */}
@@ -2212,7 +2265,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                       onClick={() => setLocalSpend(recSpend!)}
                       className={`press rounded-full border px-3 py-1 text-[12px] font-semibold ${active ? "border-primary bg-primary text-white" : "border-primary bg-primary/10 text-primary"}`}
                     >
-                      ✓ Recommended · {moneyCompact(recSpend)}
+                      ✓ Suggested for you · {moneyCompact(recSpend)} (≈ {moneyCompact(Math.round(recSpend / 12))}/mo)
                     </button>
                   );
                 })()}
@@ -2231,7 +2284,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               </div>
               {recSpend != null && (
                 <p className="mt-1 text-[10px] leading-snug text-foreground/45">
-                  Recommended ≈ a <strong>4% withdrawal pace</strong>, the rate planners treat as safe for a long retirement.
+                  Suggested = the most you can spend and still be comfortable, even in a below-average market.
                 </p>
               )}
             </div>
