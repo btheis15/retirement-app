@@ -15,7 +15,7 @@ import { PlannerSettings } from "@/lib/defaults";
 import { MonteCarloResult } from "@/lib/monteCarlo";
 import { ReportData } from "@/lib/report";
 import { ReviewSnapshot, SnapshotChange } from "@/lib/quarterly";
-import { money, moneyCompact, percent, of100 } from "@/lib/format";
+import { money, moneyCompact, percent, oddsText } from "@/lib/format";
 import { AllocationBar, BalancesChart, OutcomeFan, REPORT_COLORS } from "@/components/ReportCharts";
 import { irmaaRoomPhrase } from "@/lib/irmaaStatus";
 import { SafeSpendResult, SAFE_LINE, LADDER_FACTORS, ladderAmounts } from "@/components/spendingOdds";
@@ -339,7 +339,7 @@ export function ClientReport({
         {safeAmt != null && (
           <P>
             <strong>Safe to spend: {money(safeAmt)}/yr</strong> ({money(safeAmt / 12)} a month, {who}) — the most your savings can support while still lasting to age{" "}
-            {settings.endAge} in at least 90 of 100 market futures. See Section {toc.indexOf("How much you can spend") + 1}.
+            {settings.endAge} in at least 900 of 1,000 simulated markets (90%). See Section {toc.indexOf("How much you can spend") + 1}.
           </P>
         )}
         {mc && (
@@ -473,7 +473,7 @@ export function ClientReport({
                 You can safely spend {upTo} {money(safeAmt)} a year ({money(safeAmt / 12)} a month), {who}
               </div>
               <div className="mt-1 text-[12px] leading-relaxed text-[#26363b]">
-                &ldquo;Safely&rdquo; means your money still lasts to age {settings.endAge} in at least {percent(SAFE_LINE, 0)} of our {mc ? mc.runs.toLocaleString() : "1,000"} simulated market futures (90 out of every 100) &mdash; the same bar as the safe-spending range on the Forecast tab.
+                &ldquo;Safely&rdquo; means your money still lasts to age {settings.endAge} in at least {Math.round(SAFE_LINE * (mc?.runs ?? 1000)).toLocaleString("en-US")} of our {(mc?.runs ?? 1000).toLocaleString("en-US")} simulated markets ({percent(SAFE_LINE, 0)}) &mdash; the same bar as the safe-spending range on the Forecast tab.
               </div>
             </div>
             {safeGap >= 3000 && (
@@ -498,7 +498,7 @@ export function ClientReport({
                   <span key="l">{isPlan ? <strong>Your current plan</strong> : f < 1 ? `${Math.round((1 - f) * 100)}% less` : `${Math.round((f - 1) * 100)}% more`}</span>,
                   money(y / 12),
                   isPlan ? <strong key="y">{money(y)}</strong> : money(y),
-                  p == null ? "—" : `${of100(p)} of 100 market futures`,
+                  p == null ? "—" : oddsText(p, mc?.runs ?? 1000),
                 ];
               })}
             />

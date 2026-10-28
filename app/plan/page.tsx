@@ -36,7 +36,7 @@ import { GoalId, PlannerSettings, survivorFromSettings } from "@/lib/defaults";
 import { MonteCarloResult } from "@/lib/monteCarlo";
 import { computeMonteCarlo } from "@/lib/mcClient";
 import { returnModel } from "@/lib/returns";
-import { money, moneyCompact, percent, of100 } from "@/lib/format";
+import { money, moneyCompact, percent, oddsText } from "@/lib/format";
 import { HEX } from "@/lib/palette";
 import { SOURCES } from "@/lib/sources";
 import { AdjustSheet } from "@/components/AdjustSheet";
@@ -1293,8 +1293,7 @@ function GoalAndRecommendation() {
         </p>
         {confidence && (
           <p className="-mt-0.5 mb-1 text-[12px] text-foreground/65">
-            In <strong>{of100(confidence.successPct)} of 100</strong> of the market futures we
-            simulated, this plan holds for life.
+            In <strong>{oddsText(confidence.successPct, confidence.runs)}</strong>, this plan holds for life.
           </p>
         )}
         <p className="mt-1">{rec.rationale}</p>
