@@ -9,6 +9,7 @@ import { STRATEGY_META, StrategyId, BracketTarget } from "@/lib/optimizer";
 import { buildYearPace } from "@/lib/pace";
 import { PaceCard } from "@/components/PaceCard";
 import { MarketCheck } from "@/components/MarketCheck";
+import { SinceLastVisit } from "@/components/SinceLastVisit";
 import { ordinaryBracketCeiling } from "@/lib/tax/engine";
 import { detectOpportunities } from "@/lib/opportunities";
 import { projectLifetime } from "@/lib/projection";
@@ -337,6 +338,16 @@ export default function PlanPage() {
           </Link>
         </div>
       )}
+
+      <SinceLastVisit
+        mode={mode}
+        ready={ready}
+        balance={household.accounts.reduce((t, a) => t + a.balance, 0)}
+        withdrawal={planConv.withdrawals.pretax + planConv.withdrawals.taxable + planConv.withdrawals.roth}
+        tax={yearTaxTotal}
+        successPct={confidence?.successPct ?? null}
+        spending={plan.spendingTarget}
+      />
 
       <div className="mt-3">
         <PlanHero
