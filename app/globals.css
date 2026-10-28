@@ -14,6 +14,29 @@
    use bg-card/95, bg-background/80, bg-primary/10. Never use a dark translucent
    tint (bg-black/40, bg-zinc-800/50) as a card/panel background — it goes muddy
    grey on light. A dark bg-black wash is fine only as a full-screen modal scrim. */
+/* Single place to tune the TOP inset: use var(--safe-top) for every top inset;
+   bottom/left/right stay on env(). iOS 26 Home Screen apps dim the top of the
+   page with a system scroll-edge fade (WebKit bug 301994) unless a solid,
+   opaque, full-width fixed box sits at the top edge -- that is .top-band
+   (rendered in the root layout). Status bar here is "default" (opaque), so the
+   band is a 12px strip shown only in standalone, and <main> gets 12px of top
+   padding there so the band only ever covers empty space. */
+:root { --safe-top: env(safe-area-inset-top); --top-band: 0px; }
+.top-band { display: none; }
+@media (display-mode: standalone) {
+  :root { --top-band: 12px; }
+  .top-band {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--top-band);
+    z-index: 35; /* above sticky headers (z-30), below tab bar (z-40) and modals/toasts/splash (z-50+) */
+    background-color: var(--color-background); /* solid opaque, no alpha */
+  }
+}
+
 @theme {
   --color-background: #f4f6f7; /* cool warm-grey near-white */
   --color-foreground: #0f1f24; /* deep slate near-black text */
