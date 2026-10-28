@@ -19,6 +19,7 @@
 import { ReactNode, useState } from "react";
 import Link from "next/link";
 import { Pill } from "@/components/ui";
+import { Term } from "@/components/Term";
 import { ChecklistItem } from "@/lib/checklist";
 import { YearPace } from "@/lib/pace";
 import { MonteCarloResult } from "@/lib/monteCarlo";
@@ -296,7 +297,7 @@ function TodoItem({
 
 export interface TimelineEntry {
   when: string;
-  title: string;
+  title: ReactNode;
   sub?: string;
   /** "soon" = a dated deadline within ~45 days. */
   tone: "soon" | "date" | "life";
@@ -333,10 +334,10 @@ export function buildTimeline(
     const medYear = p.birthYear + 65;
     if (medYear > year) life.push({ y: medYear, when: String(medYear), title: `${name} ${isYou ? "turn" : "turns"} 65 — Medicare`, sub: "income from 2 years earlier sets the premium", tone: "life" });
     const rmdYear = p.birthYear + rmdStartAge(p.birthYear);
-    if (rmdYear > year) life.push({ y: rmdYear, when: String(rmdYear), title: `${poss} required withdrawals (RMDs) begin`, sub: `at age ${rmdStartAge(p.birthYear)}`, tone: "life" });
+    if (rmdYear > year) life.push({ y: rmdYear, when: String(rmdYear), title: <>{poss} required withdrawals (<Term id="rmd">RMDs</Term>) begin</>, sub: `at age ${rmdStartAge(p.birthYear)}`, tone: "life" });
   }
   if (settings.useConversions && lastConversionYear && lastConversionYear > year) {
-    life.push({ y: lastConversionYear, when: String(lastConversionYear), title: "Last planned Roth conversion", sub: `through age ${settings.convertUntilAge}`, tone: "life" });
+    life.push({ y: lastConversionYear, when: String(lastConversionYear), title: <>Last planned <Term id="roth-conversion">Roth conversion</Term></>, sub: `through age ${settings.convertUntilAge}`, tone: "life" });
   }
   life.sort((a, b) => a.y - b.y);
   return [...out, ...life.slice(0, 4)];
@@ -348,7 +349,7 @@ export function ComingUp({ entries }: { entries: TimelineEntry[] }) {
     <div className="rounded-2xl border border-border bg-card px-4 py-3" style={{ boxShadow: "var(--shadow-card)" }}>
       <ol className="relative">
         {entries.map((e, i) => (
-          <li key={`${e.when}-${e.title}`} className="relative flex gap-3 pb-3 last:pb-0">
+          <li key={`${e.when}-${i}`} className="relative flex gap-3 pb-3 last:pb-0">
             {/* rail */}
             {i < entries.length - 1 && <span aria-hidden className="absolute left-[33px] top-6 h-[calc(100%-12px)] w-px bg-border" />}
             <span
