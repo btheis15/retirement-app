@@ -154,7 +154,7 @@ function BucketInput({ value, onCommit, ariaLabel }: { value: number; onCommit: 
   return (
     <div>
       <label className="field-focus flex items-center gap-2 rounded-2xl border border-border bg-background/50 px-4 py-3 focus-within:border-primary">
-        <span className="text-2xl font-semibold text-foreground/40">$</span>
+        <span className="text-2xl font-semibold text-foreground/65">$</span>
         <input
           inputMode="numeric"
           value={display}
@@ -166,7 +166,7 @@ function BucketInput({ value, onCommit, ariaLabel }: { value: number; onCommit: 
           className="tabular w-full bg-transparent text-2xl font-bold outline-none"
         />
       </label>
-      <div className="mt-1 h-4 text-right text-[12px] text-foreground/45">{n > 0 ? moneyCompact(n) : ""}</div>
+      <div className="mt-1 h-4 text-right text-[12px] text-foreground/65">{n > 0 ? moneyCompact(n) : ""}</div>
     </div>
   );
 }
@@ -204,7 +204,7 @@ function IncomeField({
       <label
         className={`field-focus mt-1 flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 ${readOnly ? "bg-foreground/[0.04]" : "bg-background/50 focus-within:border-primary"}`}
       >
-        <span className="text-foreground/40">$</span>
+        <span className="text-foreground/65">$</span>
         {readOnly ? (
           <span className="tabular w-full text-[14px] font-semibold text-foreground/70">{value ? value.toLocaleString("en-US") : "0"}</span>
         ) : (
@@ -219,9 +219,9 @@ function IncomeField({
             className="tabular w-full bg-transparent text-[14px] font-semibold outline-none"
           />
         )}
-        <span className="shrink-0 text-[11px] text-foreground/45">/yr</span>
+        <span className="shrink-0 text-[11px] text-foreground/65">/yr</span>
       </label>
-      {hint && <p className="mt-0.5 text-[10px] leading-snug text-foreground/45">{hint}</p>}
+      {hint && <p className="mt-0.5 text-[10px] leading-snug text-foreground/65">{hint}</p>}
     </div>
   );
 }
@@ -254,7 +254,7 @@ function StreamsEditor({
   return (
     <div className="rounded-2xl border border-border p-3">
       <div className="text-[13px] font-semibold">Rental, annuity, or other recurring income</div>
-      <p className="mt-1 text-[11px] leading-snug text-foreground/55">
+      <p className="mt-1 text-[11px] leading-snug text-foreground/65">
         Money that arrives on its own each year. <strong>Part-time work goes on the &ldquo;Still working?&rdquo;
         step</strong> — Social Security treats a paycheck differently.
       </p>
@@ -273,7 +273,7 @@ function StreamsEditor({
                   </button>
                 )}
               </div>
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-foreground/55">
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-foreground/65">
                 {readOnly ? (
                   <span>
                     {s.colaAdjusted ? "grows with inflation" : "flat amount"} · {s.endYear ? `through ${s.endYear}` : "for life"}
@@ -282,7 +282,7 @@ function StreamsEditor({
                   <>
                     <button
                       onClick={() => patch(s.id, { colaAdjusted: !s.colaAdjusted || undefined })}
-                      className={`press rounded-lg border px-2 py-1 ${s.colaAdjusted ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/60"}`}
+                      className={`press rounded-lg border px-2 py-1 ${s.colaAdjusted ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/65"}`}
                     >
                       {s.colaAdjusted ? "✓ grows with inflation" : "flat (no inflation raises)"}
                     </button>
@@ -316,13 +316,13 @@ function StreamsEditor({
                 <button
                   key={k}
                   onClick={() => setDraft({ ...draft, kind: k })}
-                  className={`press rounded-xl border px-2 py-1.5 text-[12px] ${draft.kind === k ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/60"}`}
+                  className={`press rounded-xl border px-2 py-1.5 text-[12px] ${draft.kind === k ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/65"}`}
                 >
                   {STREAM_KIND_META[k].icon} {STREAM_KIND_META[k].label}
                 </button>
               ))}
             </div>
-            <p className="mt-1.5 text-[11px] leading-snug text-foreground/50">{STREAM_KIND_META[draft.kind].hint}</p>
+            <p className="mt-1.5 text-[11px] leading-snug text-foreground/65">{STREAM_KIND_META[draft.kind].hint}</p>
             <div className="mt-2">
               <IncomeField
                 label="Amount per year (before tax)"
@@ -338,17 +338,17 @@ function StreamsEditor({
                   setAdding(false);
                 }}
                 disabled={draft.annual <= 0}
-                className={`press rounded-xl px-3 py-1.5 text-[12px] font-semibold ${draft.annual > 0 ? "bg-primary text-background" : "bg-foreground/10 text-foreground/40"}`}
+                className={`press rounded-xl px-3 py-1.5 text-[12px] font-semibold ${draft.annual > 0 ? "bg-primary text-background" : "bg-foreground/10 text-foreground/65"}`}
               >
                 Add it
               </button>
-              <button onClick={() => setAdding(false)} className="press rounded-xl border border-border px-3 py-1.5 text-[12px] text-foreground/60">
+              <button onClick={() => setAdding(false)} className="press rounded-xl border border-border px-3 py-1.5 text-[12px] text-foreground/65">
                 Cancel
               </button>
             </div>
           </div>
         ) : (
-          <button onClick={() => setAdding(true)} className="press mt-2 w-full rounded-xl border border-dashed border-border py-2 text-[12px] font-medium text-foreground/60">
+          <button onClick={() => setAdding(true)} className="press mt-2 w-full rounded-xl border border-dashed border-border py-2 text-[12px] font-medium text-foreground/65">
             ＋ Add rental, annuity, or other income
           </button>
         ))}
@@ -375,10 +375,10 @@ function BirthRow({ who, household, updateHousehold, year }: { who: "self" | "sp
     <div className="flex items-center justify-between gap-3 rounded-2xl border border-border p-3">
       <div className="min-w-0">
         <div className="text-[14px] font-semibold">{p.label || (who === "self" ? "You" : "Spouse")}</div>
-        <div className="mt-0.5 text-[11px] text-foreground/55">Born {p.birthYear} · age {year - p.birthYear} this year</div>
+        <div className="mt-0.5 text-[11px] text-foreground/65">Born {p.birthYear} · age {year - p.birthYear} this year</div>
       </div>
       <label className="flex shrink-0 items-center gap-2">
-        <span className="text-[11px] text-foreground/50">Birth year</span>
+        <span className="text-[11px] text-foreground/65">Birth year</span>
         <YearField
           value={p.birthYear}
           ariaLabel={`${p.label || who} birth year`}
@@ -421,7 +421,7 @@ function WorkCard({ who, household, updateHousehold, year }: { who: "self" | "sp
                   ? setWork(undefined)
                   : !working && setWork({ annualWages: 0, lastWorkYear: stopDefault, lastWorkMonth: 12 })
               }
-              className={`press rounded-xl border px-3 py-1.5 text-[12px] ${o.on ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/60"}`}
+              className={`press rounded-xl border px-3 py-1.5 text-[12px] ${o.on ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/65"}`}
             >
               {o.label}
             </button>
@@ -437,7 +437,7 @@ function WorkCard({ who, household, updateHousehold, year }: { who: "self" | "sp
             onCommit={(v) => setWork({ ...w, annualWages: v })}
           />
           <div>
-            <div className="mb-1 text-[12px] font-medium text-foreground/60">Working until</div>
+            <div className="mb-1 text-[12px] font-medium text-foreground/65">Working until</div>
             <div className="grid grid-cols-2 gap-2">
               <select
                 aria-label={`${p.label || who} last month of work`}
@@ -464,7 +464,7 @@ function WorkCard({ who, household, updateHousehold, year }: { who: "self" | "sp
                 ))}
               </select>
             </div>
-            <p className="mt-1 text-[11px] leading-snug text-foreground/50">
+            <p className="mt-1 text-[11px] leading-snug text-foreground/65">
               Already retired this year? Pick the month you stopped — the plan counts the pay you{" "}
               <strong>already earned</strong> in {year} (it&apos;s on this year&apos;s tax return either way).
             </p>
@@ -477,7 +477,7 @@ function WorkCard({ who, household, updateHousehold, year }: { who: "self" | "sp
               <button
                 key={o.label}
                 onClick={() => setWork({ ...w, selfEmployed: o.se || undefined })}
-                className={`press rounded-xl border px-3 py-1.5 text-[12px] ${!!w.selfEmployed === o.se ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/60"}`}
+                className={`press rounded-xl border px-3 py-1.5 text-[12px] ${!!w.selfEmployed === o.se ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/65"}`}
               >
                 {o.label}
               </button>
@@ -521,13 +521,13 @@ function ClaimPicker({ who, household, updateHousehold }: { who: "self" | "spous
       <div className="flex items-center justify-between gap-2">
         <div>
           <div className="text-[14px] font-semibold">{p.label || (who === "self" ? "You" : "Spouse")}</div>
-          <div className="text-[11px] text-foreground/50">Full retirement age {fra}</div>
+          <div className="text-[11px] text-foreground/65">Full retirement age {fra}</div>
         </div>
         {/* The user's OWN benefit — we can't know it, so let them enter it. This
             is the full (FRA) monthly amount from their SSA statement; the buttons
             below adjust it for the claim age. */}
         <label className="field-focus flex items-center gap-1 rounded-xl border border-border bg-background/50 px-2.5 py-1.5 focus-within:border-primary">
-          <span className="text-foreground/50">$</span>
+          <span className="text-foreground/65">$</span>
           <input
             inputMode="numeric"
             aria-label={`${p.label || who} full monthly Social Security benefit at age ${fra}`}
@@ -539,10 +539,10 @@ function ClaimPicker({ who, household, updateHousehold }: { who: "self" | "spous
             }}
             className="tabular w-16 bg-transparent text-right text-[14px] font-semibold outline-none"
           />
-          <span className="text-[11px] text-foreground/45">/mo</span>
+          <span className="text-[11px] text-foreground/65">/mo</span>
         </label>
       </div>
-      <p className="mt-1 text-[10px] leading-snug text-foreground/45">
+      <p className="mt-1 text-[10px] leading-snug text-foreground/65">
         Your <strong>full benefit at {fra}</strong> (from your SSA statement). The buttons below adjust it for when you claim.
       </p>
       {p.socialSecurityAnnual / 12 > 5_500 && (
@@ -563,7 +563,7 @@ function ClaimPicker({ who, household, updateHousehold }: { who: "self" | "spous
               <div className={`text-[13px] font-bold ${on ? "text-primary" : ""}`}>
                 {a}{a === fra ? " ★" : ""}
               </div>
-              <div className="text-[10px] text-foreground/55">{moneyCompact(adjustedAnnualBenefit(p.socialSecurityAnnual, p.birthYear, a))}/yr</div>
+              <div className="text-[10px] text-foreground/65">{moneyCompact(adjustedAnnualBenefit(p.socialSecurityAnnual, p.birthYear, a))}/yr</div>
             </button>
           );
         })}
@@ -1156,21 +1156,21 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     render: () => (
       <div>
         <h2 className="text-xl font-bold leading-snug">How do you want to start?</h2>
-        <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+        <p className="mt-1 text-[13px] leading-relaxed text-foreground/65">
           Pick one — the whole walkthrough runs on that choice. You can start over anytime to switch.
         </p>
         <div className="mt-4 rounded-2xl border border-border bg-background/40 p-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/45">Here&apos;s what we&apos;ll cover</div>
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/65">Here&apos;s what we&apos;ll cover</div>
           <ol className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
             {CHAPTERS.map((c, i) => (
               <li key={c.id} className="flex items-center gap-2 text-[12px] text-foreground/70">
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border text-[10px] font-bold text-foreground/45">{i + 1}</span>
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border text-[10px] font-bold text-foreground/65">{i + 1}</span>
                 <span aria-hidden>{c.icon}</span>
                 <span className="truncate">{c.label}</span>
               </li>
             ))}
           </ol>
-          <p className="mt-2 text-[11px] leading-snug text-foreground/50">
+          <p className="mt-2 text-[11px] leading-snug text-foreground/65">
             About 15 minutes — you can stop and pick up where you left off any time. Your answers save automatically.
           </p>
         </div>
@@ -1182,7 +1182,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             <span className="text-2xl leading-none">✏️</span>
             <span className="min-w-0">
               <span className="block font-semibold">Use my own numbers</span>
-              <span className="mt-0.5 block text-[12px] leading-snug text-foreground/55">
+              <span className="mt-0.5 block text-[12px] leading-snug text-foreground/65">
                 Enter your accounts and get a plan built around what you actually have. Your numbers stay on your device.
               </span>
             </span>
@@ -1195,7 +1195,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             <span className="text-2xl leading-none">📊</span>
             <span className="min-w-0">
               <span className="block font-semibold">Explore the $5M example</span>
-              <span className="mt-0.5 block text-[12px] leading-snug text-foreground/55">
+              <span className="mt-0.5 block text-[12px] leading-snug text-foreground/65">
                 See exactly how it all works on a realistic sample household first — nothing here is your real money.
               </span>
             </span>
@@ -1222,10 +1222,10 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           return (
             <div>
               <h2 className="text-xl font-bold leading-snug">{b.q}</h2>
-              <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">{b.help}</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-foreground/65">{b.help}</p>
               {itemized ? (
                 <div className="mt-4 rounded-2xl border border-border bg-background/50 p-4">
-                  <div className="text-[12px] text-foreground/55">Itemized into {acct!.holdings!.length} holdings</div>
+                  <div className="text-[12px] text-foreground/65">Itemized into {acct!.holdings!.length} holdings</div>
                   <div className="tabular mt-1 text-2xl font-bold text-primary">{money(acct!.balance)}</div>
                   <Link
                     href="/accounts"
@@ -1257,7 +1257,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   {b.gains && acct && acct.balance > 0 && (
                     <div className="mt-3 rounded-xl border border-border bg-background/40 p-3">
                       <div className="text-[12px] font-medium text-foreground/70">Roughly how much of that is profit (gains)?</div>
-                      <p className="mt-0.5 text-[13px] leading-snug text-foreground/55">
+                      <p className="mt-0.5 text-[13px] leading-snug text-foreground/65">
                         Only the gain is taxed when you sell, so this sharpens the tax math. Not sure? Leave it — we’ll
                         assume no gain for now, and you can refine it on the Accounts page.
                       </p>
@@ -1270,7 +1270,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                       </div>
                     </div>
                   )}
-                  <p className="mt-3 text-[12px] text-foreground/50">Don’t have this kind of account? Leave it at $0.</p>
+                  <p className="mt-3 text-[12px] text-foreground/65">Don’t have this kind of account? Leave it at $0.</p>
                 </div>
               )}
             </div>
@@ -1288,7 +1288,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         return (
           <div>
             <h2 className="text-xl font-bold leading-snug">Add your savings to continue</h2>
-            <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+            <p className="mt-1 text-[13px] leading-relaxed text-foreground/65">
               Go back a step and enter at least one balance — pre-tax, Roth, brokerage, or cash — and the whole plan
               builds around it. Want to list specific funds (tickers, cost basis, dividends)? You can itemize any
               account on the Accounts page.
@@ -1319,7 +1319,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </div>
           )}
           <h2 className="text-xl font-bold leading-snug">{mode === "demo" ? "The example portfolio" : "Here’s what you have"}</h2>
-          <p className="mt-1 text-[13px] text-foreground/60">
+          <p className="mt-1 text-[13px] text-foreground/65">
             {mode === "demo"
               ? "Here's exactly what we'll assess — every account, by tax treatment."
               : "Everything below is built from these accounts. Looks right?"}
@@ -1328,7 +1328,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             <div className="tabular text-4xl font-bold text-primary">
               <AnimatedNumber value={total} format={(n) => money(n)} />
             </div>
-            <div className="text-[12px] text-foreground/50">total across {household.accounts.length} accounts</div>
+            <div className="text-[12px] text-foreground/65">total across {household.accounts.length} accounts</div>
           </div>
           <AccountOverview household={household} total={total} />
           {mode === "own" && (
@@ -1360,7 +1360,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         return (
           <div>
             <h2 className="text-xl font-bold leading-snug">A little about you</h2>
-            <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+            <p className="mt-1 text-[13px] leading-relaxed text-foreground/65">
               The year you were born sets your ages, when RMDs begin, and how Social Security grows. Tell us when you plan
               to start retirement, too — you can change any of this anytime.
             </p>
@@ -1381,7 +1381,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 <span className="text-2xl leading-none">🧍</span>
                 <span className="min-w-0 flex-1">
                   <span className={`font-semibold ${!aboutHasSpouse ? "text-primary" : ""}`}>Just me</span>
-                  <span className="mt-0.5 block text-[12px] leading-snug text-foreground/60">
+                  <span className="mt-0.5 block text-[12px] leading-snug text-foreground/65">
                     The plan is built around your numbers alone.
                   </span>
                 </span>
@@ -1398,7 +1398,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 <span className="text-2xl leading-none">👥</span>
                 <span className="min-w-0 flex-1">
                   <span className={`font-semibold ${aboutHasSpouse ? "text-primary" : ""}`}>Me + my spouse or partner</span>
-                  <span className="mt-0.5 block text-[12px] leading-snug text-foreground/60">
+                  <span className="mt-0.5 block text-[12px] leading-snug text-foreground/65">
                     We&apos;ll plan for both of you, including survivor income.
                   </span>
                 </span>
@@ -1411,7 +1411,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-[14px] font-semibold">Year you plan to start retirement</div>
-                  <div className="mt-0.5 text-[11px] text-foreground/55">
+                  <div className="mt-0.5 text-[11px] text-foreground/65">
                     {yearsAway <= 0 ? "This is now or in the past" : `${yearsAway} ${yearsAway === 1 ? "year" : "years"} from now`} ·
                     you&apos;d be {selfAgeAtRet} that year
                   </div>
@@ -1441,7 +1441,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     </button>
                   ))}
               </div>
-              <p className="mt-2 text-[13px] leading-snug text-foreground/45">
+              <p className="mt-2 text-[13px] leading-snug text-foreground/65">
                 If you&apos;re still working, your pay runs through this year in the plan — set the amount and exact
                 stop month on the <strong>Income</strong> steps. The year-by-year projection starts now; working years
                 are simply years with a paycheck.
@@ -1468,7 +1468,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         return (
           <div>
             <h2 className="text-xl font-bold leading-snug">How long should your plan cover?</h2>
-            <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+            <p className="mt-1 text-[13px] leading-relaxed text-foreground/65">
               We run every number out to this age. Planning to a longer age is the safe choice — you won&apos;t outlive the
               plan. Most advisors use about 95.
             </p>
@@ -1484,7 +1484,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 Lives here so every input has a home in the questionnaire. */}
             <div className="mt-4 rounded-2xl border border-border p-3">
               <div className="text-[13px] font-semibold">Optional: for life-expectancy context</div>
-              <p className="mt-0.5 text-[11px] leading-snug text-foreground/50">
+              <p className="mt-0.5 text-[11px] leading-snug text-foreground/65">
                 Used only to show realistic longevity odds alongside the forecast — it doesn&apos;t change the plan math.
               </p>
               {(["self", ...(hasSpouse ? (["spouse"] as const) : [])] as const).map((who) => {
@@ -1497,7 +1497,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                         <button
                           key={s}
                           onClick={() => updateSettings(who === "self" ? { selfSex: s } : { spouseSex: s })}
-                          className={`press rounded-lg border px-2.5 py-1 text-[11px] ${cur === s ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/60"}`}
+                          className={`press rounded-lg border px-2.5 py-1 text-[11px] ${cur === s ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/65"}`}
                         >
                           {s === "blended" ? "Skip" : s === "female" ? "Female" : "Male"}
                         </button>
@@ -1512,21 +1512,21 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="text-[14px] font-semibold">Model the surviving spouse</div>
-                    <div className="mt-0.5 text-[12px] leading-snug text-foreground/55">
+                    <div className="mt-0.5 text-[12px] leading-snug text-foreground/65">
                       When one of you passes, the survivor files taxes as single (narrower brackets) and keeps the larger
                       Social Security — the &ldquo;widow&apos;s penalty.&rdquo; On by default so the plan is realistic.
                     </div>
                   </div>
                   <button
                     onClick={() => updateSettings({ survivorModel: !settings.survivorModel })}
-                    className={`press shrink-0 rounded-full border px-3 py-1.5 text-[12px] font-semibold ${settings.survivorModel ? "border-primary bg-primary text-white" : "border-border text-foreground/60"}`}
+                    className={`press shrink-0 rounded-full border px-3 py-1.5 text-[12px] font-semibold ${settings.survivorModel ? "border-primary bg-primary text-white" : "border-border text-foreground/65"}`}
                   >
                     {settings.survivorModel ? "On" : "Off"}
                   </button>
                 </div>
                 {settings.survivorModel && (
                   <div className="mt-3">
-                    <div className="mb-1 text-[12px] text-foreground/60">First passing around age</div>
+                    <div className="mb-1 text-[12px] text-foreground/65">First passing around age</div>
                     <div className="grid grid-cols-5 gap-2 text-[13px]">
                       {[80, 85, 88, 90, 92].map((a) => (
                         <button key={a} onClick={() => updateSettings({ firstDeathAge: a })} className={btn(settings.firstDeathAge === a)}>
@@ -1558,7 +1558,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         render: () => (
           <div>
             <h2 className="text-xl font-bold leading-snug">Is anyone still bringing in a paycheck?</h2>
-            <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+            <p className="mt-1 text-[13px] leading-relaxed text-foreground/65">
               Count this year&apos;s working months even if you just retired, a spouse who&apos;s still working, and any
               part-time or consulting income. A paycheck changes the plan: it covers spending first, it&apos;s taxed
               differently than retirement income — and it interacts with claiming Social Security early (next step).
@@ -1597,7 +1597,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               <h2 className="text-xl font-bold leading-snug">
                 {hasSS ? "When should you claim Social Security?" : "Your Social Security"}
               </h2>
-              <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+              <p className="mt-1 text-[13px] leading-relaxed text-foreground/65">
                 {hasSS ? (
                   <>
                     This is often the single highest-value lever. Claiming later means a bigger, inflation-protected
@@ -1650,7 +1650,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       render: () => (
         <div>
           <h2 className="text-xl font-bold leading-snug">Any other income coming in?</h2>
-          <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+          <p className="mt-1 text-[13px] leading-relaxed text-foreground/65">
             Money that shows up every year without selling anything — a pension, and whatever your taxable investments
             pay out. It covers spending first, so you draw less from savings; it also shapes your tax picture.
           </p>
@@ -1681,7 +1681,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 <div className="text-[13px] font-semibold">Dividends &amp; interest from your taxable accounts</div>
                 {divModel.hasData ? (
                   <>
-                    <p className="mt-1 text-[11px] leading-snug text-foreground/55">
+                    <p className="mt-1 text-[11px] leading-snug text-foreground/65">
                       Computed from your holdings — shares × dividend per share. Edit the holdings on the{" "}
                       <Link href="/accounts" className="font-medium text-primary underline">
                         Accounts page
@@ -1695,7 +1695,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   </>
                 ) : (
                   <>
-                    <p className="mt-1 text-[11px] leading-snug text-foreground/55">
+                    <p className="mt-1 text-[11px] leading-snug text-foreground/65">
                       Rough numbers are fine — last year&apos;s 1099 forms have the exact ones. Skip anything that
                       doesn&apos;t apply.
                     </p>
@@ -1766,7 +1766,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </Collapsible>
           </div>
           <DesktopOnly>
-            <div className="mt-4 rounded-2xl border border-border bg-background/50 p-3 text-[12px] leading-relaxed text-foreground/60">
+            <div className="mt-4 rounded-2xl border border-border bg-background/50 p-3 text-[12px] leading-relaxed text-foreground/65">
               <div className="mb-1 font-semibold text-foreground/75">Why the plan asks for each type separately</div>
               Each type is taxed differently, and the difference compounds over a long retirement:{" "}
               <strong>qualified dividends</strong> get the preferential 0/15/20% capital-gains rates;{" "}
@@ -1795,7 +1795,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         return (
           <div>
             <h2 className="text-xl font-bold leading-snug">What happens to your dividends &amp; interest?</h2>
-            <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+            <p className="mt-1 text-[13px] leading-relaxed text-foreground/65">
               Your taxable investments pay out about <strong>{money(Math.round(taxableInvestmentIncome))}/yr</strong> in
               dividends and interest. Most people leave it invested so it keeps compounding — or you can take it as cash
               to help fund your spending. Either way, it&apos;s taxed each year.
@@ -1808,7 +1808,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     <span className={`font-semibold ${!spend ? "text-primary" : ""}`}>Reinvest it</span>
                     <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-accent">Most common</span>
                   </span>
-                  <span className="mt-0.5 block text-[12px] leading-snug text-foreground/60">
+                  <span className="mt-0.5 block text-[12px] leading-snug text-foreground/65">
                     It stays invested and keeps growing. You withdraw from your accounts to cover spending (we still set
                     aside the tax it owes).
                   </span>
@@ -1819,7 +1819,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 <span className="text-2xl leading-none">💵</span>
                 <span className="min-w-0 flex-1">
                   <span className={`font-semibold ${spend ? "text-primary" : ""}`}>Take it as cash to spend</span>
-                  <span className="mt-0.5 block text-[12px] leading-snug text-foreground/60">
+                  <span className="mt-0.5 block text-[12px] leading-snug text-foreground/65">
                     You live partly off the payout, so you withdraw a bit less from your accounts. (Often a touch more
                     tax-efficient — the plan updates so you can compare.)
                   </span>
@@ -1839,7 +1839,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
     render: () => (
       <div>
         <h2 className="text-xl font-bold leading-snug">What&apos;s your #1 goal for this money?</h2>
-        <p className="mt-1 text-[13px] text-foreground/60">We&apos;ll build the whole plan around this — you can change it anytime.</p>
+        <p className="mt-1 text-[13px] text-foreground/65">We&apos;ll build the whole plan around this — you can change it anytime.</p>
         <div className="mt-4 grid gap-2">
           {GOALS.map((g) => {
             const active = settings.goal === g;
@@ -1859,8 +1859,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                       <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-accent">Most common</span>
                     )}
                   </span>
-                  <span className="mt-0.5 block text-[12px] leading-snug text-foreground/60">{GOAL_META[g].blurb}</span>
-                  <span className={`mt-1 block text-[12px] font-medium leading-snug ${active ? "text-foreground/70" : "text-foreground/45"}`}>
+                  <span className="mt-0.5 block text-[12px] leading-snug text-foreground/65">{GOAL_META[g].blurb}</span>
+                  <span className={`mt-1 block text-[12px] font-medium leading-snug ${active ? "text-foreground/70" : "text-foreground/65"}`}>
                     → {planGist(recAll[g])}
                   </span>
                 </span>
@@ -1904,7 +1904,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               </button>
             ))}
           </div>
-          <p className="mt-1.5 text-[11px] text-foreground/55">{STRATEGY_META[settings.strategy].blurb}</p>
+          <p className="mt-1.5 text-[11px] text-foreground/65">{STRATEGY_META[settings.strategy].blurb}</p>
           {settings.strategy === "smart" && (
             <div className="mt-2">
               <div className="text-[12px] font-semibold text-foreground/70">Fill pre-tax up to this bracket</div>
@@ -1914,14 +1914,14 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     key={b}
                     onClick={() => updateSettings({ bracketTarget: b, planCustomized: true })}
                     className={`press rounded-lg border py-1.5 text-center text-[12px] font-bold ${
-                      settings.bracketTarget === b ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/60"
+                      settings.bracketTarget === b ? "border-primary bg-primary/10 text-primary" : "border-border text-foreground/65"
                     }`}
                   >
                     {Math.round(b * 100)}%
                   </button>
                 ))}
               </div>
-              <p className="mt-1 text-[11px] text-foreground/50">
+              <p className="mt-1 text-[11px] text-foreground/65">
                 The highest rate you&apos;ll accept to voluntarily pull extra pre-tax dollars now — not your overall
                 tax rate.
               </p>
@@ -1957,7 +1957,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           : finalists.map((f) => ({ f, s: null as MostMoneyStat | null }));
         return (
           <div>
-            <p className="text-[13px] leading-relaxed text-foreground/60">
+            <p className="text-[13px] leading-relaxed text-foreground/65">
               &ldquo;Most money&rdquo; depends on the markets you get. So we run your top {finalists.length} plans through the{" "}
               <strong>same</strong>{" "}hundreds of simulated markets and rank them. The winner is already your plan.
             </p>
@@ -1974,7 +1974,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   </button>
                 ))}
               </div>
-              <p className="mt-1.5 text-[11px] leading-snug text-foreground/45">
+              <p className="mt-1.5 text-[11px] leading-snug text-foreground/65">
                 {metric === "winRate"
                   ? "Ends up with the most in the largest share of markets (it can lose some — it wins most)."
                   : metric === "median"
@@ -1984,7 +1984,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </div>
 
             {!mmFresh ? (
-              <div className="mt-4 rounded-2xl border border-border p-5 text-center text-[13px] text-foreground/55">
+              <div className="mt-4 rounded-2xl border border-border p-5 text-center text-[13px] text-foreground/65">
                 <span className="inline-block animate-pulse">↻ Running your plans through the markets…</span>
               </div>
             ) : (
@@ -2028,7 +2028,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     );
                   })}
                 </div>
-                <p className="mt-2 text-center text-[11px] text-foreground/45">Tap any plan to make it your active plan.</p>
+                <p className="mt-2 text-center text-[11px] text-foreground/65">Tap any plan to make it your active plan.</p>
               </>
             )}
             <p className="mt-3 rounded-xl bg-gain/[0.06] px-3 py-2 text-[12px] leading-relaxed text-foreground/70">
@@ -2176,7 +2176,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             <div className="tabular text-xl font-semibold text-primary/85">
               ≈ {money(Math.round(localSpend / 12))} a month
             </div>
-            {plan.filingStatus === "mfj" && <div className="text-[13px] text-foreground/60">total for both of you</div>}
+            {plan.filingStatus === "mfj" && <div className="text-[13px] text-foreground/65">total for both of you</div>}
           </div>
 
           {/* Under-spending callout — live with the slider. Only claims growth when the
@@ -2247,7 +2247,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   ),
                 )}
               </div>
-              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-foreground/45">
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-foreground/65">
                 <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-gain" /> cushion even in a weak market</span>
                 {markers.some((m) => m.key === "safe") && (
                   <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-primary" /> safe (8½ of 10 market futures or better)</span>
@@ -2271,7 +2271,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             return (
               <div className="mt-4 rounded-2xl border border-border p-3">
                 <div className="text-[12px] font-semibold">Each year after this…</div>
-                <p className="mt-0.5 text-[12px] leading-relaxed text-foreground/60">
+                <p className="mt-0.5 text-[12px] leading-relaxed text-foreground/65">
                   Prices rise over time, so by default we grow your spending with inflation (about{" "}
                   {percent(settings.inflationRate, 1)}/yr) to keep your lifestyle the same — {money(localSpend)} today
                   would be about <strong>{money(Math.round(grownAtEnd))}</strong>/yr at age {settings.endAge}. The
@@ -2283,21 +2283,21 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     className={`press rounded-xl border p-2 text-left ${settings.spendingStrategy === "constant" ? "border-primary bg-primary/10" : "border-border"}`}
                   >
                     <div className="text-[12px] font-semibold">Grow with inflation</div>
-                    <div className="text-[10px] text-foreground/55">keeps your lifestyle · recommended</div>
+                    <div className="text-[10px] text-foreground/65">keeps your lifestyle · recommended</div>
                   </button>
                   <button
                     onClick={() => updateSettings({ spendingStrategy: "flatNominal" })}
                     className={`press rounded-xl border p-2 text-left ${settings.spendingStrategy === "flatNominal" ? "border-primary bg-primary/10" : "border-border"}`}
                   >
                     <div className="text-[12px] font-semibold">Keep it flat</div>
-                    <div className="text-[10px] text-foreground/55">same dollars · buys less each year</div>
+                    <div className="text-[10px] text-foreground/65">same dollars · buys less each year</div>
                   </button>
                   <button
                     onClick={() => updateSettings({ spendingStrategy: "guardrails" })}
                     className={`press rounded-xl border p-2 text-left ${settings.spendingStrategy === "guardrails" ? "border-primary bg-primary/10" : "border-border"}`}
                   >
                     <div className="text-[12px] font-semibold">Guardrails</div>
-                    <div className="text-[10px] text-foreground/55">trim in bad years, raise in good · most resilient</div>
+                    <div className="text-[10px] text-foreground/65">trim in bad years, raise in good · most resilient</div>
                   </button>
                 </div>
               </div>
@@ -2308,7 +2308,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               The recommended ~4% safe-pace amount leads, styled as the default. */}
           {(recSpend != null || chips.length > 0) && (
             <div className="mt-3">
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-foreground/45">Quick amounts</div>
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-foreground/65">Quick amounts</div>
               <div className="flex flex-wrap gap-2">
                 {recSpend != null && (() => {
                   const active = Math.abs(localSpend - recSpend) < 2_500;
@@ -2335,7 +2335,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 })}
               </div>
               {recSpend != null && (
-                <p className="mt-1 text-[10px] leading-snug text-foreground/45">
+                <p className="mt-1 text-[10px] leading-snug text-foreground/65">
                   Suggested = the most you can spend and still be comfortable, even in a below-average market.
                 </p>
               )}
@@ -2346,24 +2346,24 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               both reading off the chosen spending so they move with the slider. */}
           <div className="mt-3 grid grid-cols-2 gap-2">
             <div className="rounded-xl border border-border bg-card/60 p-2.5">
-              <div className="text-[10px] uppercase tracking-wide text-foreground/50">Tax this year</div>
+              <div className="text-[10px] uppercase tracking-wide text-foreground/65">Tax this year</div>
               <div className="tabular text-lg font-bold text-foreground/85">{moneyCompact(liveImpact.totalTax)}</div>
-              <div className="text-[10px] leading-snug text-foreground/45">
+              <div className="text-[10px] leading-snug text-foreground/65">
                 federal + state · from your spending
                 {liveImpact.marginalRate > 0.12 ? ` · top bracket ${percent(liveImpact.marginalRate, 0)}` : ""}
               </div>
             </div>
             <div className={`rounded-xl border p-2.5 ${irmaaCliff?.inSurcharge ? "border-tax/30 bg-tax/[0.05]" : "border-border bg-card/60"}`}>
-              <div className="text-[10px] uppercase tracking-wide text-foreground/50">Medicare (IRMAA)</div>
+              <div className="text-[10px] uppercase tracking-wide text-foreground/65">Medicare (IRMAA)</div>
               {irmaaEnrollees === 0 ? (
                 <>
                   <div className="text-[13px] font-bold text-foreground/70">Not yet</div>
-                  <div className="text-[10px] leading-snug text-foreground/45">starts at 65</div>
+                  <div className="text-[10px] leading-snug text-foreground/65">starts at 65</div>
                 </>
               ) : medicareEnrollees === 0 && !irmaaCliff?.inSurcharge ? (
                 <>
                   <div className="text-[13px] font-bold text-gain">No surcharge</div>
-                  <div className="text-[10px] leading-snug text-foreground/45">
+                  <div className="text-[10px] leading-snug text-foreground/65">
                     counts already — this income sets your first premium at 65
                     {irmaaCliff && Number.isFinite(irmaaCliff.distance) ? ` · ${moneyCompact(irmaaCliff.distance)} of room` : ""}
                   </div>
@@ -2371,19 +2371,19 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               ) : irmaaCliff?.inSurcharge ? (
                 <>
                   <div className="tabular text-lg font-bold text-tax">+{moneyCompact(irmaaCliff.curSurcharge)}/yr</div>
-                  <div className="text-[10px] leading-snug text-foreground/45">
+                  <div className="text-[10px] leading-snug text-foreground/65">
                     {shortTier(irmaaCliff.curLabel)} · {money(Math.round(irmaaCliff.curPerPersonMo))}/mo per person
                     {irmaaCliff.enrollees > 1 ? ` × ${irmaaCliff.enrollees}` : ""}
                     {medicareEnrollees === 0 ? " · your first premium, at 65" : ""}
                   </div>
-                  <div className="mt-0.5 text-[10px] leading-snug text-foreground/40">
+                  <div className="mt-0.5 text-[10px] leading-snug text-foreground/65">
                     = {money(Math.round(irmaaCliff.curPartB))} Part B + {money(Math.round(irmaaCliff.curPartD))} Part D
                   </div>
                 </>
               ) : (
                 <>
                   <div className="text-[13px] font-bold text-gain">No surcharge</div>
-                  <div className="text-[10px] leading-snug text-foreground/45">
+                  <div className="text-[10px] leading-snug text-foreground/65">
                     {irmaaCliff && Number.isFinite(irmaaCliff.distance) ? `${moneyCompact(irmaaCliff.distance)} of room` : "well clear"}
                   </div>
                 </>
@@ -2391,7 +2391,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             </div>
           </div>
           {pretaxShare > 0.2 && (
-            <p className="mt-1.5 text-[13px] leading-snug text-foreground/45">
+            <p className="mt-1.5 text-[13px] leading-snug text-foreground/65">
               This is from your <strong>spending alone</strong>. Your Roth conversion is the <strong>next step</strong> — it adds
               taxable income on top of this, which is what can push your Medicare (IRMAA) tier up.
             </p>
@@ -2495,7 +2495,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 <>
                   🔴 <strong>Too high.</strong> At this level your savings would run short around{" "}
                   <strong>age {Number.isFinite(cur.depletionAge) ? cur.depletionAge : settings.endAge}</strong>{" "}
-                  <em className="text-foreground/60">
+                  <em className="text-foreground/65">
                     on a deliberately cautious (below-average) market path — the odds check at the end of the
                     walkthrough weighs thousands of paths, good and bad, so its percentage can look friendlier than
                     this conservative read. Both are true; this is the safety margin.
@@ -2545,7 +2545,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             const haveFan = band && band.length > 1 && cw;
             return (
               <div className="mt-3 rounded-2xl border border-border p-3">
-                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-foreground/45">
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-foreground/65">
                   What your savings could be worth — range across {(confidence?.runs ?? 300).toLocaleString()} markets
                 </div>
                 {haveFan && fanFresh ? (
@@ -2556,7 +2556,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                       <strong>{moneyCompact(cw!.p10)}</strong> and <strong>{moneyCompact(cw!.p90)}</strong> — typically around{" "}
                       <strong>{moneyCompact(cw!.p50)}</strong>. The shaded band is the middle range of outcomes; the line is the median.
                     </p>
-                    <p className="mt-1 text-[10px] text-foreground/45">
+                    <p className="mt-1 text-[10px] text-foreground/65">
                       Spans good and bad market sequences, not a single average path.
                     </p>
                     <Info q="How is this range figured?" sources={[SOURCES.monteCarlo, SOURCES.cma]}>
@@ -2572,7 +2572,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     </Info>
                   </>
                 ) : (
-                  <div className="flex items-center gap-2 py-6 text-[12px] text-foreground/55">
+                  <div className="flex items-center gap-2 py-6 text-[12px] text-foreground/65">
                     <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary/25 border-t-primary" />
                     Updating the range for {money(localSpend)}/yr across hundreds of market simulations…
                   </div>
@@ -2631,7 +2631,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   </p>
                 );
               })()}
-              <p className="mt-1 text-[13px] text-foreground/55">
+              <p className="mt-1 text-[13px] text-foreground/65">
                 IRMAA is based on your income from two years prior, so today&apos;s choices set your premiums then.
               </p>
             </div>
@@ -2663,13 +2663,13 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       return (
         <div>
           <h2 className="text-xl font-bold leading-snug">What should we assume about markets?</h2>
-          <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+          <p className="mt-1 text-[13px] leading-relaxed text-foreground/65">
             These set the middle of every projection. The numbers below are figured from <strong>your actual mix</strong> —{" "}
             {describeMix(rmLive)}. {mixReason}
             {rmLive.basis !== "holdings" && " (Accounts without itemized holdings are assumed to hold a 70/25/5 stock/bond/cash mix.)"}
           </p>
           <div className="mt-4">
-            <div className="mb-1 text-[12px] font-medium text-foreground/60">Average yearly return, after fees (before inflation)</div>
+            <div className="mb-1 text-[12px] font-medium text-foreground/65">Average yearly return, after fees (before inflation)</div>
             <div className="grid grid-cols-2 gap-2">
               {opts.map((o) => (
                 <button
@@ -2688,19 +2688,19 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 <div className="mt-0.5 text-[10px]">Custom — your saved assumption; tap a card to switch</div>
               </button>
             )}
-            <p className="mt-1.5 min-h-[2.5em] text-[13px] leading-snug text-foreground/55">
+            <p className="mt-1.5 min-h-[2.5em] text-[13px] leading-snug text-foreground/65">
               {activeOpt
                 ? activeOpt.blurb
                 : "A number you set yourself. The cards are figured from your holdings — tap one anytime and it will keep tracking your mix."}
             </p>
-            <p className="mt-1 text-[11px] leading-snug text-foreground/45">
+            <p className="mt-1 text-[11px] leading-snug text-foreground/65">
               Whichever you pick sets the steady middle path; the forecast still stress-tests hundreds of good and bad market
               sequences around it.
             </p>
             <ReturnMethodInfo rm={rmLive} />
           </div>
           <div className="mt-4">
-            <div className="mb-1 text-[12px] font-medium text-foreground/60">Inflation</div>
+            <div className="mb-1 text-[12px] font-medium text-foreground/65">Inflation</div>
             <div className="grid grid-cols-4 gap-2 text-[13px]">
               {[0.02, 0.025, 0.03, 0.035].map((r) => (
                 <button key={r} onClick={() => updateSettings({ inflationRate: r })} className={btn(near(settings.inflationRate, r))}>
@@ -2708,7 +2708,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 </button>
               ))}
             </div>
-            <p className="mt-1.5 text-[11px] leading-snug text-foreground/55">
+            <p className="mt-1.5 text-[11px] leading-snug text-foreground/65">
               How fast prices rise each year. <strong>2.5%</strong> (★) is about the long-run average and the Fed&apos;s
               target — a sensible default.
             </p>
@@ -2741,7 +2741,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         return (
           <div>
             <h2 className="text-xl font-bold leading-snug">Confirm your Roth conversion (sometimes called a rollover)</h2>
-            <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+            <p className="mt-1 text-[13px] leading-relaxed text-foreground/65">
               Separate from your spending, your plan can move some pre-tax money into a Roth this year — taxed at a low,
               controlled rate now — to shrink the big forced withdrawals (RMDs) that would be taxed harder later. Here&apos;s
               exactly what it adds on top of the spending you just chose.
@@ -2777,7 +2777,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                       </Callout>
 
                       <div className="mt-3 rounded-2xl border border-border p-3 text-[12.5px] leading-relaxed">
-                        <div className="text-[10px] font-semibold uppercase tracking-wide text-foreground/45">
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-foreground/65">
                           The math, straight from your projection
                         </div>
                         <ul className="mt-2 space-y-1.5 text-foreground/75">
@@ -2797,7 +2797,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                             family after every tax is paid (in today&apos;s dollars).
                           </li>
                         </ul>
-                        <p className="mt-2 text-[11px] text-foreground/55">
+                        <p className="mt-2 text-[11px] text-foreground/65">
                           The plan does this for you automatically — there&apos;s nothing to act on this year.
                         </p>
                       </div>
@@ -2818,16 +2818,16 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             ) : (
               <>
                 <div className="mt-4 rounded-2xl border border-border p-3">
-                  <div className="text-[10px] uppercase tracking-wide text-foreground/45">Recommended this year</div>
+                  <div className="text-[10px] uppercase tracking-wide text-foreground/65">Recommended this year</div>
                   <div className="tabular text-2xl font-bold text-primary">{money(rollAmt)}</div>
-                  <div className="text-[12px] text-foreground/55">
+                  <div className="text-[12px] text-foreground/65">
                     moved from pre-tax → Roth. It isn&apos;t spent — it stays invested and grows tax-free, with no future RMDs.
                   </div>
                 </div>
 
                 {/* Build-up: spending → + rollover → total, with the Medicare tier at each line. */}
                 <div className="mt-3 overflow-hidden rounded-2xl border border-border text-[12px]">
-                  <div className="grid grid-cols-[1fr_6.5rem_5.5rem] gap-x-3 border-b border-border/60 px-3 py-1.5 text-[9px] uppercase tracking-wide text-foreground/40">
+                  <div className="grid grid-cols-[1fr_6.5rem_5.5rem] gap-x-3 border-b border-border/60 px-3 py-1.5 text-[9px] uppercase tracking-wide text-foreground/65">
                     <span />
                     <span className="text-right">Income (MAGI)</span>
                     <span className="text-right">Medicare</span>
@@ -2835,7 +2835,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   <div className="grid grid-cols-[1fr_6.5rem_5.5rem] items-center gap-x-3 px-3 py-2">
                     <span className="text-foreground/75">
                       From your spending
-                      <div className="text-[10px] text-foreground/45">{money(household.annualSpending)}/yr take-home</div>
+                      <div className="text-[10px] text-foreground/65">{money(household.annualSpending)}/yr take-home</div>
                     </span>
                     <span className="tabular text-right text-foreground/80">{money(Math.round(planNoConv.tax.magi))}</span>
                     <span className="tabular text-right text-foreground/70">{irmaaCell(before)}</span>
@@ -2844,7 +2844,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     <span className="font-medium text-gain">+ Roth conversion</span>
                     <span className="tabular text-right text-gain">
                       +{money(Math.round(addlMagi))}
-                      <span className="block text-[10px] font-normal text-foreground/45">≈{moneyCompact(rollTax)} income tax</span>
+                      <span className="block text-[10px] font-normal text-foreground/65">≈{moneyCompact(rollTax)} income tax</span>
                     </span>
                     <span className="tabular text-right text-foreground/70">
                       {irmaaEnrollees === 0 ? "—" : irmaaJump > 1 ? `+${moneyCompact(irmaaJump)}/yr` : "none"}
@@ -2861,7 +2861,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   const t = after?.inSurcharge ? after : before;
                   const perMo = Math.round(t?.curPerPersonMo ?? 0);
                   return (
-                    <p className="mt-1.5 px-1 text-[10px] leading-relaxed text-foreground/45">
+                    <p className="mt-1.5 px-1 text-[10px] leading-relaxed text-foreground/65">
                       The Medicare figures are the <strong>yearly total for everyone on Medicare</strong>, not per person.{" "}
                       {irmaaEnrollees > 1
                         ? `It covers both of you — about ${money(perMo)}/mo each (${money(perMo)} × 12 × 2)${medicareEnrollees === 0 ? ", starting with your first premiums at 65 (set by this year's income)" : ""}.`
@@ -2930,7 +2930,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 )}
 
                 <div className="mt-3">
-                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-foreground/45">
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-foreground/65">
                     Follow this recommendation?
                   </div>
                   <div className="flex gap-2">
@@ -2947,7 +2947,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                       Skip it this year
                     </button>
                   </div>
-                  <p className="mt-1.5 text-[11px] leading-snug text-foreground/45">
+                  <p className="mt-1.5 text-[11px] leading-snug text-foreground/65">
                     {on ? (
                       <>Applied. Everything after this — your tax, your future RMDs, and what your family keeps — reflects this conversion.</>
                     ) : (
@@ -2979,7 +2979,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                       </button>
                     ))}
                   </div>
-                  <p className="mt-1 text-[11px] leading-snug text-foreground/50">
+                  <p className="mt-1 text-[11px] leading-snug text-foreground/65">
                     How long the plan keeps moving pre-tax → Roth. Longer can shift more before RMDs start, but spreads the
                     tax over more years.
                   </p>
@@ -2997,7 +2997,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                       </button>
                     ))}
                   </div>
-                  <p className="mt-1 text-[11px] leading-snug text-foreground/50">
+                  <p className="mt-1 text-[11px] leading-snug text-foreground/65">
                     Inherited pre-tax money is taxed as the heir&apos;s income (SECURE Act 10-year rule). This sets how the
                     &ldquo;money your family keeps&rdquo; figures discount it — Roth is inherited tax-free.
                   </p>
@@ -3079,7 +3079,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       return (
         <div>
           <h2 className="text-xl font-bold leading-snug">{heading}</h2>
-          <p className="mt-1 text-[13px] text-foreground/60">
+          <p className="mt-1 text-[13px] text-foreground/65">
             Two sources fund your spending: <strong>guaranteed income</strong> (Social Security &amp; pension — arrives no
             matter what) and <strong>your savings</strong>. Here&apos;s the split for {year}, and exactly which accounts the
             savings draw comes from.
@@ -3091,7 +3091,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 { value: fromSavings, className: "bg-taxable", label: "From your savings" },
               ].filter((s) => s.value > 0.5)}
             />
-            <div className="mt-1 flex justify-between text-[11px] text-foreground/45">
+            <div className="mt-1 flex justify-between text-[11px] text-foreground/65">
               <span>{pct}% guaranteed income</span>
               <span>{100 - pct}% from your savings</span>
             </div>
@@ -3120,7 +3120,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               )}
               <Row label={divIntIncome > 0.5 ? "…Sold or withdrawn from your accounts" : "…Sold or withdrawn from your accounts"} value={money(totalDraw)} sub />
             </div>
-            <p className="mt-1 text-[10px] leading-snug text-foreground/45">
+            <p className="mt-1 text-[10px] leading-snug text-foreground/65">
               &ldquo;Your savings&rdquo; means everything you&apos;ve saved — pre-tax (IRA/401k), taxable (cash &amp;
               brokerage), and Roth combined. Dividends &amp; interest are the yield those accounts pay out (often reinvested);
               the steps below show which accounts this year&apos;s <em>sold/withdrawn</em> draw comes from.
@@ -3160,7 +3160,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           {!coveredByIncome && items.length > 0 && (
             <div className="mt-5 border-t border-border pt-4">
               <h3 className="text-base font-bold leading-snug">Where that {money(totalDraw)} comes from — in this order</h3>
-              <p className="mt-1 text-[13px] text-foreground/60">
+              <p className="mt-1 text-[13px] text-foreground/65">
                 Take what&apos;s required first, then the source your numbers show keeps the most money after every tax —
                 saving tax-free Roth for last.
               </p>
@@ -3173,14 +3173,14 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                         <span className="font-semibold">{it.label}</span>
                         <span className="tabular shrink-0 font-bold">{money(it.amount)}</span>
                       </div>
-                      <p className="mt-0.5 text-[12px] leading-snug text-foreground/60">{it.why}</p>
+                      <p className="mt-0.5 text-[12px] leading-snug text-foreground/65">{it.why}</p>
                     </div>
                   </li>
                 ))}
               </ol>
 
               {items.length === 1 && (
-                <p className="mt-2 text-[12px] leading-snug text-foreground/55">
+                <p className="mt-2 text-[12px] leading-snug text-foreground/65">
                   That one source covers this whole year&apos;s gap, so it&apos;s all you need now. In later years the mix can
                   shift as balances and tax brackets change.
                 </p>
@@ -3202,23 +3202,23 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               <div className="mt-3 rounded-2xl border border-border p-3">
                 {chosen.key === ranked[0].key ? (
                   <>
-                    <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-foreground/45">
+                    <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-foreground/65">
                       Why this order? We tested all three on your numbers
                     </div>
                     <div className="space-y-1">
                       {ranked.map((o) => (
                         <div key={o.key} className="flex items-baseline justify-between gap-2 text-[12px]">
-                          <span className={o.key === chosen.key ? "font-semibold text-gain" : "text-foreground/60"}>
+                          <span className={o.key === chosen.key ? "font-semibold text-gain" : "text-foreground/65"}>
                             {o.key === chosen.key ? "✓ " : ""}
                             {o.name}
                           </span>
-                          <span className={`tabular ${o.key === chosen.key ? "font-bold text-gain" : "text-foreground/55"}`}>
+                          <span className={`tabular ${o.key === chosen.key ? "font-bold text-gain" : "text-foreground/65"}`}>
                             {moneyCompact(o.v)} left
                           </span>
                         </div>
                       ))}
                     </div>
-                    <p className="-mt-0.5 mb-1 text-[10px] leading-snug text-foreground/40">
+                    <p className="-mt-0.5 mb-1 text-[10px] leading-snug text-foreground/65">
                       &ldquo;Left&rdquo; = after-tax estate counted conservatively (assuming heirs may sell the brokerage rather
                       than always getting a full step-up), so the winner isn&apos;t resting on a single tax bet.
                     </p>
@@ -3296,14 +3296,14 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                   </p>
                 )}
                 <DesktopOnly>{lowTax ? (
-                  <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+                  <p className="mt-1 text-[13px] leading-relaxed text-foreground/65">
                     Almost none of this year&apos;s <strong>{money(spending)}</strong> is taxable income — you funded it
                     largely from money you&apos;ve already paid tax on (cash, brokerage basis — or gains taxed at the 0%
                     rate), and your {money(t.deductions)} standard deduction covers the rest. So the spending itself
                     costs only about <strong>{money(t.totalTax)}</strong> in tax.
                   </p>
                 ) : (
-                  <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+                  <p className="mt-1 text-[13px] leading-relaxed text-foreground/65">
                     Spending isn&apos;t the same as taxable income. Of your <strong>{money(spending)}</strong>, only{" "}
                     <strong>{money(t.taxableIncome)}</strong> is taxed: the cash you spend is money you already paid tax on
                     (and a brokerage sale is taxed only on its <em>gain</em>), and your {money(t.deductions)} standard
@@ -3314,11 +3314,11 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 )}</DesktopOnly>
                 <div className="mt-2 grid grid-cols-2 gap-2 text-[12px]">
                   <div className="rounded-xl border border-border bg-background/60 p-2 text-center">
-                    <div className="text-[10px] uppercase tracking-wide text-foreground/45">Federal</div>
+                    <div className="text-[10px] uppercase tracking-wide text-foreground/65">Federal</div>
                     <div className="tabular text-sm font-bold text-tax">{moneyCompact(shown.federalTax)}</div>
                   </div>
                   <div className="rounded-xl border border-border bg-background/60 p-2 text-center">
-                    <div className="text-[10px] uppercase tracking-wide text-foreground/45">{isIL ? "Illinois" : "State"} (4.95%)</div>
+                    <div className="text-[10px] uppercase tracking-wide text-foreground/65">{isIL ? "Illinois" : "State"} (4.95%)</div>
                     <div className="tabular text-sm font-bold text-tax">{moneyCompact(shown.stateTax)}</div>
                   </div>
                 </div>
@@ -3330,7 +3330,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                     {isIL ? <> — Illinois still taxes that investment income at 4.95% (the {moneyCompact(t.stateTax)}).</> : "."}
                   </p>
                 ) : isIL ? (
-                  <p className="mt-2 text-[12px] text-foreground/55">
+                  <p className="mt-2 text-[12px] text-foreground/65">
                     🟢 Illinois taxes only your investment income — withdrawals, RMDs, pension, and Social Security are state-tax-free.
                   </p>
                 ) : null}</DesktopOnly>
@@ -3436,7 +3436,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 Only the deep-dive bracket visualization and long explanatory prose
                 below are desktop-only. */}
             <div className="mt-3 overflow-hidden rounded-2xl border border-border">
-              <div className="grid grid-cols-[1.5fr_1fr_1fr] bg-foreground/[0.03] px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-foreground/50">
+              <div className="grid grid-cols-[1.5fr_1fr_1fr] bg-foreground/[0.03] px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-foreground/65">
                 <span>Approach</span>
                 <span className="text-right">Money you keep</span>
                 <span className="text-right">Biggest RMD</span>
@@ -3448,7 +3448,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 >
                   <span>
                     <span className={`font-semibold ${r.best ? "text-gain" : ""}`}>{r.name}</span>
-                    <span className="block text-[10px] leading-tight text-foreground/50">{r.hint}</span>
+                    <span className="block text-[10px] leading-tight text-foreground/65">{r.hint}</span>
                   </span>
                   <span className={`tabular text-right font-semibold ${r.p.endingEstateAfterTax >= mostKept - 1 ? "text-gain" : "text-foreground/70"}`}>
                     {moneyCompact(r.p.endingEstateAfterTax)}
@@ -3459,7 +3459,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 </div>
               ))}
             </div>
-            <p className="mt-1.5 text-[10px] leading-relaxed text-foreground/45">
+            <p className="mt-1.5 text-[10px] leading-relaxed text-foreground/65">
               &ldquo;Money you keep&rdquo; is your estate after all taxes — the tax still owed on any pre-tax left behind
               (at your projected future rate) <em>and</em> the lifetime Medicare (IRMAA) premium surcharges your income
               triggers. A taxable brokerage left to heirs gets a step-up in basis, so its gains pass tax-free.
@@ -3479,7 +3479,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               }
             >
               <div>
-                <p className="mt-3 text-[13px] leading-relaxed text-foreground/60">
+                <p className="mt-3 text-[13px] leading-relaxed text-foreground/65">
                   RMDs aren&apos;t the enemy — a steady withdrawal is fine. The trap is one <strong>big</strong>{" "}forced
                   withdrawal that lands in a high bracket. The fix: move a little to Roth each year, only up to the top of a
                   low bracket, so the balance that drives future RMDs shrinks gently. We never convert a dollar at a higher
@@ -3510,7 +3510,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 {/* Detailed, plain-English explanation of each choice — collapsed by
                     default so the page stays calm; tap any row to understand it fully. */}
                 <div className="mt-3">
-                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-foreground/45">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-foreground/65">
                     What each choice means — tap to read
                   </div>
                   {explain.map((e) => (
@@ -3537,7 +3537,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                       )}
                     </Info>
                   ))}
-                  <div className="mb-1 mt-2 text-[11px] font-semibold uppercase tracking-wide text-foreground/45">
+                  <div className="mb-1 mt-2 text-[11px] font-semibold uppercase tracking-wide text-foreground/65">
                     New to these words? Tap any
                   </div>
                   <Info q="What's an RMD?">{RMD_DEF}</Info>
@@ -3547,7 +3547,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
                 {/* No decision here — the rollover is chosen ONCE, on the "Confirm your
                     rollover" step. This step is just the detailed comparison behind it. */}
-                <p className="mt-4 rounded-xl border border-border bg-background/40 px-3 py-2 text-[12px] text-foreground/60">
+                <p className="mt-4 rounded-xl border border-border bg-background/40 px-3 py-2 text-[12px] text-foreground/65">
                   You decide whether to do this back on the <strong>&ldquo;Confirm your Roth conversion&rdquo;</strong> step — this is
                   just the detailed comparison behind that choice.
                 </p>
@@ -3600,13 +3600,13 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           ) : (
             <div className="py-5">
               <div className="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-primary/25 border-t-primary" />
-              <p className="mt-2 text-[13px] text-foreground/55">Stress-testing your plan against hundreds of markets…</p>
+              <p className="mt-2 text-[13px] text-foreground/65">Stress-testing your plan against hundreds of markets…</p>
             </div>
           )}
 
           {moves.length > 0 && (
             <div className="mt-5 rounded-2xl border border-border bg-background/50 p-3 text-left">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/45">Your first moves for {year}</div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/65">Your first moves for {year}</div>
               <ol className="mt-2 space-y-2">
                 {moves.map((m, i) => (
                   <li key={i} className="flex items-start gap-2.5 text-[13px] leading-snug">
@@ -3627,11 +3627,11 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           <Link href="/report" className="press mt-2 block w-full rounded-2xl border border-border bg-card py-3 text-center text-[14px] font-semibold text-primary">
             📄 Download your full plan (PDF)
           </Link>
-          <p className="mt-2 text-[12px] leading-snug text-foreground/50">
+          <p className="mt-2 text-[12px] leading-snug text-foreground/65">
             Your Plan tab has the full step-by-step — which account each dollar comes from, the deadlines, and why.
             {mode === "demo" ? " This is the example household — start over anytime with your own numbers." : " Change any answer later from the Setup tab."}
           </p>
-          <button onClick={() => go(0)} className="press mt-3 text-[12px] font-semibold text-foreground/50 underline decoration-foreground/20 underline-offset-2">
+          <button onClick={() => go(0)} className="press mt-3 text-[12px] font-semibold text-foreground/65 underline decoration-foreground/20 underline-offset-2">
             {mode === "demo" ? "Start over with my own numbers" : "↺ Walk through it again"}
           </button>
         </div>
@@ -3692,7 +3692,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             className="mb-4 hidden shrink-0 self-start rounded-xl border border-border bg-background/50 p-3 lg:mb-0 lg:block lg:w-52"
             aria-label="Plan steps"
           >
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-foreground/40">Your plan</div>
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-foreground/65">Your plan</div>
             <ol className="space-y-0.5">
               {visibleChapters.map((c, i) => {
                 const state = i < curChapterIdx ? "done" : i === curChapterIdx ? "current" : "todo";
@@ -3702,7 +3702,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                       onClick={() => go(firstIndexOfChapter(c.id))}
                       aria-current={state === "current" ? "step" : undefined}
                       className={`press flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] ${
-                        state === "current" ? "bg-primary/10 font-semibold text-primary" : "text-foreground/55 hover:bg-foreground/5"
+                        state === "current" ? "bg-primary/10 font-semibold text-primary" : "text-foreground/65 hover:bg-foreground/5"
                       }`}
                     >
                       <span
@@ -3711,7 +3711,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                             ? "bg-primary text-white"
                             : state === "current"
                               ? "border-2 border-primary text-primary"
-                              : "border border-border text-foreground/40"
+                              : "border border-border text-foreground/65"
                         }`}
                       >
                         {state === "done" ? "✓" : i + 1}
@@ -3740,7 +3740,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 </span>
                 <span className="flex shrink-0 items-center gap-2 whitespace-nowrap">
                   {mode === "demo" && <Pill>📊 Example</Pill>}
-                  <span className="text-[11px] text-foreground/45 lg:hidden">
+                  <span className="text-[11px] text-foreground/65 lg:hidden">
                     {curChapterIdx + 1} of {visibleChapters.length}
                   </span>
                 </span>
@@ -3770,7 +3770,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
             <button
               onClick={() => go(safeStep - 1)}
               disabled={safeStep === 0}
-              className="press rounded-xl px-4 py-2 text-sm font-medium text-foreground/60 disabled:opacity-30"
+              className="press rounded-xl px-4 py-2 text-sm font-medium text-foreground/65 disabled:opacity-30"
             >
               ← Back
             </button>
@@ -3884,11 +3884,11 @@ function AccountOverview({ household, total }: { household: Household; total: nu
           { value: sumOf("roth"), className: "bg-roth", label: "Roth" },
         ].filter((s) => s.value > 0.5)}
       />
-      <div className="mt-1.5 flex flex-wrap justify-center gap-x-4 gap-y-1 text-[11px] text-foreground/55">
+      <div className="mt-1.5 flex flex-wrap justify-center gap-x-4 gap-y-1 text-[11px] text-foreground/65">
         {legend.filter((l) => l.value > 0.5).map((l) => (
           <span key={l.label} className="flex items-center gap-1.5">
             <span className={`inline-block h-2 w-2 rounded-full ${l.dot}`} />
-            {l.label} <span className="text-foreground/40">{pctFor(l.label === "Pre-tax" ? "pretax" : l.label === "Roth" ? "roth" : "taxable")}%</span>
+            {l.label} <span className="text-foreground/65">{pctFor(l.label === "Pre-tax" ? "pretax" : l.label === "Roth" ? "roth" : "taxable")}%</span>
           </span>
         ))}
       </div>
@@ -3902,11 +3902,11 @@ function AccountOverview({ household, total }: { household: Household; total: nu
                 <span className="flex items-center gap-1.5 text-[12px] font-semibold">
                   <span className={`inline-block h-2 w-2 rounded-full ${g.dot}`} />
                   {g.title}
-                  <span className="font-normal text-foreground/40">· {pctFor(g.bucket)}%</span>
+                  <span className="font-normal text-foreground/65">· {pctFor(g.bucket)}%</span>
                 </span>
                 <span className="tabular text-[13px] font-semibold">{money(g.subtotal)}</span>
               </div>
-              <p className="mt-0.5 text-[10px] leading-snug text-foreground/45">{g.note}</p>
+              <p className="mt-0.5 text-[10px] leading-snug text-foreground/65">{g.note}</p>
               <div className="mt-1.5 space-y-1 border-t border-border/40 pt-1.5">
                 {g.accts.map((a) => {
                   const meta = ACCOUNT_KIND_META[a.kind];
@@ -3915,7 +3915,7 @@ function AccountOverview({ household, total }: { household: Household; total: nu
                     <div key={a.id} className="flex items-baseline justify-between gap-2">
                       <span className="min-w-0">
                         <span className="text-[12px] text-foreground/85">{a.label}</span>
-                        <span className="block text-[10px] leading-snug text-foreground/45">
+                        <span className="block text-[10px] leading-snug text-foreground/65">
                           {meta.label} · {nameOf(a.owner)}
                           {gain > 0 ? ` · ${moneyCompact(gain)} unrealized gain` : ""}
                         </span>
@@ -4002,11 +4002,11 @@ function BracketLadder({
   const cols = "grid grid-cols-[2.1rem_minmax(0,1fr)_4.75rem_3.5rem_4rem] items-center gap-x-2";
   return (
     <div className="mt-4 rounded-2xl border border-border p-3">
-      <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-foreground/50">
+      <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-foreground/65">
         Your federal brackets ({status === "mfj" ? "married filing jointly" : "single"}, {year})
       </div>
       {hasIncome && (
-        <div className={`${cols} px-2 pb-1 text-[9px] uppercase tracking-wide text-foreground/40`}>
+        <div className={`${cols} px-2 pb-1 text-[9px] uppercase tracking-wide text-foreground/65`}>
           <span>Rate</span>
           <span>Income range</span>
           <span>Filled</span>
@@ -4026,7 +4026,7 @@ function BracketLadder({
               <span className={`font-semibold ${r.isFill ? "text-gain" : r.isFuture ? "text-tax" : "text-foreground/70"}`}>
                 {Math.round(r.rate * 100)}%
               </span>
-              <span className="tabular truncate text-foreground/55">{range}</span>
+              <span className="tabular truncate text-foreground/65">{range}</span>
               {hasIncome ? (
                 <>
                   {/* "How full" bar — spending fills first (blue), the rollover tops
@@ -4036,7 +4036,7 @@ function BracketLadder({
                       <span className="absolute inset-y-0 left-0 bg-ss/70" style={{ width: `${r.spendPct * 100}%` }} />
                       <span className="absolute inset-y-0 bg-gain" style={{ left: `${r.spendPct * 100}%`, width: `${r.rollPct * 100}%` }} />
                     </span>
-                    <span className="tabular w-6 text-right text-[9px] text-foreground/45">
+                    <span className="tabular w-6 text-right text-[9px] text-foreground/65">
                       {r.pctFull == null ? "" : `${Math.round(r.pctFull * 100)}%`}
                     </span>
                   </span>
@@ -4061,7 +4061,7 @@ function BracketLadder({
         })}
       </div>
       {hasIncome && (
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 px-2 text-[9px] text-foreground/45">
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 px-2 text-[9px] text-foreground/65">
           <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-sm bg-ss/70" /> from spending &amp; other income</span>
           {hasRollover && <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-sm bg-gain" /> from the Roth conversion</span>}
         </div>
@@ -4093,7 +4093,7 @@ function BracketLadder({
           )}
         </p>
       )}
-      <p className="mt-2 text-[11px] leading-relaxed text-foreground/50">
+      <p className="mt-2 text-[11px] leading-relaxed text-foreground/65">
         Each conversion fills only up to the top of your{" "}
         <span className="font-semibold text-gain">{Math.round(fillRate * 100)}%</span> bracket
         {showFuture ? (
@@ -4180,7 +4180,7 @@ function DividendInterestDetail({
         {cats.map((c) => (
           <div key={c.label} className="flex items-baseline justify-between gap-2">
             <span className="text-foreground/75">
-              {c.label} <span className="text-foreground/45">· {c.note}</span>
+              {c.label} <span className="text-foreground/65">· {c.note}</span>
             </span>
             <span className="tabular shrink-0 font-medium">{money(c.value)}</span>
           </div>
@@ -4190,7 +4190,7 @@ function DividendInterestDetail({
       {bd.hasData && bd.holdings.filter((h) => h.kind !== "none").length > 0 ? (
         <>
           <div className="mt-2 border-t border-border/50 pt-2">
-            <div className="mb-1 grid grid-cols-[1fr_auto_auto] gap-x-2 text-[10px] uppercase tracking-wide text-foreground/40">
+            <div className="mb-1 grid grid-cols-[1fr_auto_auto] gap-x-2 text-[10px] uppercase tracking-wide text-foreground/65">
               <span>Holding (shares × div/share)</span>
               <span className="text-right">Yield</span>
               <span className="text-right">Income/yr</span>
@@ -4202,11 +4202,11 @@ function DividendInterestDetail({
                   <div key={h.ticker} className="grid grid-cols-[1fr_auto_auto] items-baseline gap-x-2">
                     <span className="min-w-0 truncate text-foreground/80">
                       <strong>{h.ticker}</strong>{" "}
-                      <span className="text-foreground/45">
+                      <span className="text-foreground/65">
                         {h.shares.toLocaleString()} × ${h.dps.toFixed(2)} · {percent(h.growth, 0)}/yr growth
                       </span>
                     </span>
-                    <span className="tabular text-right text-foreground/55">{percent(h.yieldPct, 1)}</span>
+                    <span className="tabular text-right text-foreground/65">{percent(h.yieldPct, 1)}</span>
                     <span className="tabular text-right font-medium">{money(h.income)}</span>
                   </div>
                 ))}
@@ -4221,7 +4221,7 @@ function DividendInterestDetail({
               dividend-discount approach advisors use).
             </p>
           )}
-          <p className="mt-2 text-foreground/50">
+          <p className="mt-2 text-foreground/65">
             Dividend-per-share and growth are pulled from the market feed and refreshed daily — edit any holding on the
             Accounts page to override.
           </p>
@@ -4240,7 +4240,7 @@ function DividendInterestDetail({
               </p>
             )}
           </div>
-          <p className="mt-2 text-foreground/50">
+          <p className="mt-2 text-foreground/65">
             Add tickers &amp; shares on the Accounts page and we&apos;ll pull each holding&apos;s real dividend-per-share and
             growth automatically.
           </p>
@@ -4254,7 +4254,7 @@ function Row({ label, value, tone, bold, sub }: { label: string; value: ReactNod
   const color = tone === "ss" ? "text-ss" : tone === "taxable" ? "text-taxable" : "";
   return (
     <div className={`flex items-center justify-between gap-2 ${sub ? "pl-2" : ""}`}>
-      <span className={`${bold ? "font-semibold" : sub ? "text-foreground/55" : "text-foreground/70"} text-[13px]`}>{label}</span>
+      <span className={`${bold ? "font-semibold" : sub ? "text-foreground/65" : "text-foreground/70"} text-[13px]`}>{label}</span>
       <span className={`tabular shrink-0 ${bold ? "font-bold" : "font-medium"} ${color}`}>{value}</span>
     </div>
   );
@@ -4265,7 +4265,7 @@ function Stat({ label, value, hot }: { label: string; value: string; hot?: boole
   return (
     <div className={`rounded-lg px-1 py-1.5 ${hot ? "bg-primary/10" : ""}`}>
       <div className={`tabular text-[12.5px] font-bold leading-tight ${hot ? "text-primary" : "text-foreground/80"}`}>{value}</div>
-      <div className="text-[10px] uppercase tracking-wide text-foreground/45">{label}</div>
+      <div className="text-[10px] uppercase tracking-wide text-foreground/65">{label}</div>
     </div>
   );
 }

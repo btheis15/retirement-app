@@ -48,7 +48,7 @@ export function MarketCheck({ ctx }: { ctx: NoticeContext }) {
     <Card className="mt-3">
       <div className="flex items-baseline justify-between gap-2">
         <div className="text-[13px] font-bold">Market check</div>
-        <div className="tabular text-[11px] text-foreground/45">
+        <div className="tabular text-[11px] text-foreground/65">
           US market {dd <= -0.005 ? `${percent(dd, 0)} vs 12-mo high` : "near its 12-mo high"}
           {pulse.ytdPct != null && <> · YTD {pulse.ytdPct >= 0 ? "+" : ""}{percent(pulse.ytdPct, 0)}</>}
         </div>
@@ -64,7 +64,7 @@ export function MarketCheck({ ctx }: { ctx: NoticeContext }) {
           </div>
         ))}
       </div>
-      <p className="mt-2 text-[10px] leading-snug text-foreground/40">
+      <p className="mt-2 text-[10px] leading-snug text-foreground/65">
         Based on a broad US-market index ({pulse.symbol}) as of {pulse.asOf}. Framing only — your plan&apos;s dollar
         amounts don&apos;t change with the market&apos;s mood, and none of this is a prediction.
       </p>

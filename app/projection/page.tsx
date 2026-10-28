@@ -338,7 +338,7 @@ export default function ProjectionPage() {
           <MCResultsLoading />
         )}
         {mc && mcLoading && (
-          <p className="mt-2 text-center text-[11px] text-foreground/45">↻ Updating with your latest numbers…</p>
+          <p className="mt-2 text-center text-[11px] text-foreground/65">↻ Updating with your latest numbers…</p>
         )}
         {/* Safe-spending RANGE — the same 90% confidence, flat vs. flexible. Turns
             the old contradiction (one widget said "$X runs short," another "$Y is
@@ -355,7 +355,7 @@ export default function ProjectionPage() {
             </button>
           </div>
           {!safe && !solving && (
-            <p className="mt-1 text-[11px] leading-relaxed text-foreground/55">
+            <p className="mt-1 text-[11px] leading-relaxed text-foreground/65">
               Solves for your safe yearly spend at <strong>90% confidence</strong> two ways: spending the same amount
               every year, vs. trimming a little in down markets. This stress-tests the spending target you set on the
               Plan tab. Runs a few hundred simulations; takes a few seconds.
@@ -369,23 +369,23 @@ export default function ProjectionPage() {
           {safe && !solving && (
             <div className="mt-2">
               <div className="rounded-xl border border-gain/30 bg-gain/[0.06] p-3 text-center">
-                <div className="text-[10px] uppercase tracking-wide text-foreground/50">Safe to spend (90% confidence)</div>
+                <div className="text-[10px] uppercase tracking-wide text-foreground/65">Safe to spend (90% confidence)</div>
                 <div className="tabular text-xl font-bold text-gain">
                   {moneyCompact(safe.flat)} – {moneyCompact(safe.flex)}/yr
                 </div>
-                <div className="mt-0.5 text-[10px] text-foreground/45">in today&apos;s dollars</div>
+                <div className="mt-0.5 text-[10px] text-foreground/65">in today&apos;s dollars</div>
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
                 <div className="rounded-xl border border-border bg-background/60 p-2">
                   <div className="tabular font-bold text-foreground/85">{moneyCompact(safe.flat)}/yr</div>
-                  <div className="text-foreground/55">if you spend the <strong>same every year</strong>, never cutting</div>
+                  <div className="text-foreground/65">if you spend the <strong>same every year</strong>, never cutting</div>
                 </div>
                 <div className="rounded-xl border border-border bg-background/60 p-2">
                   <div className="tabular font-bold text-foreground/85">{moneyCompact(safe.flex)}/yr</div>
-                  <div className="text-foreground/55">if you&apos;ll <strong>trim a little</strong> in down markets (guardrails)</div>
+                  <div className="text-foreground/65">if you&apos;ll <strong>trim a little</strong> in down markets (guardrails)</div>
                 </div>
               </div>
-              <p className="mt-1.5 text-[11px] leading-relaxed text-foreground/55">
+              <p className="mt-1.5 text-[11px] leading-relaxed text-foreground/65">
                 You&apos;re currently planning <strong>{moneyCompact(household.annualSpending)}/yr</strong>
                 {household.annualSpending <= safe.flat
                   ? " — within even the never-cut level, so you have real room."
@@ -401,7 +401,7 @@ export default function ProjectionPage() {
             percentiles" note. Advanced/reassurance, desktop-only so the mobile
             flow stays headline → will-it-last → safe range → longevity. */}
         <DesktopOnly>
-        <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-foreground/45">Second opinions (optional) — when all three models agree, you can trust the number</p>
+        <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-foreground/65">Second opinions (optional) — when all three models agree, you can trust the number</p>
         {/* Historical block-bootstrap — a "second opinion" from real market history. */}
         <div className="mt-2 rounded-xl border border-border p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -415,7 +415,7 @@ export default function ProjectionPage() {
             </button>
           </div>
           {!boot && !bootLoading && (
-            <p className="mt-1 text-[11px] leading-relaxed text-foreground/55">
+            <p className="mt-1 text-[11px] leading-relaxed text-foreground/65">
               The check above draws returns from a statistical model. This re-runs your plan through random multi-year
               blocks of <strong>actual 1928–2024 market history</strong> (a &ldquo;block bootstrap,&rdquo; like cFIREsim) —
               capturing real crashes, the 1970s stagflation, and how stocks, bonds &amp; inflation truly moved together.
@@ -449,7 +449,7 @@ export default function ProjectionPage() {
             </button>
           </div>
           {!regime && !regimeLoading && (
-            <p className="mt-1 text-[11px] leading-relaxed text-foreground/55">
+            <p className="mt-1 text-[11px] leading-relaxed text-foreground/65">
               Re-runs your plan under a <strong>tougher test where bad years tend to clump together</strong> (the
               regime-switching model actuaries use for capital reserving). Equity flips between a calm bull market and a
               sharply negative bear market, and a down year is far more likely to be followed by another, so bad years{" "}
@@ -469,7 +469,7 @@ export default function ProjectionPage() {
                   ? "The two land in the same place — your result is robust to how returns are modeled, not an artifact of the smooth model's shape."
                   : "Comparable to the main model."}{" "}
               {regime.regimeInfo && (
-                <span className="text-foreground/45">
+                <span className="text-foreground/65">
                   (Bull ≈ {percent(regime.regimeInfo.bullMean, 0)}/yr {percent(regime.regimeInfo.bullWeight, 0)} of the
                   time; bear ≈ {percent(regime.regimeInfo.bearMean, 0)}/yr — retargeted to your forward assumptions.)
                 </span>
@@ -501,7 +501,7 @@ export default function ProjectionPage() {
             not a guarantee; a concentrated single-stock portfolio is riskier than the volatility shown. Lowering
             spending, delaying Social Security, or holding more bonds raises the number.
           </p>
-          <p className="pt-1 text-foreground/60">
+          <p className="pt-1 text-foreground/65">
             Want the deeper &ldquo;how &amp; why&rdquo; on each model — and who in the industry uses it, with sources? See{" "}
             <a href="/learn" className="font-semibold text-primary underline decoration-primary/30 underline-offset-2">
               The models &amp; methods behind your forecast
@@ -527,9 +527,9 @@ export default function ProjectionPage() {
       >
         <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2.5">
           <div className="min-w-0">
-            <div className="text-[12px] font-medium text-foreground/60">Markets</div>
+            <div className="text-[12px] font-medium text-foreground/65">Markets</div>
             <div className="text-[13px] font-semibold">{percent(settings.returnRate, 1)}/yr return · {percent(settings.inflationRate, 1)} inflation</div>
-            <div className="mt-0.5 text-[11px] leading-snug text-foreground/55">
+            <div className="mt-0.5 text-[11px] leading-snug text-foreground/65">
               Based on your holdings ({percent(rm.equityPct, 0)} stocks · {percent(rm.bondPct, 0)} bonds · {percent(rm.cashPct, 0)} cash).
               {rm.basis !== "holdings" && " Add holdings for precision."}
             </div>
@@ -539,7 +539,7 @@ export default function ProjectionPage() {
         <ReturnMethodInfo rm={rm} />
         <div className="mt-2 flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2.5">
           <div className="min-w-0">
-            <div className="text-[12px] font-medium text-foreground/60">Plan horizon</div>
+            <div className="text-[12px] font-medium text-foreground/65">Plan horizon</div>
             <div className="text-[13px] font-semibold">
               To age {settings.endAge}
               {settings.survivorModel ? ` · survivor years modeled from ${settings.firstDeathAge}` : " · survivor years off"}
@@ -552,14 +552,14 @@ export default function ProjectionPage() {
           <label className="flex items-center justify-between gap-3 py-1">
             <span className="text-[13px]">
               <span className="font-medium">Show in today’s dollars</span>
-              <span className="mt-0.5 block text-[11px] leading-snug text-foreground/55">
+              <span className="mt-0.5 block text-[11px] leading-snug text-foreground/65">
                 Adjust every future figure for inflation, so amounts reflect real purchasing power instead of big
                 nominal numbers.
               </span>
             </span>
             <button
               onClick={() => updateSettings({ realDollars: !settings.realDollars })}
-              className={`press shrink-0 rounded-full px-3 py-1 text-[12px] font-semibold ${real ? "bg-gain/15 text-gain" : "bg-foreground/10 text-foreground/60"}`}
+              className={`press shrink-0 rounded-full px-3 py-1 text-[12px] font-semibold ${real ? "bg-gain/15 text-gain" : "bg-foreground/10 text-foreground/65"}`}
             >
               {real ? "✓ On" : "Off"}
             </button>
@@ -569,7 +569,7 @@ export default function ProjectionPage() {
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-[13px] font-medium">Spending strategy</div>
-                <div className="mt-0.5 text-[12px] leading-snug text-foreground/60">
+                <div className="mt-0.5 text-[12px] leading-snug text-foreground/65">
                   {settings.spendingStrategy === "constant"
                     ? "Rises with inflation — keeps your lifestyle steady"
                     : settings.spendingStrategy === "flatNominal"
@@ -581,7 +581,7 @@ export default function ProjectionPage() {
             </div>
           </div>
 
-          <p className="border-t border-border/50 pt-2 text-[11px] leading-snug text-foreground/45">
+          <p className="border-t border-border/50 pt-2 text-[11px] leading-snug text-foreground/65">
             Fine-tuning like the heir&apos;s tax rate and the longevity model lives in the walkthrough&apos;s Advanced
             section, so every assumption has one home.
           </p>
@@ -605,7 +605,7 @@ export default function ProjectionPage() {
               </span>
             </div>
             <p className="mt-1 text-[12px] leading-snug text-foreground/65">{s.scenario.description}</p>
-            <p className="mt-1 text-[11px] text-foreground/45">
+            <p className="mt-1 text-[11px] text-foreground/65">
               Low point: {moneyCompact(real ? s.minBalance / Math.pow(1 + infl, Math.max(0, s.minBalanceAge - rows[0].selfAge)) : s.minBalance)} around age {s.minBalanceAge}.
             </p>
           </Card>
@@ -668,7 +668,7 @@ export default function ProjectionPage() {
           <Key color={HEX.taxable} label="Taxable" />
           <Key color={HEX.roth} label="Roth" />
         </div>
-        <p className="mt-2 text-[12px] text-foreground/55">
+        <p className="mt-2 text-[12px] text-foreground/65">
           Watch the pre-tax (amber) band: the smart plan shrinks it early so forced RMDs stay small,
           while Roth (violet) is preserved for last.
         </p>
@@ -731,7 +731,7 @@ export default function ProjectionPage() {
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="font-semibold">Conversion plan {settings.useConversions ? "on" : "off"}</div>
-            <p className="text-[12px] text-foreground/60">
+            <p className="text-[12px] text-foreground/65">
               {settings.useConversions
                 ? `Rolls about ${moneyCompact(conv.avgAnnualConversion)}/yr through ${conv.windowEndYear} (${moneyCompact(conv.totalConverted)} total).`
                 : "No Roth conversions in the current plan."}
@@ -760,7 +760,7 @@ export default function ProjectionPage() {
             tone={conv.lifetimeTaxDelta <= 0 ? "gain" : "tax"}
           />
         </div>
-        <p className="mt-3 text-[12px] text-foreground/60">
+        <p className="mt-3 text-[12px] text-foreground/65">
           {conv.recommended
             ? "For your numbers, rolling pre-tax → Roth leaves more after-tax money and a far smaller forced-RMD spike. Recommended."
             : "For your numbers the gain is modest — rolling mainly trades a little lifetime tax for a smaller RMD spike and more tax-free Roth."}
@@ -820,7 +820,7 @@ export default function ProjectionPage() {
               <span className="flex items-center gap-2 font-semibold">
                 <span>{m.icon}</span> {m.title}
               </span>
-              <span className="tabular text-[12px] text-foreground/55">{m.year} · age {m.age}</span>
+              <span className="tabular text-[12px] text-foreground/65">{m.year} · age {m.age}</span>
             </div>
             <p className="mt-1 text-[13px] text-foreground/70">{m.detail}</p>
           </Card>
@@ -836,7 +836,7 @@ export default function ProjectionPage() {
       </Explainer>
       <Card className="overflow-x-auto p-0">
         <table className="w-full text-right text-[12px]">
-          <thead className="text-foreground/50">
+          <thead className="text-foreground/65">
             <tr className="border-b border-border">
               <th className="px-2 py-2 text-left">Yr / age</th>
               <th className="px-2 py-2">Pre-tax</th>
@@ -853,16 +853,16 @@ export default function ProjectionPage() {
               const d = defAt(r.year);
               return (
               <tr key={r.year} className="border-b border-border/50">
-                <td className="px-2 py-1.5 text-left text-foreground/60">
+                <td className="px-2 py-1.5 text-left text-foreground/65">
                   {r.year} · {r.selfAge}
                 </td>
                 <td className="px-2 py-1.5 text-deferred">{r.fromPretax > 0 ? moneyCompact(r.fromPretax * d) : "—"}</td>
-                <td className={`px-2 py-1.5 ${r.rmd > 0 ? "font-semibold text-deferred" : "text-foreground/30"}`}>
+                <td className={`px-2 py-1.5 ${r.rmd > 0 ? "font-semibold text-deferred" : "text-foreground/65"}`}>
                   {r.rmd > 0 ? moneyCompact(r.rmd * d) : "—"}
                 </td>
                 <td className="px-2 py-1.5 text-taxable">{r.fromTaxable > 0 ? moneyCompact(r.fromTaxable * d) : "—"}</td>
                 <td className="px-2 py-1.5 text-roth">{r.fromRoth > 0 ? moneyCompact(r.fromRoth * d) : "—"}</td>
-                <td className={`px-2 py-1.5 ${r.conversion > 0 ? "font-semibold text-roth" : "text-foreground/30"}`}>
+                <td className={`px-2 py-1.5 ${r.conversion > 0 ? "font-semibold text-roth" : "text-foreground/65"}`}>
                   {r.conversion > 0 ? moneyCompact(r.conversion * d) : "—"}
                 </td>
                 <td className="px-2 py-1.5 text-tax">{moneyCompact(r.tax * d)}</td>
@@ -884,7 +884,7 @@ export default function ProjectionPage() {
 
 function Key({ color, label }: { color: string; label: string }) {
   return (
-    <span className="inline-flex items-center gap-1 text-foreground/60">
+    <span className="inline-flex items-center gap-1 text-foreground/65">
       <span className="h-2 w-2 rounded-full" style={{ background: color }} /> {label}
     </span>
   );
@@ -899,7 +899,7 @@ function MiniBox({ label, value, tone }: { label: string; value: string; tone?: 
     tone === "gain" ? "text-gain" : tone === "tax" ? "text-tax" : tone === "roth" ? "text-roth" : "text-foreground";
   return (
     <div className="rounded-xl border border-border bg-background/60 p-2 text-center">
-      <div className="text-[10px] uppercase tracking-wide text-foreground/50">{label}</div>
+      <div className="text-[10px] uppercase tracking-wide text-foreground/65">{label}</div>
       <div className={`tabular text-sm font-bold ${color}`}>{value}</div>
     </div>
   );
@@ -934,14 +934,14 @@ function MonteCarloResults({
           {Math.round(mc.successPct * 100)}%
         </div>
         <div className="text-[13px] text-foreground/65">of simulations funded your full spending to age {endAge}</div>
-        <div className="mt-0.5 text-[11px] text-foreground/45">
+        <div className="mt-0.5 text-[11px] text-foreground/65">
           95% confidence interval: {Math.round(mc.successCI[0] * 100)}–{Math.round(mc.successCI[1] * 100)}% (±
           {(((mc.successCI[1] - mc.successCI[0]) / 2) * 100).toFixed(1)} pts across {mc.runs.toLocaleString()} runs)
         </div>
       </div>
       <div className="mt-4">
         <FanChart band={band} yLabel={(n) => moneyCompact(n)} startAge={band.length ? band[0].year - selfBirthYear : undefined} />
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-foreground/55">
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-foreground/65">
           <span className="inline-flex items-center gap-1">
             <span className="inline-block h-2 w-3 rounded-sm" style={{ background: HEX.gain, opacity: 0.28 }} /> 25th–75th (likely range)
           </span>
@@ -960,7 +960,7 @@ function MonteCarloResults({
         <MiniBox label="75th" value={moneyCompact(ending.p75)} />
         <MiniBox label="90th" value={moneyCompact(ending.p90)} tone="gain" />
       </div>
-      <p className="mt-2 text-[11px] text-foreground/55">
+      <p className="mt-2 text-[11px] text-foreground/65">
         Ending wealth by percentile{real ? " (today’s dollars)" : ""}. Assumes a{" "}
         <strong>{percent(mc.expectedReturn, 1)}</strong> expected return with{" "}
         <strong>{percent(mc.volatility, 0)}</strong> volatility (one standard deviation) for your mix.
@@ -973,7 +973,7 @@ function MonteCarloResults({
           value={mc.medianShortfallAge > 0 ? `age ${Math.round(mc.medianShortfallAge)}` : "—"}
         />
       </div>
-      <p className="mt-1.5 text-[11px] leading-relaxed text-foreground/45">
+      <p className="mt-1.5 text-[11px] leading-relaxed text-foreground/65">
         Even a &ldquo;failure&rdquo; rarely means $0 — your guaranteed income (Social Security{hasPension ? " + pension" : ""}) keeps
         paying about <strong>{moneyCompact(guaranteedMonthly)}/mo</strong> no matter what; falling short means trimming
         discretionary spending, not destitution.
@@ -996,8 +996,8 @@ function MCResultsLoading() {
   return (
     <div className="flex flex-col items-center justify-center py-10 text-center">
       <div className="h-7 w-7 animate-spin rounded-full border-2 border-primary/25 border-t-primary" />
-      <div className="mt-3 text-[13px] font-medium text-foreground/60">Running {MC_RUNS.toLocaleString()} simulations…</div>
-      <div className="mt-0.5 text-[11px] text-foreground/40">Crunching market risk across your whole plan.</div>
+      <div className="mt-3 text-[13px] font-medium text-foreground/65">Running {MC_RUNS.toLocaleString()} simulations…</div>
+      <div className="mt-0.5 text-[11px] text-foreground/65">Crunching market risk across your whole plan.</div>
     </div>
   );
 }
@@ -1066,7 +1066,7 @@ function LongevityCard({
 
       {/* Sex is answered on the walkthrough's plan-horizon step (its single home);
           here it's shown read-only so this stays a view, not a second editor. */}
-      <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] text-foreground/60">
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] text-foreground/65">
         <span>
           Curves for: <strong>{sexLabel(settings.selfSex)}</strong>
           {spouseInfo && (
@@ -1106,7 +1106,7 @@ function LongevityCard({
           {spouseInfo && <Key color={HEX.ss} label={`${household.self.label || "You"} alive`} />}
           {spouseInfo && <Key color={HEX.roth} label={`${household.spouse.label || "Spouse"} alive`} />}
         </div>
-        <p className="mt-0.5 px-1 text-[10px] text-foreground/40">
+        <p className="mt-0.5 px-1 text-[10px] text-foreground/65">
           Horizontal axis is {household.self.label || "your"} age; all lines share the same calendar timeline
           {spouseInfo && `, so a point on ${household.spouse.label || "the spouse"}'s line is their age at that same year`}.
         </p>

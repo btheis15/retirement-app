@@ -101,7 +101,7 @@ export function ScenarioLab({
       <Card>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <label className="block">
-            <span className="text-[11px] uppercase tracking-wide text-foreground/45">Option A</span>
+            <span className="text-[11px] uppercase tracking-wide text-foreground/65">Option A</span>
             <select
               value={aId}
               onChange={(e) => { setAId(e.target.value); setPaired(null); }}
@@ -111,7 +111,7 @@ export function ScenarioLab({
             </select>
           </label>
           <label className="block">
-            <span className="text-[11px] uppercase tracking-wide text-foreground/45">Option B</span>
+            <span className="text-[11px] uppercase tracking-wide text-foreground/65">Option B</span>
             <select
               value={bId}
               onChange={(e) => { setBId(e.target.value); setPaired(null); }}
@@ -123,7 +123,7 @@ export function ScenarioLab({
         </div>
 
         {sameAB ? (
-          <p className="mt-3 text-[12px] text-foreground/55">Pick two different plans to compare.</p>
+          <p className="mt-3 text-[12px] text-foreground/65">Pick two different plans to compare.</p>
         ) : (
           <>
             <button
@@ -148,7 +148,7 @@ export function ScenarioLab({
                     {pctWhole(paired.bWins)}
                   </div>
                 </div>
-                <div className="mt-1 flex justify-between text-[11px] text-foreground/55">
+                <div className="mt-1 flex justify-between text-[11px] text-foreground/65">
                   <span><span className="font-semibold text-gain">A</span> ends richer</span>
                   {paired.ties > 0.005 && <span>tie</span>}
                   <span><span className="font-semibold text-taxable">B</span> ends richer</span>
@@ -172,11 +172,11 @@ export function ScenarioLab({
                 {/* Risk + success grid */}
                 <div className="mt-3 grid grid-cols-2 gap-2 text-[12px]">
                   <div className="rounded-xl border border-border bg-background/60 p-2">
-                    <div className="text-[10px] uppercase tracking-wide text-foreground/45">Funds spending to {endAge}</div>
+                    <div className="text-[10px] uppercase tracking-wide text-foreground/65">Funds spending to {endAge}</div>
                     <div className="tabular mt-0.5">A {percent(paired.successA, 0)} · B {percent(paired.successB, 0)}</div>
                   </div>
                   <div className="rounded-xl border border-border bg-background/60 p-2">
-                    <div className="text-[10px] uppercase tracking-wide text-foreground/45">Worst 10% of markets (left)</div>
+                    <div className="text-[10px] uppercase tracking-wide text-foreground/65">Worst 10% of markets (left)</div>
                     <div className="tabular mt-0.5">A {moneyCompact(paired.endA.cvar10)} · B {moneyCompact(paired.endB.cvar10)}</div>
                   </div>
                 </div>
@@ -235,10 +235,10 @@ export function ScenarioLab({
         className="mt-4"
       >
         {/* Scenario summary table */}
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/45">Scenario summary</div>
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/65">Scenario summary</div>
         <Card className="mt-1 overflow-x-auto p-0">
           <table className="w-full text-right text-[12px]">
-            <thead className="text-foreground/50">
+            <thead className="text-foreground/65">
               <tr className="border-b border-border">
                 <th className="px-2 py-2 text-left">Scenario</th>
                 <th className="px-2 py-2">After-tax left</th>
@@ -270,7 +270,7 @@ export function ScenarioLab({
 
         {/* Per-year detail for one scenario */}
         <div className="mt-4 flex items-center justify-between gap-2">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/45">Year-by-year</div>
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/65">Year-by-year</div>
           <select
             value={detailId}
             onChange={(e) => setDetailId(e.target.value)}
@@ -281,7 +281,7 @@ export function ScenarioLab({
         </div>
         <Card className="mt-1 overflow-x-auto p-0">
           <table className="w-full text-right text-[11.5px]">
-            <thead className="text-foreground/50">
+            <thead className="text-foreground/65">
               <tr className="border-b border-border">
                 <th className="px-2 py-2 text-left">Yr / age</th>
                 <th className="px-2 py-2">RMD</th>
@@ -299,8 +299,8 @@ export function ScenarioLab({
             <tbody className="tabular">
               {detail.projection.rows.map((r) => (
                 <tr key={r.year} className={`border-b border-border/40 ${r.shortfall ? "bg-tax/[0.06]" : ""}`}>
-                  <td className="px-2 py-1 text-left text-foreground/60">{r.year} · {r.selfAge}</td>
-                  <td className={`px-2 py-1 ${r.rmd > 0 ? "font-semibold text-deferred" : "text-foreground/30"}`}>{r.rmd > 0 ? moneyCompact(r.rmd) : "—"}</td>
+                  <td className="px-2 py-1 text-left text-foreground/65">{r.year} · {r.selfAge}</td>
+                  <td className={`px-2 py-1 ${r.rmd > 0 ? "font-semibold text-deferred" : "text-foreground/65"}`}>{r.rmd > 0 ? moneyCompact(r.rmd) : "—"}</td>
                   <td className="px-2 py-1 text-deferred">{r.fromPretax > 0 ? moneyCompact(r.fromPretax) : "—"}</td>
                   <td className="px-2 py-1 text-taxable">{r.fromTaxable > 0 ? moneyCompact(r.fromTaxable) : "—"}</td>
                   <td className="px-2 py-1 text-roth">{r.fromRoth > 0 ? moneyCompact(r.fromRoth) : "—"}</td>
@@ -315,7 +315,7 @@ export function ScenarioLab({
             </tbody>
           </table>
         </Card>
-        <p className="mt-1 text-[10px] text-foreground/45">
+        <p className="mt-1 text-[10px] text-foreground/65">
           Nominal (future) dollars. Pink rows are years the plan fell short of full spending.
         </p>
 

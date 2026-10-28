@@ -43,7 +43,7 @@ export function TabBar() {
                   href={hrefOf(tab.href)}
                   aria-current={active ? "page" : undefined}
                   className={`press flex flex-col items-center gap-0.5 pb-1.5 pt-1.5 text-[10px] transition-colors ${
-                    active ? "font-semibold text-primary" : "font-medium text-foreground/50"
+                    active ? "font-semibold text-primary" : "font-medium text-foreground/65"
                   }`}
                 >
                   <span
@@ -64,7 +64,7 @@ export function TabBar() {
       {/* Desktop (MacBook): left sidebar — roomier, always visible */}
       <nav className="fixed inset-y-0 left-0 z-40 hidden w-56 flex-col border-r border-border/70 bg-card/80 px-3 py-5 backdrop-blur-xl backdrop-saturate-150 lg:flex">
         <div className="px-2 pb-1 text-[15px] font-bold leading-tight text-primary">Retirement Tax Optimizer</div>
-        <div className="mb-4 px-2 text-[11px] text-foreground/45">{filingLabel}</div>
+        <div className="mb-4 px-2 text-[11px] text-foreground/65">{filingLabel}</div>
         <ul className="flex flex-col gap-1">
           {TABS.map((tab) => {
             const active = isActive(tab.href);
@@ -81,7 +81,7 @@ export function TabBar() {
                   href={hrefOf(tab.href)}
                   aria-current={active ? "page" : undefined}
                   className={`press flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
-                    active ? "bg-primary/10 font-semibold text-primary" : "text-foreground/60 hover:bg-foreground/5"
+                    active ? "bg-primary/10 font-semibold text-primary" : "text-foreground/65 hover:bg-foreground/5"
                   }`}
                 >
                   <span className="text-lg leading-none">{tab.icon}</span>

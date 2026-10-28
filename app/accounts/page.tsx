@@ -81,7 +81,7 @@ export default function AccountsPage() {
             You&apos;re viewing a <strong>{moneyCompact(buckets.total)} sample household</strong>. Editing anything
             will start your own plan (the example stays intact).
           </p>
-          <p className="mt-1 text-[12px] text-foreground/55">
+          <p className="mt-1 text-[12px] text-foreground/65">
             🎲 <strong>New example</strong> rolls a fresh random household ($5M–$10M) — a different account mix,
             Social Security claim ages, and spending — so you can see how the planner behaves across many situations.
           </p>
@@ -129,7 +129,7 @@ export default function AccountsPage() {
                   onChange={(v) => updateHousehold({ [who]: { ...p, birthYear: v } } as never)}
                 />
               </Field>
-              <div className="pb-2 text-[13px] text-foreground/55">
+              <div className="pb-2 text-[13px] text-foreground/65">
                 age <span className="tabular font-semibold text-foreground/80">{thisYear - p.birthYear}</span>
               </div>
             </div>
@@ -141,7 +141,7 @@ export default function AccountsPage() {
                 <AdjustLink step="ssclaim" />
               </div>
             </Field>
-            <p className="mt-1 text-[11px] text-foreground/55">
+            <p className="mt-1 text-[11px] text-foreground/65">
               RMDs begin at age {rmdStartAge(p.birthYear)} for {p.label || (who === "self" ? "you" : "your spouse")}{" "}
               (SECURE 2.0, based on birth year).
             </p>
@@ -156,7 +156,7 @@ export default function AccountsPage() {
                   statement. Enter the <strong>monthly</strong> amount, not yearly.
                 </p>
               )}
-              <p className="mt-1 text-[11px] text-foreground/55">
+              <p className="mt-1 text-[11px] text-foreground/65">
                 Enter the monthly amount at your <strong>full retirement age</strong>{" "}(~{fmtAge(fullRetirementAge(p.birthYear))}) — SSA lists
                 this on your statement. We adjust it for the claim age above:{" "}
                 <strong>{money(adjustedAnnualBenefit(p.socialSecurityAnnual, p.birthYear, p.ssClaimAge))}</strong>/yr at age {p.ssClaimAge}.
@@ -175,7 +175,7 @@ export default function AccountsPage() {
                 <AdjustLink step="work" />
               </div>
               {p.work && p.work.annualWages > 0 && (
-                <p className="mt-1 text-[11px] text-foreground/55">
+                <p className="mt-1 text-[11px] text-foreground/65">
                   {money(p.work.annualWages)}/yr{p.work.selfEmployed ? " (self-employed)" : ""} through{" "}
                   {p.work.lastWorkMonth && p.work.lastWorkMonth < 12 ? `month ${p.work.lastWorkMonth} of ` : ""}
                   {p.work.lastWorkYear ?? household.retirementYear ?? thisYear}. Covers spending first; taxed like a
@@ -197,7 +197,7 @@ export default function AccountsPage() {
             ariaLabel="Year you plan to start retirement"
             onChange={(v) => updateHousehold({ retirementYear: v })}
           />
-          <p className="mt-1 text-[11px] text-foreground/55">
+          <p className="mt-1 text-[11px] text-foreground/65">
             You&apos;d be age {(household.retirementYear ?? defaultRetirementYear(household.self.birthYear)) - household.self.birthYear} that
             year. If you&apos;re still working, your pay runs through this year unless you set an exact stop date in the
             walkthrough&apos;s Income chapter. The year-by-year projection starts now — working years are years with a paycheck.
@@ -214,7 +214,7 @@ export default function AccountsPage() {
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="tabular text-xl font-bold text-primary">{money(household.annualSpending)}</div>
-              <div className="tabular text-[12px] text-foreground/50">{money(Math.round(household.annualSpending / 12))}/mo</div>
+              <div className="tabular text-[12px] text-foreground/65">{money(Math.round(household.annualSpending / 12))}/mo</div>
             </div>
             <AdjustLink step="spend" />
           </div>
@@ -244,7 +244,7 @@ export default function AccountsPage() {
         </Field>
         <Field label="Capital-gains distributions — funds, long-term (annual)" className="mt-2">
           <MoneyInput value={household.ltCapGainDistributionsAnnual ?? 0} onChange={(v) => updateHousehold({ ltCapGainDistributionsAnnual: v })} />
-          <p className="mt-1 text-[11px] text-foreground/55">
+          <p className="mt-1 text-[11px] text-foreground/65">
             Realized <strong>long-term</strong> gains mutual funds pass through each year (taxable even when reinvested),
             taxed at the <strong>preferential capital-gains rate</strong>. <strong>Not dividends</strong> — this is the
             bulk of a fund&apos;s big year-end payout. Auto-filled from your fund holdings as a smoothed multi-year average
@@ -253,7 +253,7 @@ export default function AccountsPage() {
         </Field>
         <Field label="Capital-gains distributions — funds, short-term (annual)" className="mt-2">
           <MoneyInput value={household.stCapGainDistributionsAnnual ?? 0} onChange={(v) => updateHousehold({ stCapGainDistributionsAnnual: v })} />
-          <p className="mt-1 text-[11px] text-foreground/55">
+          <p className="mt-1 text-[11px] text-foreground/65">
             A fund&apos;s <strong>short-term</strong> gain distributions — taxed as <strong>ordinary income</strong>, not
             capital gains. The market feed can&apos;t separate these out, so enter them per holding from your fund&apos;s
             distribution page if they&apos;re material (they&apos;re usually the smaller slice).
@@ -264,7 +264,7 @@ export default function AccountsPage() {
         </Field>
         <Field label="Tax-exempt (muni) interest (annual)" className="mt-2">
           <MoneyInput value={household.taxExemptInterestAnnual ?? 0} onChange={(v) => updateHousehold({ taxExemptInterestAnnual: v })} />
-          <p className="mt-1 text-[11px] text-foreground/55">
+          <p className="mt-1 text-[11px] text-foreground/65">
             Not federally taxed — but it still counts toward your Medicare (IRMAA) premiums and how much of your
             Social Security is taxed.
           </p>
@@ -274,7 +274,7 @@ export default function AccountsPage() {
           <span>
             <strong>State: Illinois.</strong> Illinois doesn&apos;t tax retirement income — your withdrawals, RMDs,
             Roth conversions, pension, and Social Security are state-tax-free; only investment income is taxed at the
-            flat 4.95%. <span className="text-foreground/50">(More states coming.)</span>
+            flat 4.95%. <span className="text-foreground/65">(More states coming.)</span>
           </span>
         </div>
       </Card>
@@ -309,7 +309,7 @@ export default function AccountsPage() {
       >
         ⬇️ Import from your brokerage (CSV)
       </button>
-      <p className="mt-1 text-center text-[11px] text-foreground/45">
+      <p className="mt-1 text-center text-[11px] text-foreground/65">
         Every broker lets you download a positions file — import it instead of typing holdings in.
       </p>
 
@@ -403,7 +403,7 @@ function AccountRow({
         <>
           <button
             onClick={() => setOpen((o) => !o)}
-            className="press mt-2 flex w-full items-center justify-between border-t border-border pt-2 text-[12px] text-foreground/55"
+            className="press mt-2 flex w-full items-center justify-between border-t border-border pt-2 text-[12px] text-foreground/65"
           >
             <span>
               {holdings.length} holding{holdings.length > 1 ? "s" : ""}
@@ -413,7 +413,7 @@ function AccountRow({
           {open && (
             <div className="rise mt-1 overflow-x-auto">
               <table className="w-full text-right text-[12px]">
-                <thead className="text-foreground/45">
+                <thead className="text-foreground/65">
                   <tr>
                     <th className="py-1 text-left font-medium">Holding</th>
                     <th className="py-1 font-medium">Shares</th>
@@ -430,16 +430,16 @@ function AccountRow({
                       <tr key={i} className="border-t border-border/40">
                         <td className="py-1 text-left">
                           <span className="font-semibold">{h.ticker || h.name}</span>
-                          <span className="ml-1 text-[10px] uppercase text-foreground/40">
+                          <span className="ml-1 text-[10px] uppercase text-foreground/65">
                             {h.ticker ? HOLDING_TYPE_LABEL[h.type] : "fixed $"}
                           </span>
-                          {h.ticker && <div className="text-[10px] text-foreground/45">{h.name}</div>}
+                          {h.ticker && <div className="text-[10px] text-foreground/65">{h.name}</div>}
                         </td>
                         <td className="py-1">{h.shares.toLocaleString()}</td>
                         <td className="py-1">{money(h.price, { cents: true })}</td>
                         <td className="py-1 font-medium">{moneyCompact(val)}</td>
                         {isTaxable && (
-                          <td className={`py-1 ${hgain > 0 ? "text-gain" : "text-foreground/40"}`}>
+                          <td className={`py-1 ${hgain > 0 ? "text-gain" : "text-foreground/65"}`}>
                             {hgain > 0 ? moneyCompact(hgain) : "—"}
                           </td>
                         )}
@@ -500,7 +500,7 @@ function AccountEditor({
             ))}
           </select>
         </Field>
-        <p className="mt-1 text-[11px] text-foreground/55">
+        <p className="mt-1 text-[11px] text-foreground/65">
           {meta.bucket === "pretax" && "Pre-tax: every dollar out is ordinary income. Subject to RMDs."}
           {meta.bucket === "roth" && "Roth: tax-free withdrawals, no lifetime RMDs."}
           {meta.bucket === "taxable" && "Taxable: only the gain is taxed (capital gains). No RMDs."}
@@ -529,8 +529,8 @@ function AccountEditor({
         {/* Holdings (skip for plain cash/savings accounts) */}
         {!cash && (
           <div className="mt-4">
-            <div className="text-[12px] font-medium text-foreground/60">What do you own in this account?</div>
-            <p className="mt-0.5 text-[11px] text-foreground/55">
+            <div className="text-[12px] font-medium text-foreground/65">What do you own in this account?</div>
+            <p className="mt-0.5 text-[11px] text-foreground/65">
               Add your stocks, ETFs, or funds and how many shares you have — we&apos;ll track the real prices for
               you. Only the ticker symbol is ever looked up; your share counts and balances stay on your device.
             </p>
@@ -547,7 +547,7 @@ function AccountEditor({
             {isTaxable && (
               <Field label="Cost basis (what you paid)" className="mt-3">
                 <MoneyInput value={draft.costBasis ?? 0} onChange={(v) => setDraft({ ...draft, costBasis: v })} />
-                <p className="mt-1 text-[11px] text-foreground/55">
+                <p className="mt-1 text-[11px] text-foreground/65">
                   Balance − basis = unrealized gain, which is what gets taxed when you sell.
                 </p>
               </Field>
@@ -746,7 +746,7 @@ function HoldingsEditor({
       <div className="mt-2">
         <div className="mb-2 flex items-center justify-between">
           <span className="text-[13px] font-semibold">Add holdings</span>
-          <button onClick={closeSearch} className="press text-[12px] font-medium text-foreground/60">
+          <button onClick={closeSearch} className="press text-[12px] font-medium text-foreground/65">
             {addedThisSession.length > 0 ? "Done" : "Cancel"}
           </button>
         </div>
@@ -760,10 +760,10 @@ function HoldingsEditor({
               className={`${INPUT} font-mono text-[12px]`}
             />
             <div className="mt-2 flex gap-2">
-              <button onClick={addPasted} disabled={!pasteText.trim()} className={`press flex-1 rounded-xl py-2 text-[12px] font-semibold ${pasteText.trim() ? "bg-primary text-background" : "bg-foreground/10 text-foreground/40"}`}>
+              <button onClick={addPasted} disabled={!pasteText.trim()} className={`press flex-1 rounded-xl py-2 text-[12px] font-semibold ${pasteText.trim() ? "bg-primary text-background" : "bg-foreground/10 text-foreground/65"}`}>
                 Add these
               </button>
-              <button onClick={() => setPasteMode(false)} className="press rounded-xl border border-border px-3 text-[12px] text-foreground/60">
+              <button onClick={() => setPasteMode(false)} className="press rounded-xl border border-border px-3 text-[12px] text-foreground/65">
                 Back to search
               </button>
             </div>
@@ -788,10 +788,10 @@ function HoldingsEditor({
         ))}
         {!pasteMode && (
           <div className="mt-1 overflow-hidden rounded-xl border border-border bg-card">
-            {!q && <div className="px-3 py-3 text-[12px] text-foreground/50">Type a company name or ticker symbol to search.</div>}
-            {q && loading && results.length === 0 && <div className="px-3 py-3 text-[12px] text-foreground/50">Searching…</div>}
+            {!q && <div className="px-3 py-3 text-[12px] text-foreground/65">Type a company name or ticker symbol to search.</div>}
+            {q && loading && results.length === 0 && <div className="px-3 py-3 text-[12px] text-foreground/65">Searching…</div>}
             {q && !loading && results.length === 0 && (
-              <div className="px-3 py-3 text-[12px] text-foreground/50">No matches — try a ticker like VTI or a full company name.</div>
+              <div className="px-3 py-3 text-[12px] text-foreground/65">No matches — try a ticker like VTI or a full company name.</div>
             )}
             {results.map((r) =>
               picked?.symbol === r.symbol ? (
@@ -799,7 +799,7 @@ function HoldingsEditor({
                   <div className="flex items-center justify-between gap-2">
                     <span className="min-w-0">
                       <span className="font-semibold">{r.symbol}</span>
-                      <span className="block truncate text-[11px] text-foreground/55">{r.name}</span>
+                      <span className="block truncate text-[11px] text-foreground/65">{r.name}</span>
                     </span>
                     <span className="flex shrink-0 items-center gap-1.5">
                       <input
@@ -817,7 +817,7 @@ function HoldingsEditor({
                       <button
                         onClick={() => add(r, numFrom(pickedShares))}
                         disabled={numFrom(pickedShares) <= 0 || adding === r.symbol}
-                        className={`press rounded-lg px-2.5 py-1.5 text-[12px] font-semibold ${numFrom(pickedShares) > 0 ? "bg-primary text-background" : "bg-foreground/10 text-foreground/40"}`}
+                        className={`press rounded-lg px-2.5 py-1.5 text-[12px] font-semibold ${numFrom(pickedShares) > 0 ? "bg-primary text-background" : "bg-foreground/10 text-foreground/65"}`}
                       >
                         {adding === r.symbol ? "…" : "Add"}
                       </button>
@@ -832,8 +832,8 @@ function HoldingsEditor({
                 >
                   <span className="min-w-0">
                     <span className="font-semibold">{r.symbol}</span>
-                    <span className="ml-1.5 text-[10px] uppercase text-foreground/40">{assetTypeLabel(r.type)}</span>
-                    <span className="block truncate text-[11px] text-foreground/55">{r.name}</span>
+                    <span className="ml-1.5 text-[10px] uppercase text-foreground/65">{assetTypeLabel(r.type)}</span>
+                    <span className="block truncate text-[11px] text-foreground/65">{r.name}</span>
                   </span>
                   <span className="shrink-0 text-[12px] font-medium text-primary">Add +</span>
                 </button>
@@ -848,7 +848,7 @@ function HoldingsEditor({
                 <span className="text-gain">✓</span> Added {a.ticker} · {a.shares} sh
               </div>
             ))}
-            <div className="mt-1 text-[11px] text-foreground/50">Keep searching to add more, or tap Done.</div>
+            <div className="mt-1 text-[11px] text-foreground/65">Keep searching to add more, or tap Done.</div>
           </div>
         )}
       </div>
@@ -866,8 +866,8 @@ function HoldingsEditor({
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <span className="font-semibold">{h.ticker || h.name}</span>
-                  <span className="ml-1.5 text-[10px] uppercase text-foreground/40">{h.ticker ? HOLDING_TYPE_LABEL[h.type] : "fixed $"}</span>
-                  {h.ticker && <div className="truncate text-[11px] text-foreground/55">{h.name}</div>}
+                  <span className="ml-1.5 text-[10px] uppercase text-foreground/65">{h.ticker ? HOLDING_TYPE_LABEL[h.type] : "fixed $"}</span>
+                  {h.ticker && <div className="truncate text-[11px] text-foreground/65">{h.name}</div>}
                 </div>
                 <button onClick={() => remove(i)} className="press shrink-0 text-[11px] text-tax/80">
                   Remove
@@ -875,7 +875,7 @@ function HoldingsEditor({
               </div>
               <div className="mt-2 flex items-end gap-2">
                 <label className="flex-1">
-                  <span className="mb-1 block text-[10px] text-foreground/55">Shares</span>
+                  <span className="mb-1 block text-[10px] text-foreground/65">Shares</span>
                   <input
                     className={`${INPUT} py-1.5 text-sm`}
                     inputMode="decimal"
@@ -885,7 +885,7 @@ function HoldingsEditor({
                 </label>
                 {isTaxable && (
                   <label className="flex-1">
-                    <span className="mb-1 block text-[10px] text-foreground/55">Cost / share</span>
+                    <span className="mb-1 block text-[10px] text-foreground/65">Cost / share</span>
                     <input
                       className={`${INPUT} py-1.5 text-sm`}
                       inputMode="decimal"
@@ -896,19 +896,19 @@ function HoldingsEditor({
                   </label>
                 )}
                 <div className="flex-1 text-right">
-                  <span className="mb-1 block text-[10px] text-foreground/55">Value</span>
+                  <span className="mb-1 block text-[10px] text-foreground/65">Value</span>
                   <span className="tabular text-sm font-semibold">{h.price ? money(holdingValue(h)) : "—"}</span>
                 </div>
               </div>
               {h.price > 0 && (
-                <div className="mt-1 text-[10px] text-foreground/45">{money(h.price, { cents: true })}/share · updates daily</div>
+                <div className="mt-1 text-[10px] text-foreground/65">{money(h.price, { cents: true })}/share · updates daily</div>
               )}
               {/* Dividend (taxable holdings only — IRA/Roth dividends aren't taxed
                   yearly). Auto-filled from the market feed; edit to override. */}
               {isTaxable && dividendKind(h.type) !== "none" && (
                 <div className="mt-2 border-t border-border/40 pt-2">
                   <div className="mb-1 flex items-center justify-between">
-                    <span className="text-[10px] text-foreground/55">
+                    <span className="text-[10px] text-foreground/65">
                       Dividend · {h.dividendManual ? "your override" : "from market feed"}
                     </span>
                     {h.dividendManual && (
@@ -919,7 +919,7 @@ function HoldingsEditor({
                   </div>
                   <div className="flex items-end gap-2">
                     <label className="flex-1">
-                      <span className="mb-1 block text-[10px] text-foreground/55">Div / share / yr</span>
+                      <span className="mb-1 block text-[10px] text-foreground/65">Div / share / yr</span>
                       <input
                         className={`${INPUT} py-1.5 text-sm`}
                         inputMode="decimal"
@@ -929,7 +929,7 @@ function HoldingsEditor({
                       />
                     </label>
                     <label className="flex-1">
-                      <span className="mb-1 block text-[10px] text-foreground/55">Growth / yr %</span>
+                      <span className="mb-1 block text-[10px] text-foreground/65">Growth / yr %</span>
                       <input
                         className={`${INPUT} py-1.5 text-sm`}
                         inputMode="decimal"
@@ -939,27 +939,27 @@ function HoldingsEditor({
                       />
                     </label>
                     <div className="flex-1 text-right">
-                      <span className="mb-1 block text-[10px] text-foreground/55">Income / yr</span>
+                      <span className="mb-1 block text-[10px] text-foreground/65">Income / yr</span>
                       <span className="tabular text-sm font-semibold">{h.shares > 0 ? money(h.shares * holdingDps(h)) : "—"}</span>
                     </div>
                   </div>
                   {/* Qualified vs ordinary (non-qualified) — drives the tax rate.
                       Defaulted by type; flag REITs / non-qualified funds as ordinary. */}
                   <div className="mt-2 flex items-center gap-2">
-                    <span className="text-[10px] text-foreground/55">Taxed as</span>
+                    <span className="text-[10px] text-foreground/65">Taxed as</span>
                     {(["qualified", "ordinary"] as const).map((k) => {
                       const active = holdingDividendKind(h) === k;
                       return (
                         <button
                           key={k}
                           onClick={() => update(i, { dividendOrdinary: k === "ordinary", dividendManual: true })}
-                          className={`press rounded-full border px-2.5 py-0.5 text-[11px] ${active ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/60"}`}
+                          className={`press rounded-full border px-2.5 py-0.5 text-[11px] ${active ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border text-foreground/65"}`}
                         >
                           {k === "qualified" ? "Qualified" : "Ordinary"}
                         </button>
                       );
                     })}
-                    <span className="text-[10px] text-foreground/40">
+                    <span className="text-[10px] text-foreground/65">
                       {holdingDividendKind(h) === "qualified" ? "preferential rate" : "ordinary-income rate"}
                     </span>
                   </div>
@@ -971,16 +971,16 @@ function HoldingsEditor({
                       the fund distributes cap gains (auto) or the user has entered any. */}
                   {(holdingLtCapGainDistPerShare(h) > 0 || holdingStCapGainDistPerShare(h) > 0 || h.type === "mutual_fund") && (
                     <div className="mt-2 border-t border-border/40 pt-2">
-                      <div className="mb-1 text-[10px] font-medium text-foreground/60">
+                      <div className="mb-1 text-[10px] font-medium text-foreground/65">
                         Capital-gains distributions {h.dividendManual ? "· your override" : "· from market feed (multi-yr avg)"}
                       </div>
-                      <p className="mb-1.5 text-[10px] leading-snug text-foreground/45">
+                      <p className="mb-1.5 text-[10px] leading-snug text-foreground/65">
                         Realized gains the fund hands out yearly — <strong>not dividends</strong>, but taxable even when
                         reinvested. They swing a lot year to year, so these are smoothed averages and aren&apos;t grown.
                       </p>
                       <div className="flex items-end gap-2">
                         <label className="flex-1">
-                          <span className="mb-1 block text-[10px] text-foreground/55">Long-term / share</span>
+                          <span className="mb-1 block text-[10px] text-foreground/65">Long-term / share</span>
                           <input
                             className={`${INPUT} py-1.5 text-sm`}
                             inputMode="decimal"
@@ -989,7 +989,7 @@ function HoldingsEditor({
                           />
                         </label>
                         <label className="flex-1">
-                          <span className="mb-1 block text-[10px] text-foreground/55">Short-term / share</span>
+                          <span className="mb-1 block text-[10px] text-foreground/65">Short-term / share</span>
                           <input
                             className={`${INPUT} py-1.5 text-sm`}
                             inputMode="decimal"
@@ -998,23 +998,23 @@ function HoldingsEditor({
                           />
                         </label>
                       </div>
-                      <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] text-foreground/55">
+                      <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] text-foreground/65">
                         <span>
                           Long-term / yr:{" "}
                           <span className="tabular font-semibold text-foreground/75">
                             {h.shares > 0 && holdingLtCapGainDistPerShare(h) > 0 ? money(h.shares * holdingLtCapGainDistPerShare(h)) : "—"}
                           </span>{" "}
-                          <span className="text-foreground/40">preferential rate</span>
+                          <span className="text-foreground/65">preferential rate</span>
                         </span>
                         <span>
                           Short-term / yr:{" "}
                           <span className="tabular font-semibold text-foreground/75">
                             {h.shares > 0 && holdingStCapGainDistPerShare(h) > 0 ? money(h.shares * holdingStCapGainDistPerShare(h)) : "—"}
                           </span>{" "}
-                          <span className="text-foreground/40">ordinary rate</span>
+                          <span className="text-foreground/65">ordinary rate</span>
                         </span>
                       </div>
-                      <p className="mt-1 text-[10px] leading-snug text-foreground/45">
+                      <p className="mt-1 text-[10px] leading-snug text-foreground/65">
                         The market feed can&apos;t tell short-term from long-term, so the auto estimate goes to{" "}
                         <strong>long-term</strong> (preferential rate) — the usual case. If your fund&apos;s distribution
                         page lists a short-term amount, put its per-share figure in the short-term box (taxed as ordinary
@@ -1029,7 +1029,7 @@ function HoldingsEditor({
           {/* Account-type tax note: dividends inside tax-advantaged accounts aren't
               taxed yearly, so we only model the taxable ones. */}
           {!isTaxable && (
-            <p className="rounded-xl bg-ss/[0.06] px-3 py-2 text-[11px] leading-relaxed text-foreground/60">
+            <p className="rounded-xl bg-ss/[0.06] px-3 py-2 text-[11px] leading-relaxed text-foreground/65">
               💡 This is a {bucket === "roth" ? "Roth" : "tax-deferred"} account, so its dividends{" "}
               {bucket === "roth" ? "are never taxed" : "aren't taxed each year — they compound tax-deferred"}.
               We only model annual dividend tax on your <strong>taxable</strong> accounts.
@@ -1054,7 +1054,7 @@ const INPUT =
 function Field({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) {
   return (
     <label className={`block ${className}`}>
-      <span className="mb-1 block text-[12px] font-medium text-foreground/60">{label}</span>
+      <span className="mb-1 block text-[12px] font-medium text-foreground/65">{label}</span>
       {children}
     </label>
   );
@@ -1065,7 +1065,7 @@ function MoneyInput({ value, onChange }: { value: number; onChange: (v: number) 
   const display = text ?? (value ? value.toLocaleString("en-US") : "");
   return (
     <div className="relative">
-      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-foreground/50">$</span>
+      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-foreground/65">$</span>
       <input
         className={`${INPUT} pl-6 tabular`}
         inputMode="numeric"

@@ -99,11 +99,11 @@ export function AdjustSheet({
             <h2 className="text-lg font-semibold">✅ Recorded</h2>
             <p className="mt-2 text-[14px] leading-relaxed text-foreground/75">{result.summary}</p>
             {result.applied < amount - 0.5 && (
-              <p className="mt-1 text-[12px] text-foreground/55">
+              <p className="mt-1 text-[12px] text-foreground/65">
                 (You asked for {money(amount)}; only {money(result.applied)} was there to move.)
               </p>
             )}
-            <p className="mt-2 text-[12px] leading-snug text-foreground/55">
+            <p className="mt-2 text-[12px] leading-snug text-foreground/65">
               Every number in the app — the plan, the pace, the forecast — now works from the updated balance.
             </p>
             <div className="mt-4 grid grid-cols-2 gap-2">
@@ -125,7 +125,7 @@ export function AdjustSheet({
           <>
             <h2 className="text-lg font-semibold">Record what actually happened</h2>
             {prefill?.reason && <p className="mt-1 text-[12px] font-medium text-primary">{prefill.reason}</p>}
-            <p className="mt-1 text-[13px] leading-relaxed text-foreground/60">
+            <p className="mt-1 text-[13px] leading-relaxed text-foreground/65">
               Tell the app about real money moves and it adjusts your accounts for you — no re-typing holdings. Shares
               are sold from cash first, then evenly across the account, at today&apos;s prices.
             </p>
@@ -141,13 +141,13 @@ export function AdjustSheet({
                   </span>
                   <span className="min-w-0">
                     <span className={`block text-[14px] font-semibold ${kind === o.k ? "text-primary" : ""}`}>{o.label}</span>
-                    <span className="block text-[11px] text-foreground/50">{o.sub}</span>
+                    <span className="block text-[11px] text-foreground/65">{o.sub}</span>
                   </span>
                 </button>
               ))}
             </div>
             <div className="mt-3">
-              <span className="text-[12px] font-medium text-foreground/60">{kind === "deposit" ? "Into" : "From"}</span>
+              <span className="text-[12px] font-medium text-foreground/65">{kind === "deposit" ? "Into" : "From"}</span>
               <select className={`${INPUT} mt-1`} value={accountId} onChange={(e) => setAccountId(e.target.value)}>
                 {accounts.map((a) => (
                   <option key={a.id} value={a.id}>
@@ -158,7 +158,7 @@ export function AdjustSheet({
             </div>
             {kind === "transfer" && (
               <div className="mt-2">
-                <span className="text-[12px] font-medium text-foreground/60">Into</span>
+                <span className="text-[12px] font-medium text-foreground/65">Into</span>
                 <select className={`${INPUT} mt-1`} value={toAccountId} onChange={(e) => setToAccountId(e.target.value)}>
                   {accounts
                     .filter((a) => a.id !== accountId)
@@ -172,9 +172,9 @@ export function AdjustSheet({
               </div>
             )}
             <div className="mt-2">
-              <span className="text-[12px] font-medium text-foreground/60">Amount</span>
+              <span className="text-[12px] font-medium text-foreground/65">Amount</span>
               <label className={`${INPUT} mt-1 flex items-center gap-1.5`}>
-                <span className="text-foreground/40">$</span>
+                <span className="text-foreground/65">$</span>
                 <input
                   inputMode="numeric"
                   value={amountText ? Number(amountText.replace(/[^0-9]/g, "")).toLocaleString("en-US") : ""}
@@ -188,7 +188,7 @@ export function AdjustSheet({
             <button
               onClick={apply}
               disabled={!from || amount <= 0}
-              className={`press mt-4 w-full rounded-xl py-2.5 text-[14px] font-semibold ${from && amount > 0 ? "bg-primary text-background" : "bg-foreground/10 text-foreground/40"}`}
+              className={`press mt-4 w-full rounded-xl py-2.5 text-[14px] font-semibold ${from && amount > 0 ? "bg-primary text-background" : "bg-foreground/10 text-foreground/65"}`}
             >
               {kind === "withdraw" ? "Record the withdrawal" : kind === "deposit" ? "Record the deposit" : "Record the move"}
             </button>
