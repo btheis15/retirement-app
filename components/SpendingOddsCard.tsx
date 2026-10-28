@@ -123,10 +123,11 @@ export function SpendingOddsCard({
           {endReal != null && endReal > 0 && (
             <>
               {" "}
-              At today&apos;s spending, your savings are projected to {endReal > startTotal ? "grow to" : "be about"}{" "}
-              {moneyCompact(endReal)} by age {settings.endAge} (today&apos;s dollars)
-              {endReal > startTotal ? `, more than the ${moneyCompact(startTotal)} you have now` : ""}. That is the typical
-              result; it is a projection, not a promise.
+              At today&apos;s spending, in a typical (middle) market your savings are projected to{" "}
+              {endReal > startTotal ? "grow to" : "be about"} {moneyCompact(endReal)} by age {settings.endAge}{" "}
+              (today&apos;s dollars)
+              {endReal > startTotal ? `, more than the ${moneyCompact(startTotal)} you have now` : ""}. A weaker market
+              would leave less; this is a projection, not a promise.
             </>
           )}
         </p>

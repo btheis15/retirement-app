@@ -28,6 +28,7 @@ import { projectLifetime, ProjectionAssumptions } from "@/lib/projection";
 import { recommendPlan, planGist, configMatches, GOAL_META } from "@/lib/goals";
 import { MonteCarloResult } from "@/lib/monteCarlo";
 import { computeMonteCarlo, computeMostMoney } from "@/lib/mcClient";
+import { findSafeSpend } from "@/components/spendingOdds";
 import { MostMoneyStat, MostMoneyMetric, argmaxByMetric } from "@/lib/recommendMonteCarlo";
 import { planAssumptions } from "@/lib/scenarioLab";
 import { returnModel } from "@/lib/returns";
@@ -771,6 +772,46 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       cancelled = true;
     };
   }, [dHousehold, dAssumptions]);
+  // The ONE app-wide "safe to spend" number (same helper + inputs as the Plan tab's
+  // SpendingOddsCard: paired 1,000-run Monte Carlo, default seed, >= 85%). It does not
+  // depend on the slider, so it is debounced and keyed on everything EXCEPT spending;
+  // the base level is read from a ref at run time so a slider commit never re-runs it.
+  const safeBaseRef = useRef(household.annualSpending);
+  safeBaseRef.current = household.annualSpending;
+  const [safeSpend, setSafeSpend] = useState<{ safe: number | null; atLeast: boolean } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setSafeSpend(null);
+    const t = setTimeout(() => {
+      const base = safeBaseRef.current;
+      const model = returnModel(household.accounts);
+      findSafeSpend(base, async (yearly) => {
+        const r = await computeMonteCarlo({
+          kind: "mc",
+          household: { ...household, annualSpending: yearly },
+          assumptions: activeAssumptions,
+          model,
+          runs: 1000,
+        });
+        return r.successPct;
+      })
+        .then((out) => {
+          if (!cancelled) setSafeSpend({ safe: out.safe, atLeast: out.atLeast });
+        })
+        .catch(() => {
+          if (!cancelled) setSafeSpend({ safe: null, atLeast: false });
+        });
+    }, 600);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    household.accounts, household.self, household.spouse, household.pensionAnnual, household.otherIncome,
+    household.brokerageDividendsAnnual, household.ordinaryDividendsAnnual, household.taxableInterestAnnual,
+    household.taxExemptInterestAnnual, household.state, household.priorMagi, activeAssumptions,
+  ]);
   // The plan-type recommendation (withdrawal order, bracket target, whether/how to
   // roll over) is chosen at a STABLE reference spending — the ~4% pace, NOT the live
   // slider value. Otherwise dragging the spend slider silently re-optimizes the
@@ -2012,8 +2053,10 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       const pos = (v: number) => Math.max(0, Math.min(100, (v / SPEND_MAX) * 100));
       const round5 = (n: number) => Math.round(n / 5_000) * 5_000;
       const floor5 = (n: number) => Math.floor(n / 5_000) * 5_000;
-      const comfortYear = Math.floor(sweep.comfortableMax / 1_000) * 1_000;
-      const underRoom = comfortYear - localSpend;
+      const safeX = safeSpend?.safe ?? null;
+      const safeAtLeast = !!safeSpend?.atLeast;
+      const underRoom = safeX != null ? safeX - localSpend : 0;
+      const weakYear = Math.floor(sweep.sustainableMax / 1_000) * 1_000;
       const shortTier = (label: string) => label.replace(" surcharge", "").replace("Standard premium", "standard premium");
 
       // Ticks under the slider: the safe ceilings (green/amber) and every IRMAA
@@ -2021,9 +2064,11 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       // where it bites.
       const markers: { key: string; value: number; cls: string; title: string; dotted?: boolean }[] = [];
       if (hasRoom && sweep.comfortableMax > 0 && sweep.comfortableMax < SPEND_MAX)
-        markers.push({ key: "comf", value: sweep.comfortableMax, cls: "bg-gain", title: "Comfortable ceiling" });
+        markers.push({ key: "comf", value: sweep.comfortableMax, cls: "bg-gain", title: "Cushion even in a weak market" });
       if (hasRoom && sweep.sustainableMax > sweep.comfortableMax + 5_000 && sweep.sustainableMax < SPEND_MAX)
-        markers.push({ key: "sust", value: sweep.sustainableMax, cls: "bg-accent", title: "Most you can safely spend" });
+        markers.push({ key: "sust", value: sweep.sustainableMax, cls: "bg-accent", title: "Lasts even in a weak market" });
+      if (safeX != null && safeX < SPEND_MAX)
+        markers.push({ key: "safe", value: safeX, cls: "bg-primary", title: "Safe (8½ of 10 market futures or better)" });
       // The IRMAA lines are drawn DOTTED — they mark where this year's income would
       // cross a Medicare surcharge. Because spending is funded partly from cash/Roth/
       // basis (not taxable income), this line sits far to the right of your spending:
@@ -2067,8 +2112,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         rawChips.push({ label: "Most you can afford", value: floor5(sweep.sustainableMax), cls: "border-accent/50 text-accent" });
       // The SUGGESTED amount is the comfortable ceiling (what you can spend without
       // worry); the classic 4% pace, when it differs, stays as an ordinary chip.
-      if (hasRoom && sweep.comfortableMax >= 5_000) {
-        const sug = Math.min(SPEND_MAX, floor5(sweep.comfortableMax));
+      if (safeX != null && safeX >= 5_000) {
+        const sug = Math.min(SPEND_MAX, floor5(safeX));
         if (recSpend != null && Math.abs(recSpend - sug) >= 5_000)
           rawChips.push({ label: "4% pace", value: recSpend, cls: "border-border text-foreground/70" });
         recSpend = sug;
@@ -2099,22 +2144,26 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
           <h2 className="text-xl font-bold leading-snug">How much do you want to spend each year?</h2>
           {/* The "retirement paycheck": lead with what you're ALLOWED to spend. Careful
               savers chronically under-spend, so the permission comes before the dial. */}
-          {comfortYear >= 5_000 && (
+          {safeSpend == null ? (
+            <div className="mt-3 rounded-2xl border border-gain/30 bg-gain/[0.07] p-3 text-[15px] text-foreground/75" aria-live="polite">
+              Working out what you can safely spend…
+            </div>
+          ) : safeX != null && safeX >= 5_000 ? (
             <div className="mt-3 rounded-2xl border border-gain/30 bg-gain/[0.07] p-3">
               <p className="text-[16px] font-semibold leading-snug">
-                You can comfortably spend about <span className="tabular text-gain">{money(comfortYear)} a year</span>{" "}
-                — <span className="tabular text-gain">{money(Math.round(comfortYear / 12))} a month</span>
+                You can safely spend {safeAtLeast ? "at least" : "up to"}{" "}
+                <span className="tabular text-gain">{money(safeX)} a year</span> —{" "}
+                <span className="tabular text-gain">{money(Math.round(safeX / 12))} a month</span>
                 {plan.filingStatus === "mfj" ? " (both of you)" : ""}.
               </p>
-              {hasRoom && sweep.sustainableMax >= comfortYear + 10_000 && (
+              {hasRoom && weakYear >= 5_000 && (
                 <p className="mt-1 text-[14px] leading-snug text-foreground/70">
-                  Up to <strong>{money(Math.floor(sweep.sustainableMax / 1_000) * 1_000)} a year</strong> (
-                  {money(Math.round((Math.floor(sweep.sustainableMax / 1_000) * 1_000) / 12))} a month) if you&apos;re
-                  willing to trim in bad markets.
+                  Even if markets stay below average for decades, about{" "}
+                  <strong>{money(weakYear)} a year</strong> would still last.
                 </p>
               )}
             </div>
-          )}
+          ) : null}
           <p className="mt-2 text-[13px] text-foreground/65">
             Your <strong>take-home</strong> target — money in your pocket after all taxes. As you move it, watch your tax
             rate, your Medicare (IRMAA) tier, and what your savings are worth at the end all update below.
@@ -2132,7 +2181,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
 
           {/* Under-spending callout — live with the slider. Only claims growth when the
               (cautious, below-average-market) projection really ends above today's total. */}
-          {underRoom >= 5_000 && !cur.depleted && (
+          {safeX != null && underRoom >= 5_000 && !cur.depleted && (
             <div className="mt-3 rounded-2xl border border-primary/25 bg-primary/[0.06] p-3 text-[14px] leading-relaxed text-foreground/80" aria-live="polite">
               {cur.endingEstateReal > sweep.startingTotal ? (
                 <p>
@@ -2149,7 +2198,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               )}
               <p className="mt-1">
                 That&apos;s money you saved to enjoy. You could spend about{" "}
-                <strong>{money(Math.floor(underRoom / 12 / 10) * 10)} more a month</strong> and still be comfortable. If
+                <strong>{money(Math.floor(underRoom / 12 / 10) * 10)} more a month</strong> and still be safe. If
                 leaving more to family is your goal, that&apos;s a fine choice too — this is just the extra room if you want it.
               </p>
             </div>
@@ -2199,9 +2248,12 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 )}
               </div>
               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-foreground/45">
-                <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-gain" /> comfortable</span>
+                <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-gain" /> cushion even in a weak market</span>
+                {markers.some((m) => m.key === "safe") && (
+                  <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-primary" /> safe (8½ of 10 market futures or better)</span>
+                )}
                 {markers.some((m) => m.key === "sust") && (
-                  <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-accent" /> max safe</span>
+                  <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-accent" /> lasts even in a weak market</span>
                 )}
                 {markers.some((m) => m.dotted) && (
                   <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-0 border-l-2 border-dotted border-tax" /> 🏥 where IRMAA would start (you&apos;re under it now)</span>
