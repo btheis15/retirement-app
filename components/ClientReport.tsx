@@ -18,6 +18,9 @@ import { ReviewSnapshot, SnapshotChange } from "@/lib/quarterly";
 import { money, moneyCompact, percent } from "@/lib/format";
 import { AllocationBar, BalancesChart, OutcomeFan, REPORT_COLORS } from "@/components/ReportCharts";
 import { irmaaRoomPhrase } from "@/lib/irmaaStatus";
+import { SafeSpendResult, ON_TRACK, LADDER_FACTORS, ladderAmounts } from "@/components/spendingOdds";
+import { survivorSnapshot } from "@/components/SurvivorCard";
+import { glossaryEntry } from "@/lib/glossary";
 
 /* ------------------------------------------------------------------ */
 /* Layout primitives                                                   */
@@ -129,6 +132,10 @@ function Stat({ label, value, sub }: { label: string; value: ReactNode; sub?: Re
 }
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const pair = (a: number, b: number): ReactNode[] => [
+  <span key="a">{money(a)}<span className="block text-[10.5px] text-[#5b6b70]">{money(a / 12)}/mo</span></span>,
+  <span key="b">{money(b)}<span className="block text-[10.5px] text-[#5b6b70]">{money(b / 12)}/mo</span></span>,
+];
 const shortTier = (label: string) => {
   const m = label.match(/Tier (\d)/);
   return m ? `Tier ${m[1]}` : /standard/i.test(label) ? "Standard" : "—";
@@ -141,6 +148,7 @@ const shortTier = (label: string) => {
 export function ClientReport({
   data: d,
   mc,
+  safe,
   prev,
   changes,
   household,
@@ -149,6 +157,8 @@ export function ClientReport({
 }: {
   data: ReportData;
   mc: MonteCarloResult | null;
+  /** Safe-spend search result (null while it runs; the page holds printing until it is ready). */
+  safe?: SafeSpendResult | null;
   prev: ReviewSnapshot | null;
   changes: SnapshotChange[];
   household: Household;
@@ -221,8 +231,31 @@ export function ClientReport({
     }
   };
 
+  // ---- Safe spending (same definition as the Plan tab) ----
+  const couple = d.hasSpouse;
+  const who = couple ? "both of you" : "you";
+  const baseSpend = household.annualSpending;
+  const safeAmt = safe?.safe ?? null;
+  const safeGap = safeAmt != null ? safeAmt - baseSpend : 0;
+  const safePct = new Map((safe?.levels ?? []).map((l) => [l.yearly, l.pct]));
+  const ladder = ladderAmounts(baseSpend);
+  const upTo = safe?.atLeast ? "at least" : "up to";
+  const ofTen = (p: number) => Math.round(p * 10);
+
+  // ---- Survivor before/after (today's dollars, like the Monte Carlo figures) ----
+  const infl = settings.inflationRate;
+  const startYr = d.rows[0]?.year ?? year;
+  const defAt = (y: number) => 1 / Math.pow(1 + infl, y - startYr);
+  const survivor = d.hasSpouse && settings.survivorModel ? survivorSnapshot(d.rows, activeProj.survivorYear, defAt) : null;
+
+  // ---- Key terms (only what this household's report uses) ----
+  const mentionsCharity = d.opportunities.some((o) => o.id === "qcd");
+  const termIds = ["rmd", "irmaa", "roth-conversion", "marginal-rate", "effective-rate", "monte-carlo", "estimated-tax", ...(d.hasSpouse ? ["widows-penalty"] : []), ...(mentionsCharity ? ["qcd"] : [])];
+  const terms = termIds.map((id) => glossaryEntry(id)).filter((g): g is NonNullable<typeof g> => !!g);
+
   const toc = [
     "Executive summary",
+    "How much you can spend",
     `This quarter: ${d.quarter.label}`,
     `Your ${year} action plan`,
     "Your situation & assumptions",
@@ -232,9 +265,11 @@ export function ClientReport({
     "Social Security",
     `Taxes & Medicare in ${year}`,
     "Lifetime outlook & stress tests",
+    ...(survivor ? ["If one of you passes first"] : []),
     "Opportunities & things to watch",
     "Appendix A — Year-by-year projection",
     "Appendix B — Assumptions, methods & disclosures",
+    "Appendix C — Key terms",
   ];
   let sec = 0;
   const nextSec = () => ++sec;
@@ -302,6 +337,12 @@ export function ClientReport({
           <strong>{money(spend)}</strong> a year after tax (<strong>{money(Math.round(spend / 12))} a month</strong>){growth},
           through age {settings.endAge}.{survivorNote}
         </P>
+        {safeAmt != null && (
+          <P>
+            <strong>Safe to spend: {money(safeAmt)}/yr</strong> ({money(safeAmt / 12)} a month, {who}) — the most your savings can support while still lasting to age{" "}
+            {settings.endAge} in about 9 of 10 market futures. See Section {toc.indexOf("How much you can spend") + 1}.
+          </P>
+        )}
         {mc && (
           <P>
             We stress-tested the plan against {mc.runs.toLocaleString()}{" "}simulated market futures, including crashes and
@@ -414,6 +455,61 @@ export function ClientReport({
             </li>
           ))}
         </ul>
+      </Page>
+
+      {/* ================= HOW MUCH YOU CAN SPEND ================= */}
+      <Page id="safe-spend">
+        <SectionHead n={nextSec()} title="How much you can spend" lede="Many retirees under-spend out of caution. This shows the most your savings can safely support, so unspent money doesn't just keep growing." />
+        {!safe ? (
+          <P>Preparing…</P>
+        ) : safeAmt == null ? (
+          <P>
+            Even the lower spending levels we tried fall below our &ldquo;on track&rdquo; line ({percent(ON_TRACK, 0)}), so we can&apos;t name a safe amount. See the
+            table below and consider the options in Section {toc.indexOf("Lifetime outlook & stress tests") + 1}.
+          </P>
+        ) : (
+          <>
+            <div className="avoid-break rounded-md border-l-4 bg-[#f6f8f8] px-4 py-3" style={{ borderColor: REPORT_COLORS.primary }}>
+              <div className="text-[17px] font-bold leading-snug text-[#0f1f24]">
+                You can safely spend {upTo} {money(safeAmt)} a year ({money(safeAmt / 12)} a month), {who}
+              </div>
+              <div className="mt-1 text-[12px] leading-relaxed text-[#26363b]">
+                &ldquo;Safely&rdquo; means your money still lasts to age {settings.endAge} in at least {percent(ON_TRACK, 0)} of our {mc ? mc.runs.toLocaleString() : "1,000"} simulated market futures (about 9 in
+                10) &mdash; the &ldquo;on track&rdquo; line.
+              </div>
+            </div>
+            {safeGap >= 3000 && (
+              <P className="mt-3">
+                <strong>You could give {couple ? "yourselves" : "yourself"} a raise of about {money(Math.round(safeGap / 12 / 10) * 10)} a month</strong> ({money(safeGap)} a year more than the{" "}
+                {money(baseSpend)} in your plan) and still be on track.
+              </P>
+            )}
+          </>
+        )}
+        {safe && safe.levels.length > 0 && (
+          <>
+            <H3>How the odds change as spending changes</H3>
+            <Table
+              head={["Spending level", "Per month", "Per year", "Odds the money lasts"]}
+              align={["l", "r", "r", "r"]}
+              rows={LADDER_FACTORS.map((f, i) => {
+                const y = ladder[i];
+                const p = safePct.get(y);
+                const isPlan = f === 1;
+                return [
+                  <span key="l">{isPlan ? <strong>Your current plan</strong> : f < 1 ? `${Math.round((1 - f) * 100)}% less` : `${Math.round((f - 1) * 100)}% more`}</span>,
+                  money(y / 12),
+                  isPlan ? <strong key="y">{money(y)}</strong> : money(y),
+                  p == null ? "—" : `${ofTen(p)} of 10 market futures (${Math.round(p * 100)}%)`,
+                ];
+              })}
+            />
+          </>
+        )}
+        <Note>
+          These odds assume you <strong>don&apos;t adjust</strong> your spending along the way. A lower figure doesn&apos;t mean you&apos;d go broke &mdash; it means that in a bad stretch of markets
+          you would most likely trim spending for a few years. This is a planning estimate, not a guarantee.
+        </Note>
       </Page>
 
       {/* ================= 2. THIS QUARTER ================= */}
@@ -927,6 +1023,35 @@ export function ClientReport({
         )}
       </Page>
 
+      {/* ================= IF ONE OF YOU PASSES FIRST ================= */}
+      {survivor && (
+        <Page id="survivor">
+          <SectionHead n={nextSec()} title="If one of you passes first" lede={`The plan assumes one of you passes around age ${settings.firstDeathAge}. Here is the household's last year together next to its first year alone, in today's dollars.`} />
+          <Table
+            head={["Household", `Both of you (${survivor.before.year})`, `One of you (${survivor.after.year})`]}
+            align={["l", "r", "r"]}
+            rows={[
+              ["Social Security", ...pair(survivor.before.ss, survivor.after.ss)],
+              ["Spending", ...pair(survivor.before.spending, survivor.after.spending)],
+              [
+                "Federal + state tax",
+                <span key="b">{money(survivor.before.tax)}<span className="block text-[10.5px] text-[#5b6b70]">{percent(survivor.before.rate)} of income</span></span>,
+                <span key="a">{money(survivor.after.tax)}<span className="block text-[10.5px] text-[#5b6b70]">{percent(survivor.after.rate)} of income</span></span>,
+              ],
+              ...(survivor.before.irmaa > 0 || survivor.after.irmaa > 0 ? [["Medicare IRMAA surcharge", money(survivor.before.irmaa), money(survivor.after.irmaa)]] : []),
+            ]}
+          />
+          <P className="mt-2">
+            When one spouse passes, the survivor keeps the larger of the two Social Security checks and the smaller one stops, so household Social Security drops. The survivor also files as a
+            single taxpayer.
+          </P>
+          <P>
+            This is the &ldquo;widow&apos;s penalty&rdquo;: single tax brackets are narrower and the Medicare IRMAA income limits are lower, so similar income is taxed at a higher rate. Roth
+            conversions made while both of you are alive can soften it. A planning estimate, not a prediction.
+          </P>
+        </Page>
+      )}
+
       {/* ================= 11. OPPORTUNITIES ================= */}
       <Page id="opportunities">
         <SectionHead n={nextSec()} title="Opportunities & things to watch" lede="Optional moves that could lower your tax, and the years when the plan changes gear." />
@@ -1024,6 +1149,19 @@ export function ClientReport({
           Your next review: <strong>{d.next.label}</strong> ({d.next.rangeLabel}). Update your balances in the app at the start of the quarter and generate a
           new report — it will compare against this one.
         </P>
+      </Page>
+
+      {/* ================= APPENDIX C ================= */}
+      <Page id="appendix-c">
+        <SectionHead n="C" title="Key terms" lede="Plain-English meanings of the terms used in this report." />
+        <dl className="space-y-2">
+          {terms.map((g) => (
+            <div key={g.id} className="avoid-break">
+              <dt className="text-[12px] font-bold text-[#0f1f24]">{g.term}</dt>
+              <dd className="text-[11.5px] leading-relaxed text-[#26363b]">{g.short}</dd>
+            </div>
+          ))}
+        </dl>
       </Page>
     </div>
   );
