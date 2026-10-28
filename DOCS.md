@@ -69,6 +69,14 @@ The app is **mobile-first** ([`app/layout.tsx`](app/layout.tsx): `max-w-md` on p
 
 This is how both audiences are served from one codebase: the phone gives the retiree a clean answer; the desktop gives the CFA the full justification, without either having to toggle modes.
 
+### Readability, text size & plain-English terms
+
+Muted secondary text is held to `text-foreground/65` or stronger (≈4.5:1 contrast or better), and `AdjustLink` targets are 40px tall with 14px text so "Adjust →" is easy to tap on a phone.
+
+The **"Aa" control** (`components/TextSize.tsx`) offers Standard / Larger / Largest, applied as CSS `zoom` of 1 / 1.12 / 1.25. The choice is stored in localStorage `rto-text-size`, and a pre-paint inline script in `app/layout.tsx` applies it before first paint so the page never flashes at the wrong size. Printing resets zoom to 1, so PDFs and printed reports are unaffected.
+
+Jargon is explained where it appears. `lib/glossary.ts` holds 18 defined terms, rendered by `components/Term.tsx` as a tap-to-define popover (opened by tap, not hover-only, so it works on phones). The full list is at [`/learn#glossary`](app/learn).
+
 ### Launch splash
 
 Opening the app shows a brief branded splash (`components/SplashScreen.tsx`, keyframes in `app/globals.css`): the app's own mark animates in — the tile springs in, the gold growth line draws upward, the dot lands and pulses — while the app hydrates underneath. It is server-rendered from the layout, so it is on screen from the first paint, and it leaves once the household data is loaded and a minimum time has passed (≈3.2s on the first open of a session so the name and tagline can be read, ≈2s on a later reload, ≈1.5s with reduced motion). In-app navigation never shows it, it never prints, and a CSS-only failsafe fades it out after ~9s if JavaScript never arrives. The PWA manifest's `background_color` matches it, so the OS launch screen blends into it.
@@ -184,7 +192,7 @@ The pure-TS engine, roughly in dependency order from data model → tax → proj
 - `opportunities.ts` / `actionPlan.ts` / `milestones.ts` — rule-based callouts, year-by-year to-do list, and decision-point detection.
 
 **Support**
-- `demo.ts` — the built-in example household(s). `defaults.ts` — `PlannerSettings`, goals, empty/seed households. `prices.ts` — client price fetch/cache layer over `/api/ticker/*`. `crypto.ts` — Web Crypto at-rest encryption (PBKDF2-SHA256 → AES-GCM). `sources.ts` — citation registry (IRS/SSA/CMS). `format.ts` / `palette.ts` — formatting and chart colors. `calibrated/` — offline-calibrated data (`mortality.json`, `regimes.json`).
+- `demo.ts` — the built-in example household(s). `defaults.ts` — `PlannerSettings`, goals, empty/seed households. `prices.ts` — client price fetch/cache layer over `/api/ticker/*`. `crypto.ts` — Web Crypto at-rest encryption (PBKDF2-SHA256 → AES-GCM). `sources.ts` — citation registry (IRS/SSA/CMS). `format.ts` / `palette.ts` — formatting and chart colors. `glossary.ts` — the 18 plain-English terms behind the `Term` popover. `calibrated/` — offline-calibrated data (`mortality.json`, `regimes.json`).
 ```
 
 ---
@@ -373,6 +381,8 @@ The transition is applied **once**, the first year `year >= firstDeathYear`:
 - Spending drops to `annualSpending *= spendingFactor`, and the guardrail reference spend `refSpend` is recentered to the same lower base.
 
 From that year on `filingStatus = "single"` (half-width brackets, single standard deduction, single IRMAA headroom) — the "widow's penalty."
+
+**Survivor view on Forecast.** For couples with the survivor model on, the `SurvivorCard` on the Forecast tab shows an "If one of you passes first" before/after table. `survivorSnapshot` reads it from the same projection rows, so the table and the year-by-year view always agree.
 
 A genuinely single household is detected up front by `isSingle = !(spouse && spouse.birthYear > 1900)`. Such a person files **single for the entire projection** and the survivor transition never runs (no spending cut, no SS reassignment). Without this guard a single retiree would be silently taxed on the MFJ curve for life, overstating the estate and understating lifetime tax.
 
@@ -573,6 +583,16 @@ Both cross-checks are deliberately **retargeted to the same forward CMA means/vo
 
 All four engines emit the same `MonteCarloResult` shape and share `wilsonInterval`, `cholesky`, `randn`, and `pct`/percentile helpers. Per the file headers, every engine is labeled **educational estimates only — not advice.**
 
+### "Safe to spend" — the one app-wide definition
+
+The app has a single definition of safe spending: the **highest yearly spending whose paired Monte-Carlo odds are ≥ 90%** (`SAFE_LINE` in [`components/spendingOdds.ts`](components/spendingOdds.ts)). Each level is simulated with 1,000 runs, the default fixed seed, and the same market paths at every level. The 85% `ON_TRACK` figure remains only as the PlanHero status label.
+
+`safeSpendFor(household, settings)` is the shared helper. It scans 0.6×–1.6× current spending, then bisects down to $1,000 using only levels that were actually simulated (never interpolated). It feeds the Plan tab `SpendingOddsCard`, the walkthrough `spend` step, the quarterly report, and the flat end of the Forecast safe-spending range (the flexible and guardrails ends still come from `lib/spendingSolver`).
+
+- **Plan tab card:** "You can safely spend up to $X a year ($Y a month)", a "raise" line when the user is under-spending, the median ending balance labeled as typical market (not a promise), and a collapsible odds ladder drawn as 10-dot icon arrays.
+- **Walkthrough `spend` step markers:** *Safe* (the 90% line); *Lasts even in a weak market* (sweep `sustainableMax`); *Cushion even in a weak market* (sweep `comfortableMax`). A ✓ Suggested chip marks the recommended level.
+- **Rationale:** retirees fear spending and tend to under-spend, so the app leads with permission to spend and shows the under-spend gap explicitly.
+
 ---
 
 ## The Setup Walkthrough (chapters & steps)
@@ -660,6 +680,8 @@ The Plan tab answers in a fixed order, so a customer reads "what to do" before a
 5. **Your answers — `YourAnswers`** (`buildAnswers`): every walkthrough decision, one tap from its step. Shared with `/setup`.
 6. **The details** — collapsed: monthly pace & paying the tax (`PaceCard`), where the money comes from, the next few years (`LookingAhead`), the conversion plan (`RolloverPlanCard`), Social Security by claim age (`SsTiming`), the strategy under the hood, more ways to save, and the full tax math (now on mobile too).
 
+**Since your last visit.** `SinceLastVisit` sits at the top of the Plan tab. It stores a snapshot of the plan's key figures in localStorage `rto-last-visit-<mode>` and shows what changed, but only when the last visit was at least 3 days ago and something meaningful moved. Tapping "Got it" replaces the baseline with the current snapshot.
+
 ### The quarterly client report (`/report`)
 
 The whole plan written up the way an advisor would present it, as letter-size pages: **cover** (key figures, contents) → **executive summary** (where you stand, plan confidence, this year in one paragraph, numbered recommendations each with its reason, *since your last review*, what we're watching) → **this quarter** (dated deadlines + seasonal reviews, where you should be by now / by quarter-end, next-quarter preview) → **this year's action plan** (the custodian-ready checklist, a funding table that ties out to the penny) → **situation & assumptions** → **portfolio** (allocation, stock/bond/cash mix, every account and every holding, concentration flag) → **withdrawal strategy** (the three buckets, the chosen method's reasoning, all three methods compared on lifetime tax and after-tax estate) → **Roth conversions** (impact, how to execute, the year-by-year schedule) → **Social Security** (benefit at every claim age 62–70, breakeven, survivor angle) → **taxes & Medicare** (this year's return line by line, how to pay it, IRMAA) → **lifetime outlook** (balances by bucket, Monte-Carlo fan + percentiles, stress tests, next five years) → **opportunities & milestones** → **Appendix A** (year-by-year projection) → **Appendix B** (assumptions, methods, disclosures).
@@ -668,6 +690,7 @@ The whole plan written up the way an advisor would present it, as letter-size pa
 - **Quarterly rhythm** (`lib/quarterly.ts`): `quarterOf`/`nextQuarter`; `quarterAgenda(q, ctx)` lists what a quarter asks of this household — 1040-ES installments that fall in it (including January's prior-year catch-up), the April filing, Q1 re-plan + tax forms + withholding setup, Q2 mid-year pace check, Q3 IRMAA projection, Q4 Medicare open enrollment / loss & gain harvesting / QCD / the Dec 31 conversion and RMD.
 - **Since your last review.** Viewing the report stores a `ReviewSnapshot` for the quarter (`components/reviewHistory.ts`, localStorage `rto-reviews-<mode>`, last 12 kept); the next quarter's report compares against the latest earlier one (`compareSnapshots`). The Plan tab's "Your full report" card shows whether this quarter's review is done, and a banner announces a new quarter's review.
 - **PDF.** "Download PDF" sets the document title (the saved file name) and opens the print dialog; print CSS in `globals.css` (`.report-doc`, `.report-sheet`) drops the app chrome, starts the summary and appendices on fresh sheets, keeps headers/tables/figures from splitting, and `@page` margin boxes add a running footer and "Page x of y". Nothing is uploaded.
+- **Added sections.** A **How much you can spend** section and an executive-summary line (both from `safeSpendFor`); an **If one of you passes first** section for couples with the survivor model on; and **Appendix C — Key terms**, drawn from the glossary.
 - **Probe:** `scripts/_audit_report.mts` — plan/projection agreement and the funding-table tie-out across 93 household × settings cases, quarter boundaries, agenda placement, snapshot deltas.
 
 ---
@@ -773,6 +796,8 @@ These proxies exist only to dodge browser CORS on Yahoo's endpoints. **Only tick
 | `rto-reviews-own` / `rto-reviews-demo` | Quarterly review snapshots (one per quarter, last 12) for "since your last review". |
 | `rto-settings` | UI/assumption settings, merged over `DEFAULT_SETTINGS` from `lib/defaults.ts` on load. Includes `walkthroughDone` (per-mode completion timestamps) and `doneActions` ("Mark done" records). |
 | `rto-demo-seed` | Seed for the deterministic demo household (`lib/demo.ts`). |
+| `rto-last-visit-<mode>` | Plan-tab snapshot for "Since your last visit"; replaced on "Got it". |
+| `rto-text-size` | Text-size choice from the "Aa" control (Standard / Larger / Largest). |
 
 `lib/prices.ts` adds its own `localStorage` cache for fetched price and dividend history (keyed by range, expiring per calendar day) so repeated projections don't re-hit the proxy. Settings are read with a `{ ...DEFAULT_SETTINGS, ...parsed }` spread, so adding a new setting field is backward-compatible with already-stored data — old blobs simply pick up the new default.
 

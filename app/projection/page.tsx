@@ -20,6 +20,7 @@ import { Household } from "@/lib/accounts";
 import { ReturnMethodInfo } from "@/components/ReturnMethodInfo";
 import { SpendingPowerCard } from "@/components/SpendingPowerCard";
 import { SurvivorCard } from "@/components/SurvivorCard";
+import { safeSpendFor } from "@/components/spendingOdds";
 import { money, moneyCompact, percent } from "@/lib/format";
 import { HEX } from "@/lib/palette";
 import { SOURCES } from "@/lib/sources";
@@ -204,15 +205,16 @@ export default function ProjectionPage() {
     } as const;
     // Both ends at the SAME 90% confidence — they differ only by whether you flex
     // spending in downturns, so the comparison is honest (apples to apples).
-    const flatRes = await solveSafeSpending(household, { ...baseA, spendingStrategy: "constant" }, [0.9], {
-      model: rm,
-      onProgress: (d, t) => setSolveProg((d / t) * 0.5),
-    });
+    // The flat end is the app-wide "safe to spend" number (Plan tab, walkthrough,
+    // report) — the same verified-level search, so every screen shows one figure.
+    const flatSafe = await safeSpendFor(household, { ...settings, spendingStrategy: "constant" });
+    setSolveProg(0.5);
+    const flatSpend = flatSafe.safe ?? 0;
     const flexRes = await solveSafeSpending(household, { ...baseA, spendingStrategy: "guardrails" }, [0.9], {
       model: rm,
       onProgress: (d, t) => setSolveProg(0.5 + (d / t) * 0.5),
     });
-    setSafe({ flat: flatRes[0]?.spend ?? 0, flex: Math.max(flatRes[0]?.spend ?? 0, flexRes[0]?.spend ?? 0) });
+    setSafe({ flat: flatSpend, flex: Math.max(flatSpend, flexRes[0]?.spend ?? 0) });
     setSolving(false);
   };
 

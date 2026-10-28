@@ -96,7 +96,7 @@ export function SpendingOddsCard({
             You can safely spend {upTo} {money(safe)} a year ({money(safe / 12)} a month), {who}
           </h2>
           <p className="mt-1 text-[15px] leading-snug">
-            &ldquo;Safely&rdquo; means your money still lasts to age {settings.endAge} in at least 9 of 10 market futures
+            &ldquo;Safely&rdquo; means your money still lasts to age {settings.endAge}{" "}in at least 9 of 10 market futures
             (90% or better — the same bar as the Forecast tab&apos;s safe-spending range).
           </p>
         </>

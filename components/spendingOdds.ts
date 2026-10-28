@@ -76,9 +76,10 @@ export async function findSafeSpend(
   lo = valid.length ? valid[valid.length - 1][0] : null;
   hi = firstFail ? firstFail[0] : null;
 
-  // Bisect between lo and hi with real runs (verified, not interpolated).
+  // Bisect between lo and hi with real runs (verified, not interpolated) down to
+  // $1,000 resolution, so the answer does not depend on where the scan started.
   if (lo != null && hi != null) {
-    for (let i = 0; i < 4 && hi - lo > 1000; i++) {
+    for (let i = 0; i < 12 && hi - lo > 1000; i++) {
       const mid = floorK((lo + hi) / 2);
       if (mid <= lo || mid >= hi) break;
       if ((await test(mid)) >= SAFE_LINE) lo = mid;
