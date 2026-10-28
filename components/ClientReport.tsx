@@ -15,7 +15,7 @@ import { PlannerSettings } from "@/lib/defaults";
 import { MonteCarloResult } from "@/lib/monteCarlo";
 import { ReportData } from "@/lib/report";
 import { ReviewSnapshot, SnapshotChange } from "@/lib/quarterly";
-import { money, moneyCompact, percent } from "@/lib/format";
+import { money, moneyCompact, percent, of100 } from "@/lib/format";
 import { AllocationBar, BalancesChart, OutcomeFan, REPORT_COLORS } from "@/components/ReportCharts";
 import { irmaaRoomPhrase } from "@/lib/irmaaStatus";
 import { SafeSpendResult, SAFE_LINE, LADDER_FACTORS, ladderAmounts } from "@/components/spendingOdds";
@@ -240,7 +240,6 @@ export function ClientReport({
   const safePct = new Map((safe?.levels ?? []).map((l) => [l.yearly, l.pct]));
   const ladder = ladderAmounts(baseSpend);
   const upTo = safe?.atLeast ? "at least" : "up to";
-  const ofTen = (p: number) => Math.round(p * 10);
 
   // ---- Survivor before/after (today's dollars, like the Monte Carlo figures) ----
   const infl = settings.inflationRate;
@@ -340,7 +339,7 @@ export function ClientReport({
         {safeAmt != null && (
           <P>
             <strong>Safe to spend: {money(safeAmt)}/yr</strong> ({money(safeAmt / 12)} a month, {who}) — the most your savings can support while still lasting to age{" "}
-            {settings.endAge} in at least 9 of 10 market futures. See Section {toc.indexOf("How much you can spend") + 1}.
+            {settings.endAge} in at least 90 of 100 market futures. See Section {toc.indexOf("How much you can spend") + 1}.
           </P>
         )}
         {mc && (
@@ -474,7 +473,7 @@ export function ClientReport({
                 You can safely spend {upTo} {money(safeAmt)} a year ({money(safeAmt / 12)} a month), {who}
               </div>
               <div className="mt-1 text-[12px] leading-relaxed text-[#26363b]">
-                &ldquo;Safely&rdquo; means your money still lasts to age {settings.endAge} in at least {percent(SAFE_LINE, 0)} of our {mc ? mc.runs.toLocaleString() : "1,000"} simulated market futures (9 in 10) &mdash; the same bar as the safe-spending range on the Forecast tab.
+                &ldquo;Safely&rdquo; means your money still lasts to age {settings.endAge} in at least {percent(SAFE_LINE, 0)} of our {mc ? mc.runs.toLocaleString() : "1,000"} simulated market futures (90 out of every 100) &mdash; the same bar as the safe-spending range on the Forecast tab.
               </div>
             </div>
             {safeGap >= 3000 && (
@@ -499,7 +498,7 @@ export function ClientReport({
                   <span key="l">{isPlan ? <strong>Your current plan</strong> : f < 1 ? `${Math.round((1 - f) * 100)}% less` : `${Math.round((f - 1) * 100)}% more`}</span>,
                   money(y / 12),
                   isPlan ? <strong key="y">{money(y)}</strong> : money(y),
-                  p == null ? "—" : `${ofTen(p)} of 10 market futures (${Math.round(p * 100)}%)`,
+                  p == null ? "—" : `${of100(p)} of 100 market futures`,
                 ];
               })}
             />

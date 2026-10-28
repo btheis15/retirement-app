@@ -40,7 +40,7 @@ import { adjustedAnnualBenefit, fullRetirementAge, earningsTestWithholding } fro
 import { useMarketPulse } from "@/components/MarketCheck";
 import { rmdStartAge } from "@/lib/tax/constants";
 import { bucketOf, ACCOUNT_KIND_META, TaxBucket, Household, Account, AccountKind, defaultRetirementYear, wageForYear, monthsWorkedInYear, otherIncomeForYear, WorkIncome, OtherIncomeStream } from "@/lib/accounts";
-import { money, moneyCompact, percent } from "@/lib/format";
+import { money, moneyCompact, percent, of100 } from "@/lib/format";
 
 const GOALS: GoalId[] = ["maxCapital", "lowestTax", "lowestRate"];
 
@@ -2057,7 +2057,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
       if (hasRoom && sweep.sustainableMax > sweep.comfortableMax + 5_000 && sweep.sustainableMax < SPEND_MAX)
         markers.push({ key: "sust", value: sweep.sustainableMax, cls: "bg-accent", title: "Lasts even in a weak market" });
       if (safeX != null && safeX < SPEND_MAX)
-        markers.push({ key: "safe", value: safeX, cls: "bg-primary", title: "Safe (lasts in 9 of 10 market futures or better)" });
+        markers.push({ key: "safe", value: safeX, cls: "bg-primary", title: "Safe (lasts in 90 of 100 market futures or better)" });
       // The IRMAA lines are drawn DOTTED — they mark where this year's income would
       // cross a Medicare surcharge. Because spending is funded partly from cash/Roth/
       // basis (not taxable income), this line sits far to the right of your spending:
@@ -2239,7 +2239,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-foreground/65">
                 <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-gain" /> cushion even in a weak market</span>
                 {markers.some((m) => m.key === "safe") && (
-                  <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-primary" /> safe (lasts in 9 of 10 market futures or better)</span>
+                  <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-primary" /> safe (lasts in 90 of 100 market futures or better)</span>
                 )}
                 {markers.some((m) => m.key === "sust") && (
                   <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-accent" /> lasts even in a weak market</span>
@@ -3575,7 +3575,7 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 <AnimatedNumber value={pct * 100} format={(n) => `${Math.round(n)}%`} />
               </div>
               <p className="mx-auto mt-1 max-w-sm text-[13px] leading-relaxed text-foreground/65">
-                In about <strong>{Math.round(pct * 10)} of 10</strong>{" "}simulated market futures — crashes and slumps
+                In <strong>{of100(pct)} of 100</strong>{" "}simulated market futures — crashes and slumps
                 included — your money lasts to age {settings.endAge}.
                 {pct < 0.7 ? " A little less spending or a later Social Security claim can move this a lot." : ""}
               </p>

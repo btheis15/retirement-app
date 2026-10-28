@@ -17,6 +17,14 @@ export function moneyCompact(n: number): string {
   return money(n);
 }
 
+/** Monte-Carlo odds as "X of 100 market futures". Never shows a perfect 100 unless
+ *  every simulated future succeeded (to the nearest tenth of a percent) — rounding a
+ *  real risk up to "100 of 100" would overstate certainty. */
+export function of100(frac: number): number {
+  if (frac >= 0.9995) return 100;
+  return Math.max(0, Math.min(99, Math.round(frac * 100)));
+}
+
 export function percent(frac: number, digits = 1): string {
   return `${(frac * 100).toFixed(digits)}%`;
 }
