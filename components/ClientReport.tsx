@@ -18,7 +18,8 @@ import { ReviewSnapshot, SnapshotChange } from "@/lib/quarterly";
 import { money, moneyCompact, percent, oddsText } from "@/lib/format";
 import { AllocationBar, BalancesChart, OutcomeFan, REPORT_COLORS } from "@/components/ReportCharts";
 import { irmaaRoomPhrase } from "@/lib/irmaaStatus";
-import { SafeSpendResult, SAFE_LINE, LADDER_FACTORS, ladderAmounts } from "@/components/spendingOdds";
+import { SafeSpendResult, KeepBalanceResult, SAFE_LINE, LADDER_FACTORS, ladderAmounts } from "@/components/spendingOdds";
+import { keepCopy } from "@/components/KeepBalance";
 import { survivorSnapshot } from "@/components/SurvivorCard";
 import { glossaryEntry } from "@/lib/glossary";
 
@@ -149,6 +150,7 @@ export function ClientReport({
   data: d,
   mc,
   safe,
+  keep,
   prev,
   changes,
   household,
@@ -159,6 +161,8 @@ export function ClientReport({
   mc: MonteCarloResult | null;
   /** Safe-spend search result (null while it runs; the page holds printing until it is ready). */
   safe?: SafeSpendResult | null;
+  /** Keep-your-balance search result (null = could not run; undefined = not provided). Printing waits for it like `safe`. */
+  keep?: KeepBalanceResult | null;
   prev: ReviewSnapshot | null;
   changes: SnapshotChange[];
   household: Household;
@@ -240,6 +244,7 @@ export function ClientReport({
   const safePct = new Map((safe?.levels ?? []).map((l) => [l.yearly, l.pct]));
   const ladder = ladderAmounts(baseSpend);
   const upTo = safe?.atLeast ? "at least" : "up to";
+  const keepTxt = keepCopy(keep ?? null, settings.endAge, who, mc?.runs ?? 1000);
 
   // ---- Survivor before/after (today's dollars, like the Monte Carlo figures) ----
   const infl = settings.inflationRate;
@@ -340,6 +345,12 @@ export function ClientReport({
           <P>
             <strong>Safe to spend: {money(safeAmt)}/yr</strong> ({money(safeAmt / 12)} a month, {who}) — the most your savings can support while still lasting to age{" "}
             {settings.endAge} in at least 900 of 1,000 simulated markets (90%). See Section {toc.indexOf("How much you can spend") + 1}.
+          </P>
+        )}
+        {keepTxt.yearly != null && (
+          <P>
+            <strong>Keeps your balance: {money(keepTxt.yearly)}/yr</strong> ({money(keepTxt.yearly / 12)} a month, {who}) — in a typical market your savings at age {settings.endAge} stay about what
+            they are today, in today&apos;s dollars.{keepTxt.risk ? " That is more risk than our safe line, so it is not a recommendation." : ""} See Section {toc.indexOf("How much you can spend") + 1}.
           </P>
         )}
         {mc && (
@@ -483,6 +494,14 @@ export function ClientReport({
               </P>
             )}
           </>
+        )}
+        {safe && keep !== undefined && (
+          <div className="avoid-break mt-3 rounded-md border-l-4 bg-[#f6f8f8] px-4 py-3" style={{ borderColor: REPORT_COLORS.primary }}>
+            <div className="text-[12px] font-bold uppercase tracking-wide text-[#26363b]">Keeping your balance, not spending it down</div>
+            <div className="mt-1 text-[14px] font-semibold leading-snug text-[#0f1f24]">{keepTxt.headline}</div>
+            {keepTxt.typical && <div className="mt-1 text-[12px] leading-relaxed text-[#26363b]">{keepTxt.typical}</div>}
+            {keepTxt.risk && <div className="mt-1 text-[12px] font-semibold leading-relaxed text-[#0f1f24]">{keepTxt.risk}</div>}
+          </div>
         )}
         {safe && safe.levels.length > 0 && (
           <>

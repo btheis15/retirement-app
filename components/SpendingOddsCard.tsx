@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { KeepBalanceBlock } from "@/components/KeepBalance";
 import { Info, AdjustLink } from "@/components/ui";
 import { activeAssumptions } from "@/lib/planContext";
 import { computeMonteCarlo } from "@/lib/mcClient";
@@ -9,7 +10,17 @@ import { money, moneyCompact, of100, oddsText } from "@/lib/format";
 import type { Household } from "@/lib/accounts";
 import type { PlannerSettings } from "@/lib/defaults";
 import type { MonteCarloResult } from "@/lib/monteCarlo";
-import { safeSpendFor, ladderAmounts, LADDER_FACTORS, ON_TRACK, SafeSpendResult } from "@/components/spendingOdds";
+import {
+  safeSpendFor,
+  keepBalanceFor,
+  recordLevels,
+  ladderAmounts,
+  LADDER_FACTORS,
+  ON_TRACK,
+  SafeSpendResult,
+  KeepBalanceResult,
+  LevelCache,
+} from "@/components/spendingOdds";
 
 /** 100-square icon array (10 × 10): filled = the money lasts, hollow = it runs short.
  *  Shape + fill, not color alone. */
@@ -47,23 +58,38 @@ export function SpendingOddsCard({
   const [res, setRes] = useState<SafeSpendResult | null>(null);
   const [atPlan, setAtPlan] = useState<MonteCarloResult | null>(null);
   const [failed, setFailed] = useState(false);
+  // "Keep your balance" runs lazily AFTER the safe result (so the headline is never slowed) and reuses
+  // every level the safe search already simulated. undefined = still working; null = could not run.
+  const [keep, setKeep] = useState<KeepBalanceResult | null | undefined>(undefined);
   const ready = confidence != null;
 
   useEffect(() => {
     if (!ready) return;
     let cancelled = false;
     setRes(null);
+    setKeep(undefined);
     setFailed(false);
     // Same function, inputs, run count and DEFAULT fixed seed as the Plan tab's confidence
     // number, so every level sees the same market paths. Only spending varies.
     (async () => {
       let current: MonteCarloResult | null = null;
-      const out = await safeSpendFor(household, settings, (yearly, r) => {
-        if (yearly === base) current = r;
-      });
+      const levels: LevelCache = new Map();
+      const out = await safeSpendFor(
+        household,
+        settings,
+        recordLevels(levels, (yearly, r) => {
+          if (yearly === base) current = r;
+        }),
+      );
       if (cancelled) return;
       setAtPlan(current);
       setRes(out);
+      try {
+        const k = await keepBalanceFor(household, settings, levels);
+        if (!cancelled) setKeep(k);
+      } catch {
+        if (!cancelled) setKeep(null);
+      }
     })().catch(() => {
       if (!cancelled) setFailed(true);
     });
@@ -105,6 +131,14 @@ export function SpendingOddsCard({
         <h2 className="text-[19px] font-semibold leading-snug text-foreground">
           Even the lower spending levels we tried are below our &ldquo;on track&rdquo; line
         </h2>
+      )}
+
+      {keep === undefined ? (
+        <p className="mt-3 text-[15px] text-foreground/75" aria-live="polite">
+          Working out what keeps your balance…
+        </p>
+      ) : (
+        <KeepBalanceBlock safe={safe} safeAtLeast={atLeast} keep={keep} endAge={settings.endAge} who={who} />
       )}
 
       {safe != null && gap >= 3000 && (
