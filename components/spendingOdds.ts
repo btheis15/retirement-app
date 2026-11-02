@@ -20,7 +20,8 @@ export const ON_TRACK = 0.85; // PlanHero's "On track" status line (labels only)
  *  "plan-with" convention of MoneyGuidePro/eMoney. */
 export const SAFE_LINE = 0.9;
 export const LADDER_FACTORS = [0.8, 0.9, 1.0, 1.1, 1.2] as const;
-const SCAN_FACTORS = [0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.6];
+const SCAN_UP = [1.1, 1.2, 1.3, 1.4, 1.6, 2.0, 2.5, 3.0, 4.0, 6.0];
+const SCAN_DOWN = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1];
 
 export interface OddsLevel {
   yearly: number;
@@ -30,7 +31,7 @@ export interface OddsLevel {
 export interface SafeSpendResult {
   /** Highest VERIFIED spending (rounded down to $1,000) with odds >= 90% (SAFE_LINE); null if none tested passes. */
   safe: number | null;
-  /** True if even the top level tested (1.6x) passed, so the real limit is higher. */
+  /** True if even the top level tested (6x the plan) passed, so the real limit is higher. */
   atLeast: boolean;
   /** Every level actually simulated, ascending by spending. */
   levels: OddsLevel[];
@@ -55,16 +56,16 @@ export async function findSafeSpend(
     }
     return cache.get(yearly)!;
   };
-  const amounts = Array.from(
-    new Set(SCAN_FACTORS.map((f) => (f === 1 ? base : Math.max(1000, roundK(base * f))))),
-  ).sort((a, b) => a - b);
-
+  // Walk outward from the current plan until the safe line is crossed: upward while
+  // levels pass, downward if the plan itself fails. No fixed ceiling, so a household
+  // that can safely spend 2-3x its plan gets a real number, not "at least".
+  const at = (f: number) => (f === 1 ? base : Math.max(1000, roundK(base * f)));
   let lo: number | null;
   let hi: number | null;
-  // Scan ascending, stopping once we are past the current plan and a level fails.
-  for (const a of amounts) {
-    const p = await test(a);
-    if (a >= base && p < SAFE_LINE) break;
+  if ((await test(base)) >= SAFE_LINE) {
+    for (const f of SCAN_UP) if ((await test(at(f))) < SAFE_LINE) break;
+  } else {
+    for (const f of SCAN_DOWN) if ((await test(at(f))) >= SAFE_LINE) break;
   }
   // Highest passing level below the lowest failing level.
   const tested = [...cache.entries()].sort((a, b) => a[0] - b[0]);

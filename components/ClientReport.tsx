@@ -349,7 +349,7 @@ export function ClientReport({
         )}
         {keepTxt.yearly != null && (
           <P>
-            <strong>Keeps your balance: {money(keepTxt.yearly)}/yr</strong> ({money(keepTxt.yearly / 12)} a month, {who}) — in a typical market your savings at age {settings.endAge} stay about what
+            <strong>Keeps your balance: {money(keepTxt.yearly)}/yr</strong> ({money(keepTxt.yearly / 12)} a month, {who}) — in a typical market your savings at age {settings.endAge}{" "}stay about what
             they are today, in today&apos;s dollars.{keepTxt.risk ? " That is more risk than our safe line, so it is not a recommendation." : ""} See Section {toc.indexOf("How much you can spend") + 1}.
           </P>
         )}

@@ -2211,13 +2211,13 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               {cur.endingEstateReal > sweep.startingTotal ? (
                 <p>
                   At <strong>{money(localSpend)} a year</strong>, your savings keep growing — even in a below-average market,
-                  to about <strong>{moneyCompact(cur.endingEstateReal)}</strong> by age {settings.endAge} in today&apos;s
+                  to about <strong>{moneyCompact(cur.endingEstateReal)}</strong> by age {settings.endAge}{" "}in today&apos;s
                   dollars (you have {moneyCompact(sweep.startingTotal)} now).
                 </p>
               ) : (
                 <p>
                   At <strong>{money(localSpend)} a year</strong>, even in a below-average market you&apos;d still have about{" "}
-                  <strong>{moneyCompact(cur.endingEstateReal)}</strong> left at age {settings.endAge} in today&apos;s dollars
+                  <strong>{moneyCompact(cur.endingEstateReal)}</strong> left at age {settings.endAge}{" "}in today&apos;s dollars
                   (you have {moneyCompact(sweep.startingTotal)} now).
                 </p>
               )}
