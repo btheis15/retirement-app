@@ -20,7 +20,8 @@ export const ON_TRACK = 0.85; // PlanHero's "On track" status line (labels only)
  *  "plan-with" convention of MoneyGuidePro/eMoney. */
 export const SAFE_LINE = 0.9;
 export const LADDER_FACTORS = [0.8, 0.9, 1.0, 1.1, 1.2] as const;
-const SCAN_FACTORS = [0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.6];
+const SCAN_UP = [1.1, 1.2, 1.3, 1.4, 1.6, 2.0, 2.5, 3.0, 4.0, 6.0];
+const SCAN_DOWN = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1];
 
 export interface OddsLevel {
   yearly: number;
@@ -30,7 +31,7 @@ export interface OddsLevel {
 export interface SafeSpendResult {
   /** Highest VERIFIED spending (rounded down to $1,000) with odds >= 90% (SAFE_LINE); null if none tested passes. */
   safe: number | null;
-  /** True if even the top level tested (1.6x) passed, so the real limit is higher. */
+  /** True if even the top level tested (6x the plan) passed, so the real limit is higher. */
   atLeast: boolean;
   /** Every level actually simulated, ascending by spending. */
   levels: OddsLevel[];
@@ -55,16 +56,16 @@ export async function findSafeSpend(
     }
     return cache.get(yearly)!;
   };
-  const amounts = Array.from(
-    new Set(SCAN_FACTORS.map((f) => (f === 1 ? base : Math.max(1000, roundK(base * f))))),
-  ).sort((a, b) => a - b);
-
+  // Walk outward from the current plan until the safe line is crossed: upward while
+  // levels pass, downward if the plan itself fails. No fixed ceiling, so a household
+  // that can safely spend 2-3x its plan gets a real number, not "at least".
+  const at = (f: number) => (f === 1 ? base : Math.max(1000, roundK(base * f)));
   let lo: number | null;
   let hi: number | null;
-  // Scan ascending, stopping once we are past the current plan and a level fails.
-  for (const a of amounts) {
-    const p = await test(a);
-    if (a >= base && p < SAFE_LINE) break;
+  if ((await test(base)) >= SAFE_LINE) {
+    for (const f of SCAN_UP) if ((await test(at(f))) < SAFE_LINE) break;
+  } else {
+    for (const f of SCAN_DOWN) if ((await test(at(f))) >= SAFE_LINE) break;
   }
   // Highest passing level below the lowest failing level.
   const tested = [...cache.entries()].sort((a, b) => a[0] - b[0]);
@@ -136,4 +137,155 @@ export const safeSpendFor = async (
   // Lazy so Node probes can import this module without the worker client.
   const { computeMonteCarlo } = await import("@/lib/mcClient");
   return safeSpendWith(computeMonteCarlo as McRunner, household, settings, onLevel);
+};
+
+// ---------------------------------------------------------------------------------------------
+// "Keep your balance" — the highest spending at which a TYPICAL (median) market still ends the
+// plan with as much money as you have today, in today's dollars. Same Monte Carlo, same seed, same
+// paired paths as the safe search; only spending varies.
+//
+// Balance definition (verified against lib/projection.ts + lib/monteCarlo.ts): the engine's
+// `endingEstate` is the GROSS sum of EVERY account balance at the end of the final plan year
+// (pre-tax + Roth + taxable, and the cash account kind is bucketed with taxable, so cash IS
+// included; nothing is tax-adjusted), which equals the last row's `endTotal`.
+// `endingWealthReal` deflates each run's `endingEstate` by THAT run's own cumulative price level
+// at the end of the final year, so its p50 is the real median of that same gross figure. (The
+// last `bandReal` entry divides by the price level at the START of the final year, one year of
+// inflation too light, so it overstates the real balance by ~one year of inflation; we therefore
+// use endingWealthReal.) The comparison start is household.accounts summed the same way (all
+// accounts, cash included, gross).
+// ---------------------------------------------------------------------------------------------
+
+/** What one simulated spending level showed. */
+export interface LevelStat {
+  /** Fraction of the 1,000 markets where the money lasts to the plan's end age. */
+  pct: number;
+  /** Median (p50) gross ending balance across the 1,000 markets, in today's dollars. */
+  endReal: number;
+}
+export type LevelCache = Map<number, LevelStat>;
+
+/** Pass the result to safeSpendFor/safeSpendWith as `onLevel` to share its levels with the keep search. */
+export const recordLevels =
+  (cache: LevelCache, also?: (yearly: number, r: MonteCarloResult) => void) =>
+  (yearly: number, r: MonteCarloResult) => {
+    cache.set(yearly, { pct: r.successPct, endReal: r.endingWealthReal.p50 });
+    also?.(yearly, r);
+  };
+
+export const KEEP_SCAN_FACTORS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.4, 1.6, 2.0, 3.0, 4.0];
+
+export interface KeepBalanceResult {
+  /** Highest VERIFIED spending (a multiple of $1,000) whose median real ending balance is >= today's balance; null if none. */
+  keep: number | null;
+  /** True if even the top level tested kept the balance, so the real limit is higher. */
+  atLeast: boolean;
+  /** True if even the LOWEST level tested (`lowestTested`) did not keep the balance. */
+  belowLowest: boolean;
+  lowestTested: number;
+  /** Today's total savings (all accounts, gross, cash included) the median ending balance is compared with. */
+  start: number;
+  /** Odds the money lasts to the end age at the keep level (null when keep is null). */
+  successPct: number | null;
+  /** Median real ending balance at the keep level (null when keep is null). */
+  endReal: number | null;
+  /** Every level simulated in this search or inherited from the safe search, ascending. */
+  levels: (OddsLevel & { endReal: number })[];
+}
+
+export const startingTotal = (household: Household) => household.accounts.reduce((s, a) => s + a.balance, 0);
+
+export async function findKeepBalance(
+  base: number,
+  start: number,
+  run: (yearly: number) => Promise<LevelStat>,
+  prior?: LevelCache,
+  yieldFn: () => Promise<void> = () => new Promise((r) => setTimeout(r, 0)),
+): Promise<KeepBalanceResult> {
+  const cache: LevelCache = new Map(prior ?? []);
+  const test = async (yearly: number) => {
+    if (!cache.has(yearly)) {
+      await yieldFn();
+      cache.set(yearly, await run(yearly));
+    }
+    return cache.get(yearly)!;
+  };
+  const keeps = async (yearly: number) => (await test(yearly)).endReal >= start;
+  const amounts = Array.from(new Set(KEEP_SCAN_FACTORS.map((f) => Math.max(1000, roundK(base * f))))).sort((a, b) => a - b);
+  const lowestTested = amounts[0];
+
+  // Binary-search the coarse grid (balance falls monotonically as spending rises), then bisect to $1,000.
+  let lo: number | null = null; // highest passing
+  let hi: number | null = null; // lowest failing above it
+  if (!(await keeps(amounts[0]))) {
+    hi = amounts[0];
+  } else {
+    lo = amounts[0];
+    const top = amounts[amounts.length - 1];
+    if (amounts.length > 1 && (await keeps(top))) {
+      lo = top;
+    } else {
+      let a = 0;
+      let b = amounts.length - 1; // amounts[a] passes, amounts[b] fails
+      while (b - a > 1) {
+        const m = Math.floor((a + b) / 2);
+        if (await keeps(amounts[m])) a = m;
+        else b = m;
+      }
+      lo = amounts[a];
+      hi = amounts[b];
+    }
+  }
+  if (lo != null && hi != null) {
+    for (let i = 0; i < 12 && hi - lo > 1000; i++) {
+      const mid = floorK((lo + hi) / 2);
+      if (mid <= lo || mid >= hi) break;
+      if (await keeps(mid)) lo = mid;
+      else hi = mid;
+    }
+  }
+  const levels = [...cache.entries()].sort((a, b) => a[0] - b[0]).map(([yearly, s]) => ({ yearly, pct: s.pct, endReal: s.endReal }));
+  const at = lo != null ? cache.get(lo)! : null;
+  return {
+    keep: lo,
+    atLeast: lo != null && hi == null,
+    belowLowest: lo == null,
+    lowestTested,
+    start,
+    successPct: at?.pct ?? null,
+    endReal: at?.endReal ?? null,
+    levels,
+  };
+}
+
+/** Same run function, inputs, 1,000 runs and default seed as safeSpendWith. Pass the levels the safe
+ *  search already ran (via recordLevels) as `prior` to skip re-simulating them. */
+export async function keepBalanceWith(
+  run: McRunner,
+  household: Household,
+  settings: PlannerSettings,
+  prior?: LevelCache,
+): Promise<KeepBalanceResult> {
+  const assumptions = activeAssumptions(settings);
+  const model = returnModel(household.accounts);
+  return findKeepBalance(
+    household.annualSpending,
+    startingTotal(household),
+    async (yearly) => {
+      const r = await run({
+        kind: "mc",
+        household: { ...household, annualSpending: yearly },
+        assumptions,
+        model,
+        runs: SAFE_SPEND_RUNS,
+      });
+      return { pct: r.successPct, endReal: r.endingWealthReal.p50 };
+    },
+    prior,
+  );
+}
+
+export const keepBalanceFor = async (household: Household, settings: PlannerSettings, prior?: LevelCache) => {
+  const { computeMonteCarlo } = await import("@/lib/mcClient");
+  return keepBalanceWith(computeMonteCarlo as McRunner, household, settings, prior);
 };

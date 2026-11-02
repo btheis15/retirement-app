@@ -28,7 +28,8 @@ import { projectLifetime, ProjectionAssumptions } from "@/lib/projection";
 import { recommendPlan, planGist, configMatches, GOAL_META } from "@/lib/goals";
 import { MonteCarloResult } from "@/lib/monteCarlo";
 import { computeMonteCarlo, computeMostMoney } from "@/lib/mcClient";
-import { safeSpendFor } from "@/components/spendingOdds";
+import { safeSpendFor, keepBalanceFor, recordLevels, type LevelCache, type KeepBalanceResult } from "@/components/spendingOdds";
+import { KeepBalanceBlock } from "@/components/KeepBalance";
 import { MostMoneyStat, MostMoneyMetric, argmaxByMetric } from "@/lib/recommendMonteCarlo";
 import { planAssumptions } from "@/lib/scenarioLab";
 import { returnModel } from "@/lib/returns";
@@ -779,16 +780,33 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
   const safeBaseRef = useRef(household.annualSpending);
   safeBaseRef.current = household.annualSpending;
   const [safeSpend, setSafeSpend] = useState<{ safe: number | null; atLeast: boolean } | null>(null);
+  // "Keep your balance" (same Monte Carlo, run lazily after the safe result, reusing its levels).
+  // undefined = still working; null = could not run. Same deps as the safe search: never the slider.
+  const [keepBal, setKeepBal] = useState<KeepBalanceResult | null | undefined>(undefined);
   useEffect(() => {
     let cancelled = false;
     setSafeSpend(null);
+    setKeepBal(undefined);
     const t = setTimeout(() => {
-      safeSpendFor({ ...household, annualSpending: safeBaseRef.current }, settings)
+      const hh = { ...household, annualSpending: safeBaseRef.current };
+      const levels: LevelCache = new Map();
+      safeSpendFor(hh, settings, recordLevels(levels))
         .then((out) => {
-          if (!cancelled) setSafeSpend({ safe: out.safe, atLeast: out.atLeast });
+          if (cancelled) return;
+          setSafeSpend({ safe: out.safe, atLeast: out.atLeast });
+          return keepBalanceFor(hh, settings, levels)
+            .then((k) => {
+              if (!cancelled) setKeepBal(k);
+            })
+            .catch(() => {
+              if (!cancelled) setKeepBal(null);
+            });
         })
         .catch(() => {
-          if (!cancelled) setSafeSpend({ safe: null, atLeast: false });
+          if (!cancelled) {
+            setSafeSpend({ safe: null, atLeast: false });
+            setKeepBal(null);
+          }
         });
     }, 600);
     return () => {
@@ -2058,6 +2076,8 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
         markers.push({ key: "sust", value: sweep.sustainableMax, cls: "bg-accent", title: "Lasts even in a weak market" });
       if (safeX != null && safeX < SPEND_MAX)
         markers.push({ key: "safe", value: safeX, cls: "bg-primary", title: "Safe (lasts in at least 900 of 1,000 simulated markets)" });
+      if (keepBal?.keep != null && keepBal.keep < SPEND_MAX)
+        markers.push({ key: "keep", value: keepBal.keep, cls: "bg-foreground", title: "Keeps your balance (a typical market ends with today's savings, in today's dollars)" });
       // The IRMAA lines are drawn DOTTED — they mark where this year's income would
       // cross a Medicare surcharge. Because spending is funded partly from cash/Roth/
       // basis (not taxable income), this line sits far to the right of your spending:
@@ -2153,6 +2173,22 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               )}
             </div>
           ) : null}
+          {safeSpend != null &&
+            (keepBal === undefined ? (
+              <p className="mt-2 text-[14px] text-foreground/75" aria-live="polite">
+                Working out what keeps your balance…
+              </p>
+            ) : (
+              <div className="rounded-2xl border border-border bg-card/60 px-3 pb-3 pt-0 text-foreground/85">
+                <KeepBalanceBlock
+                  showPair={false}
+                  safe={safeX}
+                  keep={keepBal}
+                  endAge={settings.endAge}
+                  who={plan.filingStatus === "mfj" ? "both of you" : "you"}
+                />
+              </div>
+            ))}
           <p className="mt-2 text-[13px] text-foreground/65">
             Your <strong>take-home</strong> target — money in your pocket after all taxes. As you move it, watch your tax
             rate, your Medicare (IRMAA) tier, and what your savings are worth at the end all update below.
@@ -2175,13 +2211,13 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
               {cur.endingEstateReal > sweep.startingTotal ? (
                 <p>
                   At <strong>{money(localSpend)} a year</strong>, your savings keep growing — even in a below-average market,
-                  to about <strong>{moneyCompact(cur.endingEstateReal)}</strong> by age {settings.endAge} in today&apos;s
+                  to about <strong>{moneyCompact(cur.endingEstateReal)}</strong> by age {settings.endAge}{" "}in today&apos;s
                   dollars (you have {moneyCompact(sweep.startingTotal)} now).
                 </p>
               ) : (
                 <p>
                   At <strong>{money(localSpend)} a year</strong>, even in a below-average market you&apos;d still have about{" "}
-                  <strong>{moneyCompact(cur.endingEstateReal)}</strong> left at age {settings.endAge} in today&apos;s dollars
+                  <strong>{moneyCompact(cur.endingEstateReal)}</strong> left at age {settings.endAge}{" "}in today&apos;s dollars
                   (you have {moneyCompact(sweep.startingTotal)} now).
                 </p>
               )}
@@ -2240,6 +2276,9 @@ export function GuidedPlan({ onSeeDetails }: { onSeeDetails: () => void }) {
                 <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-gain" /> cushion even in a weak market</span>
                 {markers.some((m) => m.key === "safe") && (
                   <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-primary" /> safe (lasts in at least 900 of 1,000 simulated markets)</span>
+                )}
+                {markers.some((m) => m.key === "keep") && (
+                  <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-foreground" /> keeps your balance (typical market ends with today&apos;s savings)</span>
                 )}
                 {markers.some((m) => m.key === "sust") && (
                   <span className="flex items-center gap-1"><span className="inline-block h-2 w-[2px] rounded-full bg-accent" /> lasts even in a weak market</span>

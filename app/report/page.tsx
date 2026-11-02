@@ -13,7 +13,7 @@ import { MonteCarloResult } from "@/lib/monteCarlo";
 import { compareSnapshots, ReviewSnapshot } from "@/lib/quarterly";
 import { GOAL_META } from "@/lib/goals";
 import { STRATEGY_META } from "@/lib/optimizer";
-import { safeSpendFor, SafeSpendResult } from "@/components/spendingOdds";
+import { safeSpendFor, keepBalanceFor, recordLevels, SafeSpendResult, KeepBalanceResult, LevelCache } from "@/components/spendingOdds";
 import { loadReviews, previousReview, saveReview } from "@/components/reviewHistory";
 
 /** The quarterly client report: an advisor-style plan document built from the
@@ -48,23 +48,39 @@ export default function ReportPage() {
   // "How much you can spend": same paired Monte Carlo inputs as the confidence number above
   // (same run count and default seed); only yearly spending varies. Waits for mc like the Plan tab.
   const [safe, setSafe] = useState<SafeSpendResult | null>(null);
+  // "Keep your balance" runs right after the safe search and reuses its levels. undefined = still
+  // working; null = could not run (the report still prints, without the figure).
+  const [keep, setKeep] = useState<KeepBalanceResult | null | undefined>(undefined);
   useEffect(() => {
     if (!data || !mc) return;
     let cancelled = false;
     setSafe(null);
-    safeSpendFor(household, settings)
+    setKeep(undefined);
+    const levels: LevelCache = new Map();
+    safeSpendFor(household, settings, recordLevels(levels))
       .then((out) => {
-        if (!cancelled) setSafe(out);
+        if (cancelled) return;
+        setSafe(out);
+        return keepBalanceFor(household, settings, levels)
+          .then((k) => {
+            if (!cancelled) setKeep(k);
+          })
+          .catch(() => {
+            if (!cancelled) setKeep(null);
+          });
       })
       .catch(() => {
-        if (!cancelled) setSafe({ safe: null, atLeast: false, levels: [] });
+        if (!cancelled) {
+          setSafe({ safe: null, atLeast: false, levels: [] });
+          setKeep(null);
+        }
       });
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, mc, household, settings]);
-  const reportReady = !!mc && !!safe;
+  const reportReady = !!mc && !!safe && keep !== undefined;
 
   // This quarter's snapshot, and the previous quarter's for comparison.
   const snapshot: ReviewSnapshot | null = useMemo(() => {
@@ -154,7 +170,7 @@ export default function ReportPage() {
         </p>
       </div>
 
-      <ClientReport data={data} mc={mc} safe={safe} prev={prev} changes={changes} household={household} settings={settings} isDemo={mode === "demo"} />
+      <ClientReport data={data} mc={mc} safe={safe} keep={keep} prev={prev} changes={changes} household={household} settings={settings} isDemo={mode === "demo"} />
     </div>
   );
 }
